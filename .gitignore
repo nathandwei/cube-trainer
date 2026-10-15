@@ -1,0 +1,13 @@
+# secrets
+.env
+.env.*
+
+# deps and builds
+node_modules/
+.next/
+out/
+.wrangler/
+next-env.d.ts
+*.tsbuildinfo
+
+.DS_Store
