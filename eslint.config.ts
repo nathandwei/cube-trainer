@@ -1,9 +1,16 @@
-import type { Linter } from "eslint";
-import next from "eslint-config-next";
+import js from "@eslint/js";
+import reactHooks from "eslint-plugin-react-hooks";
+import globals from "globals";
+import tseslint from "typescript-eslint";
 
-const config: Linter.Config[] = [
-  { ignores: [".next/", "out/", "node_modules/", ".wrangler/", "playwright-report/", "test-results/"] },
-  ...next,
-];
-
-export default config;
+export default tseslint.config(
+  { ignores: ["dist/", "node_modules/", ".wrangler/", "concepts/", "docs/"] },
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    files: ["**/*.{ts,tsx}"],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
+    plugins: { "react-hooks": reactHooks },
+    rules: { ...reactHooks.configs.recommended.rules },
+  },
+);

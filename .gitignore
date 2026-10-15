@@ -5,9 +5,15 @@
 # deps and builds
 node_modules/
 .next/
-out/
+dist/
 .wrangler/
-next-env.d.ts
 *.tsbuildinfo
 
 .DS_Store
+
+# design explorations stay local
+concepts/
+
+# python tooling
+.venv/
+__pycache__/
