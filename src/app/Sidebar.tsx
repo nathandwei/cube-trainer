@@ -17,7 +17,8 @@ function label(solve: SolveRecord): string {
 }
 
 export function Sidebar({ solves, selectedId }: Props) {
-  const results = solves.map(resultMs);
+  // Test solves are computer-made, so they never count toward your averages.
+  const results = solves.filter((s) => s.source !== "demo").map(resultMs);
   return (
     <aside className="sidebar">
       <nav className="nav">
@@ -39,7 +40,7 @@ export function Sidebar({ solves, selectedId }: Props) {
         {solves.map((solve) => (
           <li
             key={solve.id}
-            className={[solve.analysis ? "reviewable" : "", solve.id === selectedId ? "selected" : ""].join(" ")}
+            className={[solve.analysis ? "reviewable" : "", solve.source === "demo" ? "demo" : "", solve.id === selectedId ? "selected" : ""].join(" ")}
           >
             <button className="time" onClick={() => solve.analysis && navigate(`/solve/${solve.id}`)} disabled={!solve.analysis}>
               <span className="dot" />

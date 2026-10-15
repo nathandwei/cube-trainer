@@ -18,7 +18,7 @@ export type DemoStage = {
   caseName?: string;
 };
 
-type Segment = { kind: StageKind; label: string; moves: Move[]; slots?: Slot[]; caseName?: string };
+type Segment = { kind: StageKind; label: string; moves: Move[]; slots?: Slot[]; caseName?: string; slices?: boolean };
 
 const PAUSE_MS: Partial<Record<StageKind, [number, number]>> = {
   pair: [400, 1400],
@@ -32,6 +32,13 @@ const PAUSE_MS: Partial<Record<StageKind, [number, number]>> = {
 const F2L_TPS: [number, number] = [7, 8.5];
 const LL_TPS: [number, number] = [7.5, 9];
 const F2L_KINDS: readonly StageKind[] = ["cross", "xcross", "pair"];
+/** A smart cube reports a slice move as two outer turns a few milliseconds apart. */
+const SLICE_GAP_MS: [number, number] = [8, 30];
+const OPPOSITE: Readonly<Record<string, string>> = { R: "L", L: "R", U: "D", D: "U", F: "B", B: "F" };
+
+function usesSlices(alg: string): boolean {
+  return /(^|\s)[MES]/.test(alg);
+}
 
 function split(sequence: string): Move[] {
   return sequence.split(" ").filter(Boolean);
@@ -134,19 +141,19 @@ function planLastLayer(start: CubeState, segments: Segment[]): CubeState {
     const moves = matchFaceTurns({ ...eo, postAuf: "" });
     state = applyAlg(state, moves);
     const kind = isSolvedUpToAuf(state) ? "ll" : "eo";
-    segments.push({ kind, label: kind, moves, caseName: kind === "eo" ? eo.caseName : undefined });
+    segments.push({ kind, label: kind, moves, caseName: kind === "eo" ? eo.caseName : undefined, slices: usesSlices(eo.alg) });
   }
   const coll = recognizeCOLL(state);
   if (coll) {
     const moves = matchFaceTurns({ ...coll, postAuf: "" });
     state = applyAlg(state, moves);
-    segments.push({ kind: "coll", label: "coll", moves, caseName: coll.caseName });
+    segments.push({ kind: "coll", label: "coll", moves, caseName: coll.caseName, slices: usesSlices(coll.alg) });
   }
   const epll = recognizeEPLL(state);
   if (epll) {
     const moves = matchFaceTurns(epll);
     state = applyAlg(state, moves);
-    segments.push({ kind: "epll", label: "epll", moves, caseName: epll.caseName });
+    segments.push({ kind: "epll", label: "epll", moves, caseName: epll.caseName, slices: usesSlices(epll.alg) });
   }
   const auf = aufToSolve(state);
   if (auf < 0) throw new Error("Demo generator did not reach a solved last layer");
@@ -184,8 +191,13 @@ function timeSegments(segments: readonly Segment[], rng: Rng): TimedMove[] {
     if (index > 0 && pause) t += uniform(rng, ...pause);
     const gap = 1000 / uniform(rng, ...(F2L_KINDS.includes(segment.kind) ? F2L_TPS : LL_TPS));
     const hesitateAt = segment.moves.length >= 4 && rng() < 0.5 ? 1 + Math.floor(rng() * (segment.moves.length - 1)) : -1;
+    let pairedPrevious = false;
     segment.moves.forEach((move, i) => {
-      if (i > 0) t += gap * uniform(rng, 0.6, 1.4);
+      const halfOfSlice =
+        Boolean(segment.slices) && i > 0 && !pairedPrevious && OPPOSITE[segment.moves[i - 1]!.charAt(0)] === move.charAt(0);
+      pairedPrevious = halfOfSlice;
+      if (halfOfSlice) t += uniform(rng, ...SLICE_GAP_MS);
+      else if (i > 0) t += gap * uniform(rng, 0.6, 1.4);
       if (i === hesitateAt) t += uniform(rng, 500, 1000);
       timed.push({ move, t: Math.round(t) });
     });

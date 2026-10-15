@@ -36,8 +36,18 @@ describe("bestPossibleMoves", () => {
     { name: "chosen slot optimum", stage: pair({ optimalMoves: 7 }), expected: 7 },
     {
       name: "easier slot elsewhere",
-      stage: pair({ optimalMoves: 9, bestAlternative: { slot: "BR", moves: 5, solution: "" } }),
+      stage: pair({ slots: ["FR"], optimalMoves: 9, bestAlternative: { slot: "BR", moves: 5, solution: "" } }),
       expected: 5,
+    },
+    {
+      name: "a two-pair stage ignores single-pair alternatives",
+      stage: pair({ slots: ["FR", "FL"], optimalMoves: 9, bestAlternative: { slot: "FL", moves: 6, solution: "" } }),
+      expected: 9,
+    },
+    {
+      name: "a multi-pair xcross is not graded",
+      stage: pair({ kind: "xcross", slots: ["FR", "FL"], optimalMoves: 8 }),
+      expected: null,
     },
   ])("$name", ({ stage, expected }) => {
     expect(bestPossibleMoves(stage)).toBe(expected);

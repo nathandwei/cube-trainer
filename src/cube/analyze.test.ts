@@ -66,17 +66,25 @@ describe("last layer", () => {
     expect(analysis.totalMs).toBe((moves.length - 1) * 100 + 1100);
   });
 
-  it("labels a two-look path (edges, OCLL, corner swap, EPLL) with the catch-all for OCLL", () => {
+  it("labels a two-look path (edges, OCLL, corner swap, EPLL)", () => {
     const sune = faceTurns("R U R' U R U2 R'");
     const tPerm = faceTurns(COLL_CASES.find((c) => c.name === "O-adj")!.alg);
     const twoLook = [...eo, ...sune, ...tPerm, ...epll];
     const result = analyzeSolve(wcaScrambleFor(twoLook), timed(twoLook));
     expect(result.stages.map((s) => [s.label, s.caseName])).toEqual([
       ["eo", "line"],
-      ["ll", undefined],
+      ["ocll", undefined],
       ["coll", "O-adj"],
       ["epll", "Ua"],
     ]);
+  });
+
+  it("labels OCLL then a full PLL", () => {
+    const sune = faceTurns("R U R' U R U2 R'");
+    const tPerm = faceTurns("R U R' U' R' F R2 U' R' U' R U R' F'");
+    const moves = [...eo, ...sune, ...tPerm];
+    const result = analyzeSolve(wcaScrambleFor(moves), timed(moves));
+    expect(result.stages.map((s) => s.label)).toEqual(["eo", "ocll", "pll"]);
   });
 
   it("uses the catch-all when one alg does the whole last layer", () => {

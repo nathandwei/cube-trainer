@@ -101,8 +101,17 @@ function classify(milestones: readonly Milestone[]): { kind: StageKind; label: s
   const topSlot = SLOT_MILESTONES.reduce((top, m, i) => (has(m) ? i + 1 : top), 0);
   if (has("cross")) return topSlot > 0 ? { kind: "xcross", label: "xcross" } : { kind: "cross", label: "cross" };
   if (topSlot > 0) return { kind: "pair", label: `p${topSlot}` };
+  // The last-layer milestones a stage reaches together tell which system was used: EO → COLL → EPLL,
+  // OCLL → PLL, or 2-look OCLL → corner swap → EPLL.
+  // An alg that orients edges and corners at once reads as EO here: that is Nathan's system (EO, then
+  // COLL), where it means an OCLL skip. A full-OLL user would call it OLL; that needs a per-user setting.
   if (has("eo")) return has("done") ? { kind: "ll", label: "ll" } : { kind: "eo", label: "eo" };
-  if (has("coll")) return { kind: "coll", label: "coll" };
+  // Corners oriented and permuted together is COLL, even when it also finishes the cube (an EPLL skip,
+  // or what a ZBLL user would call ZBLL).
+  if (has("oll")) return has("coll") ? { kind: "coll", label: "coll" } : { kind: "oll", label: "ocll" };
+  // Corners already oriented: a corner swap alone is COLL's O case (or 2-look PLL's first step); a
+  // corner swap that also finishes the cube is a full PLL.
+  if (has("coll")) return has("done") ? { kind: "pll", label: "pll" } : { kind: "coll", label: "coll" };
   if (has("done")) return { kind: "epll", label: "epll" };
   return { kind: "ll", label: "ll" };
 }
@@ -169,6 +178,8 @@ function annotate(kind: StageKind, states: readonly CubeState[], progress: reado
       const solvedAtStart = progress[start]!.slots;
       const bestAlternative = bestSinglePair(startState, solvedAtStart, slots);
       if (slots.length === 0) return { slots, bestAlternative };
+      // A joint search over three or four pairs can take over a second; such multislots go unscored.
+      if (slots.length > 2) return { slots, bestAlternative };
       const keep = solvedAtStart.filter((slot) => !slots.includes(slot));
       return { slots, bestAlternative, ...asOptimal(solveSlots(startState, slots, keep)) };
     }

@@ -53,6 +53,9 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
   const [preview, setPreview] = useState<string | null>(null);
   const frame = useRef<number | undefined>(undefined);
   const timers = useRef<number[]>([]);
+  const speedRef = useRef(speed);
+  // True while the cube shows something other than the solve after `index` moves (a "show" line).
+  const offTrack = useRef(false);
 
   const moments = useMemo(() => keyMoments(analysis), [analysis]);
   const currentStage = stageAt(analysis, Math.max(0, index - 1));
@@ -70,6 +73,7 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
       stopEverything();
       const clamped = Math.max(0, Math.min(moves.length, target));
       setIndex(clamped);
+      offTrack.current = false;
       cube.current?.setTempo(2);
       cube.current?.show(setupAfter(solve, clamped));
     },
@@ -85,20 +89,28 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
     if (index >= moves.length) return;
     stopEverything();
     cube.current?.setTempo(2);
+    if (offTrack.current) {
+      cube.current?.show(setupAfter(solve, index));
+      offTrack.current = false;
+    }
     cube.current?.turn(moves[index]?.move ?? "");
     setIndex(index + 1);
-  }, [index, moves, stopEverything]);
+  }, [index, moves, solve, stopEverything]);
 
   const play = useCallback(() => {
     stopEverything();
     let at = index >= moves.length ? 0 : index;
-    if (at === 0) cube.current?.show(setupAfter(solve, 0));
-    cube.current?.setTempo(3 * speed);
-    const startT = at === 0 ? 0 : (moves[at - 1]?.t ?? 0);
-    const startedAt = performance.now();
+    cube.current?.show(setupAfter(solve, at));
+    offTrack.current = false;
+    cube.current?.setTempo(3 * speedRef.current);
+    // Advance a virtual clock frame by frame so a speed change applies mid-playback.
+    let clock = at === 0 ? 0 : (moves[at - 1]?.t ?? 0);
+    let lastFrame = performance.now();
     setPlaying(true);
     const step = () => {
-      const clock = startT + (performance.now() - startedAt) * speed;
+      const now = performance.now();
+      clock += (now - lastFrame) * speedRef.current;
+      lastFrame = now;
       while (at < moves.length && (moves[at]?.t ?? Infinity) <= clock) {
         cube.current?.turn(moves[at]?.move ?? "");
         at++;
@@ -111,11 +123,12 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
       frame.current = requestAnimationFrame(step);
     };
     frame.current = requestAnimationFrame(step);
-  }, [index, moves, solve, speed, stopEverything]);
+  }, [index, moves, solve, stopEverything]);
 
   const showLine = useCallback(
     (stage: Stage, line: string) => {
       seek(stage.startMove);
+      offTrack.current = true;
       setPreview(line);
       splitAlg(line).forEach((move, i) => {
         timers.current.push(window.setTimeout(() => cube.current?.turn(move), 450 + i * LINE_STEP_MS));
@@ -181,7 +194,15 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
           <button aria-label="end" onClick={() => seek(moves.length)}>
             ⏭
           </button>
-          <button className="speed" onClick={() => setSpeed(SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length] ?? 1)}>
+          <button
+            className="speed"
+            onClick={() => {
+              const next = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length] ?? 1;
+              speedRef.current = next;
+              cube.current?.setTempo(3 * next);
+              setSpeed(next);
+            }}
+          >
             {speed}×
           </button>
         </div>
@@ -292,17 +313,15 @@ function MomentRow({
   );
 }
 
-const LL_KINDS = new Set(["eo", "coll", "epll", "oll", "pll", "ll"]);
-/** Two turns this close together are one slice move on a smart cube. */
+/** Two turns this close together are one move on a smart cube: a slice (R L') or a half turn (R R). */
 const SLICE_GAP_MS = 60;
 
 function displayMoves(solve: SolveRecord, analysis: SolveAnalysis): DisplayMove[] {
-  const inLastLayer = (i: number) => LL_KINDS.has(analysis.stages[stageAt(analysis, i)]?.kind ?? "");
   return humanize(
     solve.moves.map((m) => m.move),
     (i) => {
       const gap = (solve.moves[i + 1]?.t ?? Infinity) - (solve.moves[i]?.t ?? 0);
-      return gap <= SLICE_GAP_MS || (inLastLayer(i) && inLastLayer(i + 1) && stageAt(analysis, i) === stageAt(analysis, i + 1));
+      return gap <= SLICE_GAP_MS && stageAt(analysis, i) === stageAt(analysis, i + 1);
     },
   );
 }

@@ -25,11 +25,17 @@ export function verdictForExtraMoves(extra: number): Verdict {
   return "blunder";
 }
 
+/** A single-pair alternative only competes with a stage that made a single pair. */
+function singlePairAlternative(stage: Stage): Stage["bestAlternative"] {
+  return stage.kind === "pair" && stage.slots?.length === 1 ? stage.bestAlternative : undefined;
+}
+
 /** The fewest moves this step could have taken, counting an easier pair in another slot. */
 export function bestPossibleMoves(stage: Stage): number | null {
   if (stage.optimalMoves === undefined) return null;
-  const alternative = stage.kind === "pair" ? stage.bestAlternative?.moves : undefined;
-  return Math.min(stage.optimalMoves, alternative ?? Number.POSITIVE_INFINITY);
+  // The xcross optimum is for one pair; a multi-pair xcross has nothing fair to compare against.
+  if (stage.kind === "xcross" && (stage.slots?.length ?? 0) > 1) return null;
+  return Math.min(stage.optimalMoves, singlePairAlternative(stage)?.moves ?? Number.POSITIVE_INFINITY);
 }
 
 export function stageVerdict(stage: Stage): Verdict | null {
@@ -86,7 +92,8 @@ function msPerMove(stage: Stage): number {
 export function keyMoments(analysis: SolveAnalysis, limit = 5): Moment[] {
   const moments: Moment[] = [];
   analysis.stages.forEach((stage, stageIndex) => {
-    const alternative = stage.kind === "pair" ? stage.bestAlternative : undefined;
+    const alternative = singlePairAlternative(stage);
+    const best = bestPossibleMoves(stage);
     if (alternative && stage.optimalMoves !== undefined && alternative.moves <= stage.optimalMoves - 2) {
       moments.push({
         kind: "slot",
@@ -95,12 +102,12 @@ export function keyMoments(analysis: SolveAnalysis, limit = 5): Moment[] {
         title: `${stage.label}: ${alternative.slot} was ${alternative.moves} moves`,
         line: alternative.solution,
       });
-    } else if (stage.optimalMoves !== undefined && stage.moveCount - stage.optimalMoves >= 2) {
+    } else if (best !== null && stage.moveCount - best >= 2) {
       moments.push({
         kind: "moves",
         stageIndex,
-        costMs: (stage.moveCount - stage.optimalMoves) * msPerMove(stage),
-        title: `${stage.label}: ${stage.moveCount} moves, best ${stage.optimalMoves}`,
+        costMs: (stage.moveCount - best) * msPerMove(stage),
+        title: `${stage.label}: ${stage.moveCount} moves, best ${best}`,
         line: stage.optimalSolution,
       });
     }

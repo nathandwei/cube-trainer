@@ -1,48 +1,88 @@
 import { useSyncExternalStore } from "react";
+import { z } from "zod";
 import type { SolveRecord } from "@/cube/types";
 
 const KEY = "cube.solves.v1";
-const listeners = new Set<() => void>();
-let cache: SolveRecord[] | null = null;
 
-function load(): SolveRecord[] {
+const timedMove = z.object({ move: z.string(), t: z.number() });
+const solveRecord = z.object({
+  id: z.string(),
+  scramble: z.string(),
+  moves: z.array(timedMove),
+  totalMs: z.number(),
+  penalty: z.enum(["none", "+2", "dnf"]),
+  createdAt: z.number(),
+  source: z.enum(["demo", "keyboard", "smartcube", "virtual"]),
+  // The analysis is recomputable from the moves, so only its outline is checked here.
+  analysis: z.object({ stages: z.array(z.looseObject({})) }).loose().optional(),
+});
+
+type State = { solves: SolveRecord[]; saveError: string | null };
+
+const listeners = new Set<() => void>();
+let state: State | null = null;
+
+function read(): SolveRecord[] {
+  let raw: string | null;
   try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as SolveRecord[]) : [];
+    raw = localStorage.getItem(KEY);
   } catch (error) {
     console.error("Could not read saved solves", error);
     return [];
   }
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    console.error("Saved solves are not valid JSON", error);
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.flatMap((entry) => {
+    const result = solveRecord.safeParse(entry);
+    if (result.success) return [result.data as SolveRecord];
+    console.warn("Skipping a saved solve that does not match the schema", result.error.issues);
+    return [];
+  });
 }
 
-function save(solves: SolveRecord[]): void {
-  cache = solves;
-  try {
-    localStorage.setItem(KEY, JSON.stringify(solves));
-  } catch (error) {
-    console.error("Could not save solves", error);
-  }
+function current(): State {
+  state ??= { solves: read(), saveError: null };
+  return state;
+}
+
+function publish(next: State): void {
+  state = next;
   listeners.forEach((notify) => notify());
 }
 
-/** Newest first. */
-export function getSolves(): SolveRecord[] {
-  cache ??= load();
-  return cache;
+/** Writes against what is on disk now, so a second tab's solves are never overwritten. */
+function write(change: (onDisk: SolveRecord[]) => SolveRecord[]): void {
+  const solves = change(read());
+  try {
+    localStorage.setItem(KEY, JSON.stringify(solves));
+    publish({ solves, saveError: null });
+  } catch (error) {
+    console.error("Could not save solves", error);
+    const reason = error instanceof DOMException && error.name === "QuotaExceededError" ? "storage full" : "storage unavailable";
+    publish({ solves, saveError: `not saved: ${reason}` });
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (event.key !== KEY) return;
+    publish({ solves: read(), saveError: current().saveError });
+  });
 }
 
 export function addSolve(solve: SolveRecord): void {
-  save([solve, ...getSolves()]);
-}
-
-export function updateSolve(id: string, patch: Partial<SolveRecord>): void {
-  save(getSolves().map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  write((solves) => [solve, ...solves]);
 }
 
 export function deleteSolve(id: string): void {
-  save(getSolves().filter((s) => s.id !== id));
+  write((solves) => solves.filter((s) => s.id !== id));
 }
 
 function subscribe(notify: () => void): () => void {
@@ -50,8 +90,13 @@ function subscribe(notify: () => void): () => void {
   return () => listeners.delete(notify);
 }
 
+/** Newest first. */
 export function useSolves(): SolveRecord[] {
-  return useSyncExternalStore(subscribe, getSolves);
+  return useSyncExternalStore(subscribe, () => current().solves);
+}
+
+export function useSaveError(): string | null {
+  return useSyncExternalStore(subscribe, () => current().saveError);
 }
 
 export function newId(): string {

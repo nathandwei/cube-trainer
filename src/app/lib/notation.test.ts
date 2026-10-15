@@ -18,8 +18,8 @@ describe("humanize", () => {
   });
 
   it("only merges where allowed", () => {
-    const out = humanize(["R", "L'", "U"], () => false).map((m) => m.text);
-    expect(out).toEqual(["R", "L'", "U"]);
+    const out = humanize(["R", "L'", "U", "U"], () => false).map((m) => m.text);
+    expect(out).toEqual(["R", "L'", "U", "U"]);
   });
 
   it("keeps the index span of a merged slice", () => {

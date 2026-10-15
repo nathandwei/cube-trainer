@@ -75,7 +75,7 @@ export function humanize(moves: readonly string[], mergeable: (i: number) => boo
     const current = named(moves[i] ?? "");
     const next = moves[i + 1];
     // A half turn arrives as two quarter turns of the same face in the same direction.
-    if (next !== undefined && isQuarter(current) && named(next) === current) {
+    if (next !== undefined && mergeable(i) && isQuarter(current) && named(next) === current) {
       out.push({ text: `${current.charAt(0)}2`, from: i, to: i + 1 });
       i++;
       continue;

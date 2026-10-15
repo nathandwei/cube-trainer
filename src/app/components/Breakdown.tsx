@@ -6,18 +6,20 @@ import type { SolveAnalysis, SolveRecord } from "@/cube/types";
 const MIN_HISTORY = 3;
 const MARGIN = 0.1;
 
-type Props = { analysis: SolveAnalysis; history: readonly SolveRecord[] };
+type Props = { solve: SolveRecord; analysis: SolveAnalysis; history: readonly SolveRecord[] };
 
 function usualMs(label: string, history: readonly SolveRecord[]): number | null {
   const times = history.flatMap((s) => s.analysis?.stages.filter((st) => st.label === label).map((st) => st.totalMs) ?? []);
   return times.length >= MIN_HISTORY ? median(times) : null;
 }
 
-export function Breakdown({ analysis, history }: Props) {
+export function Breakdown({ solve, analysis, history }: Props) {
+  // Compare like with like: test solves against test solves, your solves against yours.
+  const comparable = history.filter((s) => (s.source === "demo") === (solve.source === "demo"));
   return (
     <div className="breakdown">
       {analysis.stages.map((stage, i) => {
-        const usual = usualMs(stage.label, history);
+        const usual = usualMs(stage.label, comparable);
         const tone =
           usual === null ? "" : stage.totalMs < usual * (1 - MARGIN) ? "faster" : stage.totalMs > usual * (1 + MARGIN) ? "slower" : "";
         return (

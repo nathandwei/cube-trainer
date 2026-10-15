@@ -690,3 +690,20 @@ kbd {
   font-size: 13px;
   color: var(--muted);
 }
+
+.solves li.demo .dot {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.save-error {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--bad);
+  background: var(--bad-tint);
+  border-radius: 999px;
+  padding: 6px 14px;
+}

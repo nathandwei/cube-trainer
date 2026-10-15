@@ -56,6 +56,7 @@ export function TimerPage({ solves, onFocusChange }: Props) {
   const inVirtual = phase === "virtual" || phase === "virtual-solving";
 
   useEffect(() => onFocusChange(focused), [focused, onFocusChange]);
+  useEffect(() => () => onFocusChange(false), [onFocusChange]);
 
   const refreshScramble = useCallback(() => {
     nextScramble()
@@ -251,7 +252,7 @@ export function TimerPage({ solves, onFocusChange }: Props) {
       </div>
       {showingResult && last?.analysis && (
         <>
-          <Breakdown analysis={last.analysis} history={solves.slice(1)} />
+          <Breakdown solve={last} analysis={last.analysis} history={solves.slice(1)} />
           <PauseBar moves={last.moves} totalMs={last.totalMs} />
         </>
       )}
