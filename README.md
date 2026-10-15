@@ -1,13 +1,15 @@
 # cube.nathanwei.org
 
-Nathan Wei's Rubik's cube trainers. Next.js (static export) on Cloudflare Workers, same setup as nathanwei.org.
-Background research lives in [docs/research/](docs/research/).
+Nathan Wei's Rubik's cube trainers. A Vite + React single-page app (TypeScript) served as static assets by a
+Cloudflare Worker. cubing.js draws and animates the cube; `src/cube/` is our own engine (cubie model, cross and
+pair solvers, last-layer case data, solve analysis). Background research lives in [docs/research/](docs/research/);
+design mockups are generated locally into `concepts/` (gitignored) with `uv run tools/concepts.py round-N`.
 
 ## Everyday
 
 ```sh
 pnpm install
-pnpm dev                     # http://localhost:3000
+pnpm dev                     # http://localhost:5173
 pnpm build && pnpm preview   # the real static site on Cloudflare's local runtime, http://localhost:8788
 ```
 
