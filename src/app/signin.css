@@ -55,7 +55,7 @@
 
 .signin-word {
   margin: calc(10 * var(--u)) 0 0;
-  font-size: calc(108 * var(--u));
+  font-size: calc(108 * var(--ut));
   font-weight: 600;
   line-height: 1;
   letter-spacing: -0.03em;
@@ -73,7 +73,7 @@
   border-radius: 999px;
   background: #fff;
   color: var(--ink);
-  font-size: calc(27 * var(--u));
+  font-size: calc(27 * var(--ut));
   font-weight: 500;
   transition: background 150ms;
 }
@@ -90,7 +90,7 @@
 
 .signin-failed {
   margin: calc(24 * var(--u)) 0 0;
-  font-size: calc(18 * var(--u));
+  font-size: calc(18 * var(--ut));
   color: var(--bad);
 }
 

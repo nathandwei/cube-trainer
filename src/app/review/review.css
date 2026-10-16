@@ -35,7 +35,7 @@
 
 .rv-time {
   margin-top: calc(75 * var(--u));
-  font-size: calc(117 * var(--u));
+  font-size: calc(117 * var(--ut));
   font-weight: 600;
   letter-spacing: -0.035em;
   line-height: 1;
@@ -48,7 +48,7 @@
   margin: calc(3 * var(--u)) 0 0;
   max-width: 100%;
   font-family: var(--mono);
-  font-size: calc(13 * var(--u));
+  font-size: calc(13 * var(--ut));
   line-height: 1.5;
   word-spacing: 0.2em;
   color: var(--faint);
@@ -73,7 +73,7 @@
 }
 
 .rv-speed {
-  font-size: calc(24 * var(--u));
+  font-size: calc(24 * var(--ut));
   font-weight: 500;
 }
 
@@ -116,13 +116,13 @@
 }
 
 .rv-score-label {
-  font-size: calc(26 * var(--u));
+  font-size: calc(26 * var(--ut));
   line-height: 1.2;
   color: var(--muted);
 }
 
 .rv-score-num {
-  font-size: calc(70 * var(--u));
+  font-size: calc(70 * var(--ut));
   font-weight: 600;
   letter-spacing: -0.03em;
   line-height: 1;
@@ -143,7 +143,7 @@
   align-items: center;
   height: calc(51 * var(--u));
   padding: 0 calc(30 * var(--u)) 0 calc(10 * var(--u));
-  font-size: calc(26 * var(--u));
+  font-size: calc(26 * var(--ut));
 }
 
 .rv-count {
@@ -215,7 +215,7 @@
   grid-template-columns: calc(106 * var(--u)) calc(87 * var(--u)) minmax(0, 1fr);
   align-items: baseline;
   text-align: left;
-  font-size: calc(25 * var(--u));
+  font-size: calc(25 * var(--ut));
   padding: calc(12 * var(--u)) 0;
 }
 
@@ -268,13 +268,13 @@
 }
 
 .rv-line-label {
-  font-size: calc(22 * var(--u));
+  font-size: calc(22 * var(--ut));
   color: var(--muted);
 }
 
 .rv-line-moves {
   font-family: var(--mono);
-  font-size: calc(19 * var(--u));
+  font-size: calc(19 * var(--ut));
   word-spacing: 0.12em;
   line-height: 1.5;
 }
@@ -286,7 +286,7 @@
 }
 
 .rv-line-tag {
-  font-size: calc(16 * var(--u));
+  font-size: calc(16 * var(--ut));
   color: var(--muted);
 }
 
@@ -305,7 +305,7 @@
 
 .rv-token {
   font-family: var(--mono);
-  font-size: calc(20 * var(--u));
+  font-size: calc(20 * var(--ut));
   line-height: 1.5;
   padding: 0 calc(5 * var(--u));
   border-radius: calc(7 * var(--u));
@@ -346,7 +346,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: calc(6 * var(--u)) calc(14 * var(--u));
-  font-size: calc(20 * var(--u));
+  font-size: calc(20 * var(--ut));
 }
 
 .rv-tabs button {
@@ -379,7 +379,7 @@
 }
 
 .rv-head-label {
-  font-size: calc(48 * var(--u));
+  font-size: calc(48 * var(--ut));
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.1;
@@ -387,24 +387,24 @@
 
 .rv-head-case {
   margin-left: calc(14 * var(--u));
-  font-size: calc(26 * var(--u));
+  font-size: calc(26 * var(--ut));
   font-weight: 400;
   letter-spacing: 0;
   color: var(--muted);
 }
 
 .rv-head-moves {
-  font-size: calc(30 * var(--u));
+  font-size: calc(30 * var(--ut));
   font-weight: 500;
 }
 
 .rv-head-time {
-  font-size: calc(30 * var(--u));
+  font-size: calc(30 * var(--ut));
   color: var(--muted);
 }
 
 .rv-head-pause {
-  font-size: calc(22 * var(--u));
+  font-size: calc(22 * var(--ut));
   color: var(--muted);
 }
 

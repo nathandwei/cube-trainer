@@ -28,6 +28,8 @@
   /* One pixel of the approved 1536×864 mockups (concepts/), scaled to the window: sizes are written as
      calc(N * var(--u)) with N measured on the mockup, so every screen keeps its mockup's proportions. */
   --u: clamp(0.72px, min(calc(100vw / 1536), calc(100vh / 864)), 1.25px);
+  /* Type runs a little smaller than the mockups (his call: text "kinda big"); layout and controls keep --u. */
+  --ut: calc(var(--u) * 0.86);
   color-scheme: light;
 }
 
@@ -101,7 +103,7 @@ a:focus-visible {
   justify-content: space-between;
   padding: 0 calc(14 * var(--u)) calc(22 * var(--u)) 0;
   border-bottom: 1px solid var(--rule);
-  font-size: calc(21 * var(--u));
+  font-size: calc(21 * var(--ut));
 }
 
 .nav a,
@@ -131,7 +133,7 @@ a:focus-visible {
   overflow-y: auto;
   flex: 1;
   min-height: 0;
-  font-size: calc(23 * var(--u));
+  font-size: calc(23 * var(--ut));
 }
 
 .solves li {
@@ -200,7 +202,7 @@ a:focus-visible {
   grid-template-columns: 1fr auto;
   row-gap: calc(22 * var(--u));
   margin: 0;
-  font-size: calc(23 * var(--u));
+  font-size: calc(23 * var(--ut));
   border-top: 1px solid var(--rule);
   padding-top: calc(36 * var(--u));
 }
@@ -264,7 +266,7 @@ a:focus-visible {
   padding: calc(3 * var(--u));
   border-radius: 999px;
   background: color-mix(in srgb, var(--sidebar) 80%, var(--page));
-  font-size: calc(20 * var(--u));
+  font-size: calc(20 * var(--ut));
 }
 
 /* On the sidebar's darker oat the track needs more contrast to read as a control. */
@@ -319,7 +321,7 @@ a:focus-visible {
   border-radius: 999px;
   background: color-mix(in srgb, var(--page) 70%, white);
   box-shadow: 0 0 0 calc(3 * var(--u)) color-mix(in srgb, var(--sidebar) 80%, var(--page));
-  font-size: calc(21 * var(--u));
+  font-size: calc(21 * var(--ut));
   color: var(--ink);
   transition: background 150ms;
 }
@@ -358,7 +360,7 @@ a:focus-visible {
 
 .cube-status .battery {
   color: var(--muted);
-  font-size: calc(17 * var(--u));
+  font-size: calc(17 * var(--ut));
 }
 
 .ratings {
@@ -382,12 +384,12 @@ a:focus-visible {
 }
 
 .rating .label {
-  font-size: calc(21 * var(--u));
+  font-size: calc(21 * var(--ut));
   color: var(--muted);
 }
 
 .rating .value {
-  font-size: calc(32 * var(--u));
+  font-size: calc(32 * var(--ut));
   font-weight: 500;
   display: flex;
   align-items: baseline;
@@ -395,7 +397,7 @@ a:focus-visible {
 }
 
 .delta {
-  font-size: calc(22 * var(--u));
+  font-size: calc(22 * var(--ut));
   font-weight: 500;
 }
 
@@ -423,12 +425,12 @@ a:focus-visible {
 }
 
 .chip .label {
-  font-size: calc(23 * var(--u));
+  font-size: calc(23 * var(--ut));
   color: var(--muted);
 }
 
 .chip .value {
-  font-size: calc(42 * var(--u));
+  font-size: calc(42 * var(--ut));
   font-weight: 500;
   display: flex;
   align-items: baseline;
@@ -484,7 +486,7 @@ a:focus-visible {
 
 .scramble {
   /* Always one line: the mockup's size, smaller only when the main column is too narrow for it. */
-  font-size: min(calc(34 * var(--u)), 2.7cqi);
+  font-size: min(calc(34 * var(--ut)), 2.7cqi);
   white-space: nowrap;
   letter-spacing: 0.01em;
   color: var(--accent);
@@ -508,19 +510,20 @@ a:focus-visible {
   display: inline-block;
   min-width: 1.05em;
   text-align: center;
-  border-radius: calc(6 * var(--u));
   transition:
-    background 120ms,
-    color 120ms;
+    color 150ms,
+    opacity 150ms;
 }
 
+/* Progress is in the text colour alone (his ask): done moves fade, the next one turns espresso, the rest wait in
+   terracotta. No boxes, so nothing shifts as the moves tick over. */
 .scramble .mv.done {
-  background: var(--accent);
-  color: var(--accent-ink);
+  color: var(--ink);
+  opacity: 0.28;
 }
 
 .scramble .mv.next {
-  box-shadow: inset 0 0 0 1.5px var(--accent);
+  color: var(--ink);
 }
 
 .scramble.dim {
@@ -528,7 +531,7 @@ a:focus-visible {
 }
 
 .clock {
-  font-size: calc(208 * var(--u));
+  font-size: calc(208 * var(--ut));
   font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 1;
@@ -560,7 +563,7 @@ a:focus-visible {
   height: calc(52 * var(--u));
   padding: 0 calc(26 * var(--u));
   border-radius: 999px;
-  font-size: calc(19 * var(--u));
+  font-size: calc(19 * var(--ut));
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
@@ -590,13 +593,13 @@ a:focus-visible {
 .pill.small {
   height: calc(40 * var(--u));
   padding: 0 calc(18 * var(--u));
-  font-size: calc(16 * var(--u));
+  font-size: calc(16 * var(--ut));
 }
 
 .pill.large {
   height: calc(64 * var(--u));
   padding: 0 calc(36 * var(--u));
-  font-size: calc(21 * var(--u));
+  font-size: calc(21 * var(--ut));
 }
 
 .icon-btn {
@@ -807,7 +810,7 @@ a:focus-visible {
   gap: calc(18 * var(--u));
   border-top: 1px solid var(--rule);
   padding-top: calc(36 * var(--u));
-  font-size: calc(21 * var(--u));
+  font-size: calc(21 * var(--ut));
 }
 
 .avatar {
@@ -824,7 +827,7 @@ a:focus-visible {
   background: var(--accent-tint);
   color: var(--accent);
   font-weight: 600;
-  font-size: calc(19 * var(--u));
+  font-size: calc(19 * var(--ut));
 }
 
 .account .name {
@@ -924,7 +927,7 @@ a:focus-visible {
   gap: calc(28 * var(--u));
   margin: 0 calc(-2 * var(--u));
   overflow-y: auto;
-  font-size: calc(21 * var(--u));
+  font-size: calc(21 * var(--ut));
 }
 
 .learn-items,
@@ -978,7 +981,7 @@ a:focus-visible {
 }
 
 .add-more .label {
-  font-size: calc(17 * var(--u));
+  font-size: calc(17 * var(--ut));
   color: var(--faint);
   display: block;
   margin: 0 0 calc(8 * var(--u)) calc(12 * var(--u));
@@ -988,7 +991,7 @@ a:focus-visible {
   height: calc(40 * var(--u));
   padding: 0 calc(12 * var(--u));
   color: var(--muted);
-  font-size: calc(19 * var(--u));
+  font-size: calc(19 * var(--ut));
 }
 
 .add-more button:hover {
@@ -1011,7 +1014,7 @@ a:focus-visible {
 
 .learn-head h1 {
   margin: 0 calc(32 * var(--u)) 0 0;
-  font-size: calc(62 * var(--u));
+  font-size: calc(62 * var(--ut));
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1;
@@ -1025,7 +1028,7 @@ a:focus-visible {
 
 .learn-head .head-count {
   margin: 0 calc(32 * var(--u));
-  font-size: calc(50 * var(--u));
+  font-size: calc(50 * var(--ut));
   font-weight: 500;
   letter-spacing: -0.01em;
 }
@@ -1033,7 +1036,7 @@ a:focus-visible {
 .learn-head .start {
   height: calc(58 * var(--u));
   min-width: calc(168 * var(--u));
-  font-size: calc(21 * var(--u));
+  font-size: calc(21 * var(--ut));
 }
 
 .learn-head .head-spacer {
@@ -1118,7 +1121,7 @@ a:focus-visible {
   gap: calc(2 * var(--u));
   padding: calc(6 * var(--u)) 0;
   border-radius: calc(12 * var(--u));
-  font-size: calc(14 * var(--u));
+  font-size: calc(14 * var(--ut));
   color: var(--muted);
 }
 
@@ -1171,7 +1174,7 @@ a:focus-visible {
   position: absolute;
   bottom: calc(30 * var(--u));
   color: var(--muted);
-  font-size: calc(22 * var(--u));
+  font-size: calc(22 * var(--ut));
 }
 
 .learn-session .cube.big {
@@ -1185,7 +1188,7 @@ a:focus-visible {
 }
 
 .session-time {
-  font-size: calc(150 * var(--u));
+  font-size: calc(150 * var(--ut));
   font-weight: 500;
   letter-spacing: -0.03em;
   line-height: 1;
@@ -1212,19 +1215,19 @@ a:focus-visible {
   flex-direction: column;
   align-items: center;
   gap: calc(12 * var(--u));
-  font-size: calc(19 * var(--u));
+  font-size: calc(19 * var(--ut));
   color: var(--muted);
 }
 
 .session-result code {
   font-family: var(--mono);
   color: var(--ink);
-  font-size: calc(21 * var(--u));
+  font-size: calc(21 * var(--ut));
 }
 
 .session-result .case-name {
   color: var(--ink);
-  font-size: calc(23 * var(--u));
+  font-size: calc(23 * var(--ut));
   font-weight: 500;
 }
 
@@ -1244,7 +1247,7 @@ a:focus-visible {
   height: calc(34 * var(--u));
   padding: 0 calc(16 * var(--u));
   border-radius: 999px;
-  font-size: calc(18 * var(--u));
+  font-size: calc(18 * var(--ut));
   font-weight: 500;
   color: var(--good);
   background: var(--good-tint);
@@ -1252,16 +1255,24 @@ a:focus-visible {
 
 .muted {
   color: var(--muted);
-  font-size: calc(19 * var(--u));
+  font-size: calc(19 * var(--ut));
 }
 
 /* Picking an alg for a new case: in the page, beside the sidebar (round-8 13). */
 .learn-pick {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: calc(14 * var(--u));
   padding-top: calc(30 * var(--u));
+}
+
+.learn-pick .pick-back {
+  position: absolute;
+  top: 0;
+  left: calc(16 * var(--u));
+  color: var(--muted);
 }
 
 .learn-pick .pick-cube {
@@ -1276,7 +1287,7 @@ a:focus-visible {
 
 .case-title {
   margin: 0 0 calc(26 * var(--u));
-  font-size: calc(44 * var(--u));
+  font-size: calc(44 * var(--ut));
   font-weight: 700;
   letter-spacing: -0.01em;
 }
@@ -1306,7 +1317,7 @@ a:focus-visible {
 
 .alg-option code {
   font-family: var(--sans);
-  font-size: calc(22 * var(--u));
+  font-size: calc(22 * var(--ut));
   font-weight: 500;
   letter-spacing: 0.01em;
   text-align: center;
@@ -1314,7 +1325,7 @@ a:focus-visible {
 
 .alg-option .moves {
   margin-top: calc(28 * var(--u));
-  font-size: calc(48 * var(--u));
+  font-size: calc(48 * var(--ut));
   font-weight: 600;
   line-height: 1;
 }
@@ -1324,7 +1335,7 @@ a:focus-visible {
   min-height: calc(34 * var(--u));
   display: flex;
   align-items: center;
-  font-size: calc(20 * var(--u));
+  font-size: calc(20 * var(--ut));
   color: var(--muted);
 }
 
@@ -1348,7 +1359,7 @@ a:focus-visible {
 .alg-actions .pill {
   height: calc(58 * var(--u));
   min-width: calc(150 * var(--u));
-  font-size: calc(23 * var(--u));
+  font-size: calc(23 * var(--ut));
 }
 
 /* The end of a session (round-8 12). */
@@ -1372,7 +1383,7 @@ a:focus-visible {
 }
 
 .summary-head .hero {
-  font-size: calc(106 * var(--u));
+  font-size: calc(106 * var(--ut));
   font-weight: 600;
   letter-spacing: -0.03em;
   line-height: 1;
@@ -1388,12 +1399,12 @@ a:focus-visible {
 }
 
 .summary-head .stat .label {
-  font-size: calc(21 * var(--u));
+  font-size: calc(21 * var(--ut));
   color: var(--muted);
 }
 
 .summary-head .stat .value {
-  font-size: calc(34 * var(--u));
+  font-size: calc(34 * var(--ut));
   font-weight: 500;
 }
 
@@ -1403,11 +1414,11 @@ a:focus-visible {
 
 .summary-head .stat.previous .value {
   color: var(--muted);
-  font-size: calc(38 * var(--u));
+  font-size: calc(38 * var(--ut));
 }
 
 .summary-head .stat.previous .delta {
-  font-size: calc(34 * var(--u));
+  font-size: calc(34 * var(--ut));
 }
 
 .summary-head .summary-close {
@@ -1419,7 +1430,7 @@ a:focus-visible {
 .tabs {
   display: flex;
   gap: calc(36 * var(--u));
-  font-size: calc(23 * var(--u));
+  font-size: calc(23 * var(--ut));
 }
 
 .tabs button {
@@ -1447,7 +1458,7 @@ a:focus-visible {
   gap: calc(6 * var(--u));
   padding: calc(8 * var(--u)) 0;
   border-radius: calc(10 * var(--u));
-  font-size: calc(22 * var(--u));
+  font-size: calc(22 * var(--ut));
 }
 
 .summary-case svg {

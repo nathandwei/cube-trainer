@@ -1,4 +1,4 @@
-import { Play, X } from "lucide-react";
+import { ArrowLeft, Play, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CubeView, type CubeHandle } from "@/app/components/CubeView";
 import { IconButton, Key } from "@/app/components/IconButton";
@@ -360,6 +360,7 @@ function PickAlg({ caseId, onChoose, onExit }: { caseId: string; onChoose: (alg:
   const fewest = Math.min(...caseDef.moves);
   return (
     <div className="learn-pick">
+      <IconButton icon={ArrowLeft} label="Back" className="pick-back" onClick={onExit} />
       <CubeView ref={preview} className="cube pick-cube" setup={`z2 ${caseDef.setup}`} />
       <h2 className="case-title">{caseDef.label}</h2>
       <div className="alg-options">

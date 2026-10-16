@@ -36,14 +36,14 @@
 }
 
 .stats-figure .label {
-  font-size: calc(22 * var(--u));
+  font-size: calc(22 * var(--ut));
   line-height: 1.2;
   color: var(--muted);
   transition: color 150ms;
 }
 
 .stats-figure .num {
-  font-size: calc(46 * var(--u));
+  font-size: calc(46 * var(--ut));
   font-weight: 500;
   letter-spacing: -0.025em;
   line-height: 1.1;
@@ -91,7 +91,7 @@
 
 .trend-grid text,
 .rating-chart text {
-  font-size: calc(15 * var(--u));
+  font-size: calc(15 * var(--ut));
   fill: var(--muted);
 }
 
@@ -183,7 +183,7 @@
   border-radius: calc(14 * var(--u));
   border: 1px solid var(--rule);
   background: color-mix(in srgb, white 45%, var(--page));
-  font-size: calc(16 * var(--u));
+  font-size: calc(16 * var(--ut));
   display: flex;
   flex-direction: column;
   gap: calc(8 * var(--u));
@@ -195,11 +195,11 @@
 
 .trend-readout .when {
   color: var(--muted);
-  font-size: calc(14 * var(--u));
+  font-size: calc(14 * var(--ut));
 }
 
 .trend-readout .value {
-  font-size: calc(26 * var(--u));
+  font-size: calc(26 * var(--ut));
   font-weight: 500;
   letter-spacing: -0.02em;
   line-height: 1.1;
@@ -209,7 +209,7 @@
 }
 
 .trend-readout .metric {
-  font-size: calc(14 * var(--u));
+  font-size: calc(14 * var(--ut));
   font-weight: 400;
   letter-spacing: 0;
   color: var(--muted);
@@ -249,7 +249,7 @@
 
 .trend-readout .open {
   color: var(--accent);
-  font-size: calc(15 * var(--u));
+  font-size: calc(15 * var(--ut));
   font-weight: 500;
 }
 
@@ -344,13 +344,13 @@
 }
 
 .rating-chart .label {
-  font-size: calc(22 * var(--u));
+  font-size: calc(22 * var(--ut));
   line-height: 1.2;
   color: var(--muted);
 }
 
 .rating-chart .num {
-  font-size: calc(36 * var(--u));
+  font-size: calc(36 * var(--ut));
   font-weight: 500;
   letter-spacing: -0.02em;
   line-height: 1.1;
@@ -490,7 +490,7 @@
   grid-template-columns: calc(44 * var(--u)) 1fr;
   align-items: center;
   height: calc(18 * var(--u));
-  font-size: calc(15 * var(--u));
+  font-size: calc(15 * var(--ut));
 }
 
 .histogram-row .label {
@@ -516,7 +516,7 @@
 }
 
 .histogram-row .count {
-  font-size: calc(13 * var(--u));
+  font-size: calc(13 * var(--ut));
   color: var(--muted);
 }
 
@@ -608,7 +608,7 @@
   align-items: center;
   justify-content: space-between;
   height: calc(42 * var(--u));
-  font-size: calc(21 * var(--u));
+  font-size: calc(21 * var(--ut));
   color: var(--muted);
   transition: color 150ms;
 }

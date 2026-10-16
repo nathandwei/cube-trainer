@@ -25,7 +25,7 @@
 
 .drill-head h1 {
   margin: 0 calc(32 * var(--u)) 0 0;
-  font-size: calc(62 * var(--u));
+  font-size: calc(62 * var(--ut));
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1;
@@ -50,14 +50,14 @@
 }
 
 .drill-rating .value {
-  font-size: calc(50 * var(--u));
+  font-size: calc(50 * var(--ut));
   font-weight: 500;
   letter-spacing: -0.02em;
   line-height: 1;
 }
 
 .drill-rating .delta {
-  font-size: calc(34 * var(--u));
+  font-size: calc(34 * var(--ut));
   font-weight: 500;
 }
 
@@ -70,7 +70,7 @@
 .drill-start .pill.primary {
   height: calc(58 * var(--u));
   min-width: calc(168 * var(--u));
-  font-size: calc(21 * var(--u));
+  font-size: calc(21 * var(--ut));
 }
 
 /* ---------- the full page an attempt runs on (round-9 09; band as in round-8 14) ---------- */
@@ -106,7 +106,7 @@
 }
 
 .band-fit .scramble {
-  font-size: min(calc(34 * var(--u)), calc(1010 * var(--u) / (var(--moves, 20) * 1.62)));
+  font-size: min(calc(34 * var(--ut)), calc(1010 * var(--u) / (var(--moves, 20) * 1.62)));
   gap: 0 0.3em;
 }
 
@@ -146,7 +146,7 @@
 }
 
 .drill-clock {
-  font-size: calc(170 * var(--u));
+  font-size: calc(170 * var(--ut));
   font-weight: 600;
   letter-spacing: -0.035em;
   line-height: 1;
@@ -181,7 +181,7 @@
   gap: calc(24 * var(--u));
   min-height: calc(40 * var(--u));
   color: var(--faint);
-  font-size: calc(26 * var(--u));
+  font-size: calc(26 * var(--ut));
 }
 
 .drill-device {
@@ -189,7 +189,7 @@
   align-items: center;
   gap: calc(14 * var(--u));
   color: var(--ink);
-  font-size: calc(28 * var(--u));
+  font-size: calc(28 * var(--ut));
 }
 
 .drill-device .dot {
@@ -200,13 +200,13 @@
 }
 
 .drill-tag {
-  font-size: calc(26 * var(--u));
+  font-size: calc(26 * var(--ut));
   font-weight: 500;
   color: var(--muted);
 }
 
 .drill-elapsed {
-  font-size: calc(30 * var(--u));
+  font-size: calc(30 * var(--ut));
   color: var(--faint);
 }
 
@@ -248,14 +248,14 @@
 }
 
 .cross-number .label {
-  font-size: calc(26 * var(--u));
+  font-size: calc(26 * var(--ut));
   color: var(--muted);
   line-height: 1.2;
 }
 
 .cross-number .moves,
 .cross-number .time {
-  font-size: calc(54 * var(--u));
+  font-size: calc(54 * var(--ut));
   font-weight: 500;
   letter-spacing: -0.02em;
   line-height: 1.12;
@@ -263,7 +263,7 @@
 }
 
 .cross-number .verdict {
-  font-size: calc(30 * var(--u));
+  font-size: calc(30 * var(--ut));
   font-weight: 500;
   line-height: 1.12;
   padding-top: calc(14 * var(--u));
@@ -305,7 +305,7 @@
   padding: 0 calc(27 * var(--u));
   border-radius: calc(12 * var(--u));
   font-family: var(--mono);
-  font-size: min(calc(30 * var(--u)), calc(400 * var(--u) / (var(--moves, 6) * 2.05)));
+  font-size: min(calc(30 * var(--ut)), calc(400 * var(--u) / (var(--moves, 6) * 2.05)));
   letter-spacing: 0.06em;
   word-spacing: 0.14em;
   white-space: nowrap;
@@ -319,7 +319,7 @@
 
 .cross-lines .slot {
   min-width: calc(40 * var(--u));
-  font-size: calc(20 * var(--u));
+  font-size: calc(20 * var(--ut));
   color: var(--muted);
 }
 
@@ -388,7 +388,7 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  font-size: calc(24 * var(--u));
+  font-size: calc(24 * var(--ut));
 }
 
 .cross-rows li {
@@ -402,7 +402,7 @@
 .cross-rows .verdict,
 .cross-rows .note {
   color: var(--muted);
-  font-size: calc(20 * var(--u));
+  font-size: calc(20 * var(--ut));
 }
 
 /* ---------- lookahead ---------- */
@@ -427,7 +427,7 @@
 .bpm-value {
   width: 3.3ch;
   font: inherit;
-  font-size: calc(50 * var(--u));
+  font-size: calc(50 * var(--ut));
   font-weight: 500;
   letter-spacing: -0.02em;
   line-height: 1;
@@ -447,7 +447,7 @@
 }
 
 .bpm-unit {
-  font-size: calc(22 * var(--u));
+  font-size: calc(22 * var(--ut));
   color: var(--muted);
 }
 
@@ -504,7 +504,7 @@
 }
 
 .drill-pauses .count {
-  font-size: calc(170 * var(--u));
+  font-size: calc(170 * var(--ut));
   font-weight: 600;
   letter-spacing: -0.035em;
   line-height: 1;
@@ -515,7 +515,7 @@
 }
 
 .drill-pauses .label {
-  font-size: calc(30 * var(--u));
+  font-size: calc(30 * var(--ut));
   color: var(--muted);
 }
 
@@ -533,13 +533,13 @@
 }
 
 .lookahead-summary .hero {
-  font-size: calc(54 * var(--u));
+  font-size: calc(54 * var(--ut));
   font-weight: 600;
   letter-spacing: -0.02em;
 }
 
 .lookahead-summary .meta {
-  font-size: calc(26 * var(--u));
+  font-size: calc(26 * var(--ut));
   color: var(--muted);
 }
 
@@ -547,12 +547,12 @@
   display: inline-flex;
   align-items: baseline;
   gap: calc(10 * var(--u));
-  font-size: calc(30 * var(--u));
+  font-size: calc(30 * var(--ut));
   font-weight: 500;
 }
 
 .lookahead-summary .next .delta {
-  font-size: calc(26 * var(--u));
+  font-size: calc(26 * var(--ut));
 }
 
 .drill-timeline {

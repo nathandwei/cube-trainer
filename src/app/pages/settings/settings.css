@@ -9,7 +9,7 @@
   display: flex;
   align-items: center;
   height: calc(48 * var(--u));
-  font-size: calc(22 * var(--u));
+  font-size: calc(22 * var(--ut));
   color: var(--muted);
   text-decoration: none;
   transition: color 150ms;
@@ -36,7 +36,7 @@
   gap: calc(32 * var(--u));
   min-height: calc(124 * var(--u));
   border-bottom: 1px solid var(--rule);
-  font-size: calc(30 * var(--u));
+  font-size: calc(30 * var(--ut));
 }
 
 .prefs-email {

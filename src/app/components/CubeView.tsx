@@ -1,6 +1,6 @@
 import { TwistyPlayer } from "cubing/twisty";
-import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
-import { animatedTurn, reverseOf } from "@/app/lib/animation";
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
+import { animatedTurn, reverseOf, TurnAnimator } from "@/app/lib/animation";
 
 export type CubeHandle = {
   /** Show a still state: the given setup alg, nothing queued. */
@@ -97,6 +97,8 @@ export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const player = useRef<TwistyPlayer | null>(null);
   const timers = useRef<number[]>([]);
+  // Which way each hand last turned since the last show(), so R2 / L2 spin the way fingers would.
+  const [animator] = useState(() => new TurnAnimator());
 
   useEffect(() => {
     const twisty = new TwistyPlayer({
@@ -134,6 +136,7 @@ export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
     if (!twisty) return;
     twisty.experimentalSetupAlg = nextSetup;
     twisty.alg = "";
+    animator.reset();
   }
 
   useImperativeHandle(ref, () => ({
@@ -141,14 +144,15 @@ export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
     play(nextSetup, alg, stepMs = PLAY_STEP_MS) {
       showStill(nextSetup);
       timers.current = movesOf(alg).map((move, i) =>
-        window.setTimeout(() => player.current?.experimentalAddMove(animatedTurn(move), { cancel: false }), PLAY_LEAD_MS + i * stepMs),
+        window.setTimeout(() => player.current?.experimentalAddMove(animator.play(move), { cancel: false }), PLAY_LEAD_MS + i * stepMs),
       );
     },
     turn(move) {
-      for (const one of movesOf(move)) player.current?.experimentalAddMove(animatedTurn(one), { cancel: false });
+      for (const one of movesOf(move)) player.current?.experimentalAddMove(animator.play(one), { cancel: false });
     },
     unturn(move) {
-      for (const one of movesOf(move).reverse()) player.current?.experimentalAddMove(reverseOf(animatedTurn(one)), { cancel: false });
+      // Retrace what turn() played; after a show() there's no history, so fall back to the plain reverse.
+      for (const one of movesOf(move).reverse()) player.current?.experimentalAddMove(animator.undo() ?? reverseOf(animatedTurn(one)), { cancel: false });
     },
     setTempo(scale) {
       if (player.current) player.current.tempoScale = scale;

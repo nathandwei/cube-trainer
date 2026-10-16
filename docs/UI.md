@@ -55,7 +55,9 @@ Rules every screen follows. Nathan judges the site on looks; inconsistency reads
 
 The approved mockups are the target. They are drawn at 1536×864 for the whole window; `--u` (in `styles.css`
 `:root`) is one mockup pixel scaled to the actual window. Measure a size on the mockup and write it as
-`calc(N * var(--u))`: type sizes, control heights, paddings, gaps, sidebar width, cube size. Don't eyeball smaller
+`calc(N * var(--u))`: control heights, paddings, gaps, sidebar width, cube size. Font sizes use `--ut` instead
+(`calc(N * var(--ut))`, N still measured on the mockup): type runs 14% smaller than drawn, because Nathan found
+the text "kinda big" at mockup size. Don't eyeball smaller
 "web-ish" sizes; the mockups are big, bold and generous, and that's what was approved.
 
 Approved references per screen (concepts/):

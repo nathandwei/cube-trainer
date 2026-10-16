@@ -31,6 +31,14 @@ export function LearnPage({ set }: { set?: string }) {
   const [finished, setFinished] = useState<Finished | null>(null);
   const [custom, setCustom] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Picking another item in the sidebar leaves whatever was open here (a session, the alg picker, a summary).
+  const [shownSet, setShownSet] = useState(set);
+  if (set !== shownSet) {
+    setShownSet(set);
+    setRunning(null);
+    setFinished(null);
+    setCustom(false);
+  }
   const cubeLink = useSmartCube();
   // Without a cube the drill still runs, on screen, for trying it out (nothing is saved).
   const input: DrillInput = cubeLink.status === "connected" ? "cube" : "test";

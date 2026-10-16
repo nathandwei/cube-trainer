@@ -32,7 +32,7 @@
   background: var(--sheet);
   border-radius: calc(28 * var(--u));
   padding: calc(44 * var(--u)) calc(36 * var(--u)) calc(36 * var(--u));
-  font-size: calc(20 * var(--u));
+  font-size: calc(20 * var(--ut));
 }
 
 .cube-step {
@@ -53,18 +53,18 @@
 
 .cube-step h2 {
   margin: 0;
-  font-size: calc(24 * var(--u));
+  font-size: calc(24 * var(--ut));
   font-weight: 500;
 }
 
 .cube-muted {
   color: var(--muted);
-  font-size: calc(17 * var(--u));
+  font-size: calc(17 * var(--ut));
 }
 
 .cube-error {
   color: var(--bad);
-  font-size: calc(17 * var(--u));
+  font-size: calc(17 * var(--ut));
 }
 
 .cube-progress {
@@ -95,7 +95,7 @@
 
 .cube-copy code {
   font-family: var(--mono);
-  font-size: calc(18 * var(--u));
+  font-size: calc(18 * var(--ut));
   overflow-wrap: anywhere;
   text-align: left;
 }
@@ -110,7 +110,7 @@
   display: flex;
   flex-direction: column;
   gap: calc(8 * var(--u));
-  font-size: calc(17 * var(--u));
+  font-size: calc(17 * var(--ut));
   color: var(--muted);
 }
 
@@ -119,7 +119,7 @@
   padding: 0 calc(18 * var(--u));
   font: inherit;
   font-family: var(--mono);
-  font-size: calc(20 * var(--u));
+  font-size: calc(20 * var(--ut));
   color: var(--ink);
   border: 1px solid var(--rule);
   border-radius: calc(14 * var(--u));
@@ -163,7 +163,7 @@
   display: inline-flex;
   align-items: center;
   gap: calc(14 * var(--u));
-  font-size: calc(24 * var(--u));
+  font-size: calc(24 * var(--ut));
   font-weight: 500;
 }
 
@@ -270,35 +270,21 @@
   max-width: 100%;
 }
 
+/* Half of a half turn done: the move is under way. */
 .scramble .mv.half {
-  box-shadow:
-    inset 0 -5px 0 var(--accent),
-    inset 0 0 0 1.5px var(--accent);
+  color: var(--ink);
+  opacity: 0.6;
 }
 
+/* Off the scramble: the moves back are amber, with the same fading as he goes. */
 .scramble.fix {
   color: var(--warn);
   background: var(--warn-tint);
 }
 
-.scramble.fix .mv.done {
-  background: var(--warn);
-  color: var(--accent-ink);
-}
-
-.scramble.fix .mv.next {
-  box-shadow: inset 0 0 0 1.5px var(--warn);
-}
-
-.scramble.fix .mv.half {
-  box-shadow:
-    inset 0 -5px 0 var(--warn),
-    inset 0 0 0 1.5px var(--warn);
-}
-
 .cube-scramble-note {
   margin: 0;
-  font-size: calc(17 * var(--u));
+  font-size: calc(17 * var(--ut));
   color: var(--muted);
 }
 
