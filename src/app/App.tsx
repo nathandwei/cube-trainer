@@ -12,7 +12,7 @@ import { SettingsPage } from "@/app/pages/settings/SettingsPage";
 import { SettingsSidebar } from "@/app/pages/settings/SettingsSidebar";
 import { StatsPage } from "@/app/pages/stats/StatsPage";
 import { StatsSidebar } from "@/app/pages/stats/StatsSidebar";
-import { TEST_SOLVE_ID, useSaveError, useSolves, useTestSolve } from "@/app/lib/store";
+import { reviewOnlySolve, TEST_SOLVE_ID, useSaveError, useSolves, useTestSolve } from "@/app/lib/store";
 
 export function App() {
   const account = useAccount();
@@ -42,10 +42,18 @@ function Shell() {
     }
   }
 
+  function reviewPage(id: string) {
+    if (id === TEST_SOLVE_ID) return <ReviewPage solve={testSolve ?? undefined} />;
+    const listed = solves.find((s) => s.id === id);
+    if (listed) return <ReviewPage solve={listed} />;
+    const other = reviewOnlySolve(id);
+    return <ReviewPage solve={other?.solve} back={other?.back} />;
+  }
+
   function page() {
     switch (route.page) {
       case "review":
-        return <ReviewPage solve={route.id === TEST_SOLVE_ID ? (testSolve ?? undefined) : solves.find((s) => s.id === route.id)} />;
+        return reviewPage(route.id);
       case "learn":
         return <LearnPage set={route.set} />;
       case "stats":

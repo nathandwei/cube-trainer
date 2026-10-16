@@ -7,6 +7,8 @@ import { ScrambleBand } from "@/app/components/ScrambleBand";
 import { formatSeconds } from "@/app/lib/format";
 import { toSolverFrame } from "@/app/lib/frame";
 import { addReps, newRepId, useReps } from "@/app/lib/learnStore";
+import { computeRatings, type PartRating } from "@/app/lib/ratings";
+import { useSolves } from "@/app/lib/store";
 import { ConnectSheet } from "@/app/smartcube/ConnectSheet";
 import { shortCubeName, smartCube, useSmartCube } from "@/app/smartcube/connection";
 import { ScrambleProgress } from "@/app/smartcube/ScrambleProgress";
@@ -30,8 +32,7 @@ import { bestSolutions, countTurns, isGoal, toneOf, verdictOf, type BestSolution
 import { BandFit } from "./cross/BandFit";
 import { useCubeScramble } from "./cross/cubeScramble";
 import { fromTextField, hasModifier, releaseFocus, sentenceCase, takeSpace, useFrameClock } from "./cross/drill";
-import { comfortableLength, lengthAround } from "./cross/ladder";
-import { crossRating, extraMoves, type CrossRating, type CrossVariant } from "./cross/rating";
+import { comfortableLength, extraMoves, lengthAround, type CrossVariant } from "./cross/ladder";
 import { simulateAttempt } from "./cross/simulate";
 import "./drills.css";
 
@@ -96,7 +97,8 @@ function buildRep(variant: CrossVariant, setup: Setup, outcome: Outcome, best: B
 }
 
 /**
- * The cross and xcross trainer, for a smart cube. The page holds his rating, the last result and his recent attempts;
+ * The cross and xcross trainer, for a smart cube. The page holds his cross rating (from solves: drills never move a
+ * rating, his ruling), the last result and his recent attempts;
  * an attempt runs full page. He scrambles to the band, then plans untimed for as long as he likes once the cube
  * matches; the clock runs from his first turn until the cross (plus any pair, for an xcross) is done, and his moves are
  * set against the best solutions. Without a cube, Start opens the connect sheet; Test plays a pretend attempt (kept on
@@ -114,8 +116,8 @@ function CrossDrillPage({ variant }: Props) {
     () => [...allReps.filter((rep): rep is CrossRep => rep.kind === "cross" && rep.item === variant), ...testReps].sort((a, b) => a.createdAt - b.createdAt),
     [allReps, testReps, variant],
   );
-  // Test attempts show in the history but never move the rating, or the next real scramble's difficulty with it.
-  const rating = useMemo(() => crossRating(reps.filter((rep) => rep.test !== true)), [reps]);
+  const solves = useSolves();
+  const rating = useMemo(() => computeRatings(solves).cross, [solves]);
   const link = useSmartCube();
   const connected = link.status === "connected";
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -124,7 +126,7 @@ function CrossDrillPage({ variant }: Props) {
   const [result, setResult] = useState<Result | null>(null);
   const upcoming = useRef<Promise<Prepared> | null>(null);
   const attempts = useRef(0);
-  const comfortable = comfortableLength(rating?.rating ?? null, variant);
+  const comfortable = comfortableLength(reps, variant);
 
   const prefetch = useCallback(() => {
     const pending = prepare(variant, lengthAround(comfortable, variant, rng), rng);
@@ -245,10 +247,11 @@ function CrossDrillPage({ variant }: Props) {
   );
 }
 
-function RatingTag({ rating }: { rating: CrossRating | null }) {
+/** His cross rating, read-only here: it moves with his solves, never with drill attempts. */
+function RatingTag({ rating }: { rating: PartRating | null }) {
   const delta = rating ? Math.round(rating.delta) : 0;
   return (
-    <div className="drill-rating" aria-label="Rating">
+    <div className="drill-rating" aria-label="Cross rating">
       <span className="value">{rating ? Math.round(rating.rating) : "–"}</span>
       {delta !== 0 && <span className={`delta ${delta > 0 ? "up" : "down"}`}>{delta > 0 ? `↑${delta}` : `↓${-delta}`}</span>}
     </div>

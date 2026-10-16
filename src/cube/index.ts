@@ -24,12 +24,15 @@ export { FrameTracker, parseRotation, splitMoves, type FrameStep } from "./frame
 export { ROTATION_MERGE_MS, SLICE_PAIR_MS, countDisplayTurns, humanize, type DisplayToken } from "./notation";
 export { isCrossSolved, isSlotSolved, solvedSlots, SLOTS } from "./pieces";
 export {
+  MAX_ENUMERATE_LENGTH,
   MAX_PAIR_DEPTH,
   crossDistance,
+  enumerateSlots,
   solveCross,
   solvePair,
   solveSlots,
   solveXCross,
+  type EnumerateOptions,
   type SearchOptions,
   type StepSolution,
   type XCrossSolution,
@@ -74,6 +77,17 @@ export {
   type CaseSet,
   type CaseSetId,
 } from "./cases";
+export { mirrorAlg } from "./mirror";
+export {
+  F2L_SEARCH,
+  algOptions,
+  mirrorCaseId,
+  splitLeadingAuf,
+  caseArrows, finishingAuf, playback, viewAuf, viewState, type CaseArrow,
+  type AlgOption,
+  type AlgSource,
+  type AufSplit,
+} from "./options";
 export {
   MAX_CROSS_MOVES,
   MAX_XCROSS_MOVES,

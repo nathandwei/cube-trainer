@@ -1,3 +1,4 @@
+import { pauseMs } from "@/app/lib/review";
 import type { SolveRecord, Stage } from "@/cube/types";
 
 // Scale: 1000 = a 30 s solver, and every +100 is 10% faster (18 s ≈ 1485, 15 s ≈ 1658, 12 s ≈ 1870,
@@ -13,6 +14,19 @@ const PAIR_SHARE = PART_SHARE.f2l / 4;
 
 export type Part = keyof typeof PART_SHARE;
 export const PARTS: readonly Part[] = ["cross", "f2l", "ll"];
+
+/**
+ * Lookahead: the time a solve spends stopped (gaps over PAUSE_MS, as in the review's flow), read on the same scale
+ * as if pauses were this share of a typical solve. So pausing like a typical solver of his speed puts it level with
+ * the part ratings; fast turning with long stops puts it below them. The share is a starting guess to check against
+ * his own solves.
+ */
+const PAUSE_SHARE = 0.3;
+/** No solve is pause-free in the rating's eyes: keeps a perfectly smooth solve from scoring infinity. */
+const MIN_PAUSE_MS = 300;
+
+export type RatingKey = Part | "lookahead";
+export const RATING_KEYS: readonly RatingKey[] = ["cross", "f2l", "ll", "lookahead"];
 
 /** Every solve moves the rating; the first ones move it a lot, later ones less (like a provisional rating). */
 const MIN_STEP = 0.04;
@@ -49,7 +63,13 @@ export function partPerformance(part: Part, ms: number): number {
 }
 
 export type PartRating = { rating: number; delta: number; solves: number };
-export type Ratings = Record<Part, PartRating | null>;
+export type Ratings = Record<RatingKey, PartRating | null>;
+
+/** The lookahead performance of one rated solve (see PAUSE_SHARE), or null for a solve that doesn't rate. */
+export function lookaheadPerformance(solve: SolveRecord): number | null {
+  if (!performances(solve)) return null;
+  return ratingForMs(Math.max(MIN_PAUSE_MS, pauseMs(solve.moves)) / PAUSE_SHARE);
+}
 
 /**
  * What one solve says about each part, on the rating scale: each part from its own stage times. Only smart-cube
@@ -74,11 +94,13 @@ function advance(previous: PartRating | null, performance: number): PartRating {
 
 /** Replays solves oldest first. Nothing decays with time away: only solves move a rating. */
 export function computeRatings(solvesNewestFirst: readonly SolveRecord[]): Ratings {
-  const ratings: Ratings = { cross: null, f2l: null, ll: null };
+  const ratings: Ratings = { cross: null, f2l: null, ll: null, lookahead: null };
   for (const solve of [...solvesNewestFirst].reverse()) {
     const scores = performances(solve);
     if (!scores) continue;
     for (const part of PARTS) ratings[part] = advance(ratings[part], scores[part]);
+    const lookahead = lookaheadPerformance(solve);
+    if (lookahead !== null) ratings.lookahead = advance(ratings.lookahead, lookahead);
   }
   return ratings;
 }
@@ -93,7 +115,7 @@ export type RatingStep = {
 
 /** The same replay as computeRatings, oldest first, keeping the ratings after every solve that moved them. */
 export function ratingHistory(solvesNewestFirst: readonly SolveRecord[]): RatingStep[] {
-  const ratings: Ratings = { cross: null, f2l: null, ll: null };
+  const ratings: Record<Part, PartRating | null> = { cross: null, f2l: null, ll: null };
   const steps: RatingStep[] = [];
   for (const solve of [...solvesNewestFirst].reverse()) {
     const scores = performances(solve);

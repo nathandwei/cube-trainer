@@ -1,9 +1,9 @@
 // A pretend slow solve for the Test button: a human-like solve (the demo generator's) re-timed to the beat, with a
 // few pauses put in, so the drill can be tried without a smart cube.
 
-import { generateDemoSolve, type Rng } from "@/cube";
+import { generateDemoSolve, ROTATION_MERGE_MS, type Rng } from "@/cube";
 import { uniform } from "@/cube/random";
-import type { TimedMove } from "@/cube/types";
+import type { RotationEvent, TimedMove } from "@/cube/types";
 import { beatMs } from "./pauses";
 
 /** The two turns of a slice arrive this close together; they stay that way. */
@@ -33,8 +33,25 @@ export function paceToBeat(moves: readonly TimedMove[], bpm: number, pauses: num
   });
 }
 
-/** A whole slow solve of `scramble` at `bpm`, as a smart cube would report its turns. */
-export function simulateSolve(scramble: string, bpm: number, pauses: number, rng: Rng): TimedMove[] {
-  const { moves } = generateDemoSolve(scramble, Math.floor(rng() * 100_000));
-  return paceToBeat(moves, bpm, pauses, rng);
+/**
+ * The solver's whole-cube rotations moved onto the re-timed turns. A rotation that came right with its turn (the
+ * core turning in a slice or wide move) keeps that small offset, so M2 and r still read as one move; a free rotation
+ * (a regrip between moves) lands halfway through its gap, as a hand would do it. One before the first turn is at 0.
+ */
+export function retimeRotations(rotations: readonly RotationEvent[], original: readonly TimedMove[], paced: readonly TimedMove[]): RotationEvent[] {
+  return rotations.map((event) => {
+    const before = paced[event.after - 1];
+    const after = paced[event.after];
+    if (!before) return { ...event, t: 0 };
+    const offset = event.t - (original[event.after - 1]?.t ?? event.t);
+    if (offset >= 0 && offset <= ROTATION_MERGE_MS) return { ...event, t: before.t + offset };
+    return { ...event, t: !after ? before.t + 1 : Math.round((before.t + after.t) / 2) };
+  });
+}
+
+/** A whole slow solve of `scramble` at `bpm`: its turns as a smart cube would report them, and the rotations. */
+export function simulateSolve(scramble: string, bpm: number, pauses: number, rng: Rng): { moves: TimedMove[]; rotations: RotationEvent[] } {
+  const demo = generateDemoSolve(scramble, Math.floor(rng() * 100_000));
+  const moves = paceToBeat(demo.moves, bpm, pauses, rng);
+  return { moves, rotations: retimeRotations(demo.rotations, demo.moves, moves) };
 }

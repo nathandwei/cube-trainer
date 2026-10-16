@@ -290,6 +290,19 @@
   color: var(--muted);
 }
 
+/* A line not on the cube yet reads as text; clicking it puts it on the cube. */
+.rv-line-show {
+  text-align: left;
+}
+
+.rv-line-show:hover {
+  color: var(--accent);
+}
+
+.rv-line.shown .rv-line-label {
+  color: var(--accent);
+}
+
 /* His own line is the reference; the best lines are what to look at. */
 .rv-line.yours .rv-line-moves {
   color: var(--muted);

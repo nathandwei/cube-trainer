@@ -10,7 +10,7 @@ import {
   type CubeState,
 } from "@/cube";
 import type { Move, Slot } from "@/cube/types";
-import type { CrossVariant } from "./rating";
+import type { CrossVariant } from "./ladder";
 
 const AXIS: Readonly<Record<string, number>> = { U: 0, D: 0, R: 1, L: 1, F: 2, B: 2 };
 const FACE_ORDER = "URFDLB";

@@ -1,19 +1,23 @@
 import { randomScrambleForEvent } from "cubing/scramble";
-import { Minus, Play, Plus, Volume2, VolumeX } from "lucide-react";
+import { Minus, Play, Plus, Search, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CubeStatus } from "@/app/components/CubeStatus";
 import { CubeView, type CubeHandle } from "@/app/components/CubeView";
 import { IconButton } from "@/app/components/IconButton";
 import { ScrambleBand } from "@/app/components/ScrambleBand";
+import { displayTokens } from "@/app/lib/display";
 import { formatMs } from "@/app/lib/format";
 import { toSolverFrame } from "@/app/lib/frame";
 import { addReps, newRepId, useReps } from "@/app/lib/learnStore";
+import { navigate } from "@/app/lib/router";
+import { addReviewSolve } from "@/app/lib/store";
 import { ConnectSheet } from "@/app/smartcube/ConnectSheet";
 import { shortCubeName, smartCube, useSmartCube } from "@/app/smartcube/connection";
 import { ScrambleProgress } from "@/app/smartcube/ScrambleProgress";
+import type { FinishedSolve } from "@/app/smartcube/session";
 import "@/app/smartcube/smartcube.css";
-import { applyAlg, createRng, isSolved, scrambledState, splitMoves, type CubeState } from "@/cube";
-import type { Move } from "@/cube/types";
+import { analyzeSolve, applyAlg, createRng, isSolved, scrambledState, splitMoves, type CubeState } from "@/cube";
+import type { Move, RotationEvent, SolveAnalysis, SolveRecord, TimedMove } from "@/cube/types";
 import type { LookaheadRep } from "@/shared/learn";
 import { countTurns } from "./cross/attempt";
 import { BandFit } from "./cross/BandFit";
@@ -38,14 +42,61 @@ const TEST_PAUSES = 2;
 type Setup = { key: number; scramble: string; bpm: number; test: boolean };
 type Running = { key: number; setup: Setup | null; error: string | null };
 
+/** The solve itself, for the review: turns timed from the first one, the whole-cube rotations, the breakdown. */
+type Recorded = { moves: TimedMove[]; rotations: RotationEvent[]; analysis?: SolveAnalysis };
+
 type Outcome = {
   /** Every reported turn, host ms. */
   times: number[];
   solveMs: number;
   moveCount: number;
+  solve: Recorded;
 };
 
-type Result = { rep: LookaheadRep; pauses: Gap[]; times: number[]; solveMs: number; moveCount: number; nextBpm: number };
+type Result = { rep: LookaheadRep; pauses: Gap[]; times: number[]; solveMs: number; moveCount: number; nextBpm: number; solve: SolveRecord };
+
+const REVIEW_BACK = "/learn/lookahead";
+/** How long a finished run waits for the cube session's solve (it settles ~300 ms after the last turn). */
+const SESSION_WAIT_MS = 900;
+/** Reps over this (the server refuses 8 KiB) are saved without their solve, so the bpm history is never lost. */
+const MAX_REP_JSON = 7000;
+
+function analysisOf(scramble: string, moves: readonly TimedMove[]): SolveAnalysis | undefined {
+  try {
+    return analyzeSolve(scramble, [...moves]);
+  } catch (error) {
+    // The solve still counts for the drill; only its review is missing.
+    console.error("Could not analyse the lookahead solve", error);
+    return undefined;
+  }
+}
+
+/** A lookahead solve as the review page reads solves (never added to the solves list or the averages). */
+function solveRecord(rep: LookaheadRep, recorded: Recorded): SolveRecord {
+  const analysis = recorded.analysis ?? analysisOf(String(rep.scramble ?? ""), recorded.moves);
+  return {
+    id: rep.id,
+    scramble: String(rep.scramble ?? ""),
+    moves: recorded.moves,
+    rotations: recorded.rotations,
+    totalMs: recorded.moves.at(-1)?.t ?? 0,
+    penalty: "none",
+    createdAt: rep.createdAt,
+    source: rep.test === true ? "demo" : "smartcube",
+    ...(analysis ? { analysis } : {}),
+  };
+}
+
+/** The solve saved with a rep, if it was (reps from before reviews existed have none). */
+function recordedOf(rep: LookaheadRep): Recorded | null {
+  if (!Array.isArray(rep.moves) || typeof rep.scramble !== "string") return null;
+  return { moves: rep.moves as TimedMove[], rotations: Array.isArray(rep.rotations) ? (rep.rotations as RotationEvent[]) : [] };
+}
+
+function openReview(solve: SolveRecord): void {
+  addReviewSolve(solve, REVIEW_BACK);
+  navigate(`/solve/${encodeURIComponent(solve.id)}`);
+}
 
 
 function readClick(): boolean {
@@ -164,17 +215,19 @@ export function LookaheadDrill() {
         moveCount: outcome.moveCount,
         scramble: setup.scramble,
         longestGapMs: Math.round(Math.max(0, ...outcome.times.slice(1).map((t, i) => t - outcome.times[i]!))),
+        moves: outcome.solve.moves,
+        rotations: outcome.solve.rotations,
         ...(setup.test ? { test: true } : {}),
       };
       const nextBpm = suggestBpm([...history, rep], setup.bpm);
       if (!setup.test) chooseBpm(nextBpm, true);
-      setResult({ rep, pauses, times: outcome.times, solveMs: outcome.solveMs, moveCount: outcome.moveCount, nextBpm });
+      setResult({ rep, pauses, times: outcome.times, solveMs: outcome.solveMs, moveCount: outcome.moveCount, nextBpm, solve: solveRecord(rep, outcome.solve) });
       if (setup.test) {
         setTestReps((current) => [...current, rep]);
         return;
       }
       try {
-        addReps([rep]);
+        addReps([JSON.stringify(rep).length > MAX_REP_JSON ? { ...rep, moves: undefined, rotations: undefined } : rep]);
       } catch (error) {
         console.error("Could not save the lookahead solve", error);
       }
@@ -287,6 +340,9 @@ type Live = {
   done: boolean;
 };
 
+/** Test playback: each token as he'd see it (rotations, slices), and the raw turns a smart cube would report for it. */
+type TestStep = { at: number; shown: string; turns: Move[] };
+
 type RunProps = {
   setup: Setup;
   click: boolean;
@@ -305,7 +361,17 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
   const [closedPauses, setClosedPauses] = useState(0);
   const [lastTurnAt, setLastTurnAt] = useState<number | null>(null);
   const [testProgress, setTestProgress] = useState(0);
-  const { view, readyAt } = useCubeScramble(setup.scramble, !setup.test);
+  // The real cube: the scramble tracker follows the whole solve (gyro rotations included) and hands it over at the end.
+  const finished = useRef<FinishedSolve | null>(null);
+  /** Set while the run has seen the cube solved and waits for the session's solve (it settles briefly first). */
+  const awaiting = useRef<(() => void) | null>(null);
+  const finishFromSession = useRef<(solve: FinishedSolve) => void>(() => undefined);
+  const keepSolve = useCallback((solve: FinishedSolve) => {
+    finished.current = solve;
+    finishFromSession.current(solve);
+  }, []);
+  const simulated = useRef<Recorded | null>(null);
+  const { view, readyAt } = useCubeScramble(setup.scramble, !setup.test, keepSolve);
   const now = useFrameClock(phase === "solve");
   const shownPhase: RunPhase = !setup.test && phase === "scramble" && readyAt !== null ? "ready" : phase;
   const threshold = pauseThresholdMs(setup.bpm);
@@ -315,9 +381,9 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
     return live.current;
   }, [setup.scramble]);
 
-  /** One reported turn at host time `t`. */
+  /** One reported turn at host time `t`; `animate` is off when the caller already showed it (a test slice or wide move). */
   const turn = useCallback(
-    (move: Move, t: number) => {
+    (move: Move, t: number, animate = true) => {
       const run = attempt();
       if (run.done) return;
       if (run.firstAt === null) {
@@ -329,17 +395,60 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
       run.times.push(t);
       if (previous !== undefined && t - previous > threshold) setClosedPauses((count) => count + 1);
       setLastTurnAt(t);
-      cube.current?.turn(move);
+      if (animate) cube.current?.turn(move);
       run.turns.push(move);
       run.state = applyAlg(run.state, [move]);
       if (!isSolved(run.state)) return;
       run.done = true;
       setStoppedAt(t);
       setPhase("done");
-      onDone({ times: [...run.times], solveMs: t - run.firstAt, moveCount: countTurns(run.turns) });
+      const firstAt = run.firstAt;
+      const outcome = (recorded: Recorded) => ({ times: [...run.times], solveMs: t - firstAt, moveCount: countTurns(run.turns), solve: recorded });
+      if (simulated.current) {
+        onDone(outcome(simulated.current));
+        return;
+      }
+      // The session hands over the full solve (turns, rotations, analysis) once it settles; if it never does, the
+      // turns seen here still make a reviewable solve.
+      const fallback: Recorded = { moves: run.turns.map((m, i) => ({ move: m, t: Math.round((run.times[i] ?? firstAt) - firstAt) })), rotations: [] };
+      const fromSession = (solve: FinishedSolve): Recorded => ({ moves: solve.moves, rotations: solve.rotations, analysis: solve.analysis });
+      if (finished.current) {
+        onDone(outcome(fromSession(finished.current)));
+        return;
+      }
+      const timer = window.setTimeout(() => {
+        awaiting.current = null;
+        onDone(outcome(fallback));
+      }, SESSION_WAIT_MS);
+      awaiting.current = () => {
+        window.clearTimeout(timer);
+        awaiting.current = null;
+        onDone(outcome(finished.current ? fromSession(finished.current) : fallback));
+      };
     },
     [attempt, onDone, threshold],
   );
+
+  // The session saw the cube solved: hand its solve to a run that's waiting for it, or finish a run that missed a turn
+  // (a state report can fix a lost turn for the session; the run's replayed turns never read solved then).
+  useEffect(() => {
+    finishFromSession.current = (solve) => {
+      if (awaiting.current) {
+        awaiting.current();
+        return;
+      }
+      const run = live.current;
+      if (!run || run.done || run.firstAt === null) return;
+      run.done = true;
+      const end = run.firstAt + solve.totalMs;
+      setStoppedAt(end);
+      setPhase("done");
+      onDone({ times: [...run.times], solveMs: solve.totalMs, moveCount: countTurns(solve.moves.map((m) => m.move)), solve: { moves: solve.moves, rotations: solve.rotations, analysis: solve.analysis } });
+    };
+  }, [onDone]);
+
+  // Leaving while the run waits for the session still saves the solve, with what it has.
+  useEffect(() => () => awaiting.current?.(), []);
 
   // The latest `turn` for listeners and timers set up once per attempt.
   const turnNow = useRef(turn);
@@ -381,6 +490,13 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
     const later = (ms: number, run: () => void) => timers.push(window.setTimeout(run, ms));
     const scrambleMoves = splitMoves(setup.scramble);
     const solve = simulateSolve(setup.scramble, setup.bpm, TEST_PAUSES, createRng(setup.key * 7919 + (Date.now() % 100_000)));
+    simulated.current = { moves: solve.moves, rotations: solve.rotations };
+    // Shown the way he'd see it: rotations turn the whole cube, and an M2 is the middle slice, not R2 L2.
+    const steps: TestStep[] = displayTokens(solve, undefined).map((token) => ({
+      at: token.t,
+      shown: token.text,
+      turns: solve.moves.slice(token.start, token.end).map((m) => m.move),
+    }));
     scrambleMoves.forEach((move, i) =>
       later(i * TEST_SCRAMBLE_STEP_MS, () => {
         cube.current?.turn(toSolverFrame(move));
@@ -390,7 +506,13 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
     const readyAtMs = scrambleMoves.length * TEST_SCRAMBLE_STEP_MS + 300;
     later(readyAtMs, () => setPhase("ready"));
     const firstAt = readyAtMs + TEST_LOOK_MS;
-    solve.forEach(({ move, t }) => later(firstAt + t, () => turnNow.current(move, performance.now())));
+    steps.forEach(({ at, shown, turns }) =>
+      later(firstAt + at, () => {
+        cube.current?.turn(shown);
+        const now = performance.now();
+        turns.forEach((move) => turnNow.current(move, now, false));
+      }),
+    );
     return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [setup.bpm, setup.key, setup.scramble, setup.test]);
 
@@ -470,7 +592,7 @@ function Timeline({ times, pauses, endMs }: { times: readonly number[]; pauses: 
 }
 
 function LookaheadResult({ result }: { result: Result }) {
-  const { rep, pauses, times, solveMs, moveCount, nextBpm } = result;
+  const { rep, pauses, times, solveMs, moveCount, nextBpm, solve } = result;
   const change = nextBpm - rep.bpm;
   return (
     <section className="lookahead-result">
@@ -483,6 +605,7 @@ function LookaheadResult({ result }: { result: Result }) {
           Next {nextBpm} bpm
           {change !== 0 && <span className={`delta ${change > 0 ? "up" : "down"}`}>{change > 0 ? `↑${change}` : `↓${-change}`}</span>}
         </span>
+        {solve.analysis && <IconButton icon={Search} label="Review" variant="soft" className="lookahead-review" onClick={() => openReview(solve)} />}
       </div>
       <Timeline times={times} pauses={pauses} endMs={(times[0] ?? 0) + solveMs} />
     </section>
@@ -496,15 +619,19 @@ function LookaheadHistory({ reps }: { reps: readonly LookaheadRep[] }) {
       {reps
         .slice(-HISTORY_ROWS)
         .reverse()
-        .map((rep) => (
-          <li key={rep.id}>
-            <span className={`drill-dot tone-${toneOfPauses(rep.pauses)}`} />
-            <span className="moves">{rep.bpm} bpm</span>
-            <span className="time">{plural(rep.pauses, "pause")}</span>
-            <span className="verdict">{typeof rep.solveMs === "number" ? formatMs(rep.solveMs) : ""}</span>
-            <span className="note">{rep.test === true ? "Test" : ""}</span>
-          </li>
-        ))}
+        .map((rep) => {
+          const recorded = recordedOf(rep);
+          return (
+            <li key={rep.id}>
+              <span className={`drill-dot tone-${toneOfPauses(rep.pauses)}`} />
+              <span className="moves">{rep.bpm} bpm</span>
+              <span className="time">{plural(rep.pauses, "pause")}</span>
+              <span className="verdict">{typeof rep.solveMs === "number" ? formatMs(rep.solveMs) : ""}</span>
+              <span className="note">{rep.test === true ? "Test" : ""}</span>
+              {recorded && <IconButton icon={Search} label="Review" size="sm" className="row-review" onClick={() => openReview(solveRecord(rep, recorded))} />}
+            </li>
+          );
+        })}
     </ul>
   );
 }

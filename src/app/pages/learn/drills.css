@@ -581,6 +581,16 @@
   stroke-width: 10;
 }
 
+/* Reviewing a lookahead solve: beside the summary, and at the end of each history row. */
+.lookahead-summary .lookahead-review {
+  align-self: center;
+}
+
 .lookahead-rows li {
-  grid-template-columns: calc(12 * var(--u)) calc(110 * var(--u)) calc(120 * var(--u)) calc(110 * var(--u)) auto;
+  grid-template-columns: calc(12 * var(--u)) calc(96 * var(--u)) calc(84 * var(--u)) calc(150 * var(--u)) calc(60 * var(--u)) auto;
+}
+
+.lookahead-rows .row-review {
+  color: var(--muted);
+  justify-self: start;
 }

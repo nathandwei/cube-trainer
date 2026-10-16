@@ -1,58 +1,62 @@
 import { describe, expect, it } from "vitest";
 import { createRng } from "@/cube";
-import { chooseLength, comfortableLength, LADDER } from "./ladder";
+import type { CrossRep } from "@/shared/learn";
+import { comfortableLength, LADDER, lengthAround } from "./ladder";
+
+function rep(optimalMoves: number, moveCount: number, extra: Partial<CrossRep> = {}): CrossRep {
+  return { kind: "cross", id: "r", createdAt: 0, item: "cross", scramble: "", optimalMoves, moveCount, inspectionMs: 0, executionMs: 1000, ...extra };
+}
 
 describe("comfortableLength", () => {
   it.each([
-    { variant: "cross", rating: null, length: 5 },
-    { variant: "xcross", rating: null, length: 7 },
-    { variant: "cross", rating: 1600, length: 6 },
-    { variant: "cross", rating: 1649, length: 6 },
-    { variant: "cross", rating: 1651, length: 7 },
-    { variant: "cross", rating: 900, length: 3 },
-    { variant: "cross", rating: 2400, length: 8 },
-    { variant: "xcross", rating: 2400, length: 9 },
-    { variant: "xcross", rating: 1200, length: 4 },
-  ] as const)("$variant at $rating: $length", ({ variant, rating, length }) => {
-    expect(comfortableLength(rating, variant)).toBe(length);
+    { variant: "cross", reps: [], length: 5 },
+    { variant: "xcross", reps: [], length: 7 },
+    { variant: "cross", reps: [rep(5, 5), rep(5, 6)], length: 6 },
+    { variant: "cross", reps: [rep(5, 9), rep(5, 9)], length: 4 },
+    { variant: "cross", reps: [rep(5, 7)], length: 5 },
+    { variant: "cross", reps: Array.from({ length: 40 }, () => rep(6, 6)), length: LADDER.cross.max },
+    { variant: "cross", reps: Array.from({ length: 40 }, () => rep(6, 12)), length: LADDER.cross.min },
+  ] as const)("$variant after $reps.length attempts: $length", ({ variant, reps, length }) => {
+    expect(comfortableLength(reps, variant)).toBe(length);
+  });
+
+  it.each([{ retry: true }, { test: true }])("ignores %j attempts", (flags) => {
+    expect(comfortableLength([rep(5, 5, flags), rep(5, 5, flags), rep(5, 5, flags)], "cross")).toBe(5);
+  });
+
+  it("comes back down quickly after a run of misses", () => {
+    const climbed = Array.from({ length: 20 }, () => rep(6, 6));
+    const missed = Array.from({ length: 4 }, () => rep(8, 12));
+    expect(comfortableLength([...climbed, ...missed], "cross")).toBeLessThan(comfortableLength(climbed, "cross"));
   });
 });
 
-describe("chooseLength", () => {
+describe("lengthAround", () => {
   it.each([
     { roll: 0.1, length: 5 },
     { roll: 0.3, length: 7 },
     { roll: 0.5, length: 6 },
     { roll: 0.99, length: 6 },
-  ])("roll $roll at 1600: $length", ({ roll, length }) => {
-    expect(chooseLength(1600, "cross", () => roll)).toBe(length);
-  });
-
-  it.each([
-    { variant: "cross", rating: 2400, roll: 0.3, length: 8 },
-    { variant: "cross", rating: 800, roll: 0.1, length: 3 },
-  ] as const)("stays on the ladder: $variant at $rating", ({ variant, rating, roll, length }) => {
-    expect(chooseLength(rating, variant, () => roll)).toBe(length);
+  ])("roll $roll around 6: $length", ({ roll, length }) => {
+    expect(lengthAround(6, "cross", () => roll)).toBe(length);
   });
 
   it("is mostly the comfortable length and sometimes one either side", () => {
     const rng = createRng(7);
     const counts = new Map<number, number>();
     for (let i = 0; i < 2000; i++) {
-      const length = chooseLength(1600, "cross", rng);
+      const length = lengthAround(6, "cross", rng);
       counts.set(length, (counts.get(length) ?? 0) + 1);
     }
     expect([...counts.keys()].sort()).toEqual([5, 6, 7]);
     expect(counts.get(6)! / 2000).toBeGreaterThan(0.5);
-    expect(counts.get(5)! / 2000).toBeGreaterThan(0.12);
-    expect(counts.get(7)! / 2000).toBeGreaterThan(0.12);
   });
 
   it.each(["cross", "xcross"] as const)("never leaves the %s ladder", (variant) => {
     const rng = createRng(11);
-    for (const rating of [null, 0, 1000, 1500, 2000, 5000]) {
+    for (const comfortable of [LADDER[variant].min, LADDER[variant].max]) {
       for (let i = 0; i < 50; i++) {
-        const length = chooseLength(rating, variant, rng);
+        const length = lengthAround(comfortable, variant, rng);
         expect(length).toBeGreaterThanOrEqual(LADDER[variant].min);
         expect(length).toBeLessThanOrEqual(LADDER[variant].max);
       }

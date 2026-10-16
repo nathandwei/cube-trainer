@@ -21,6 +21,8 @@ export type StepSolution = { readonly moves: number; readonly solution: string }
 export type XCrossSolution = StepSolution & { slot: Slot };
 
 export const MAX_PAIR_DEPTH = 11;
+/** Longest sequences enumerateSlots lists. */
+export const MAX_ENUMERATE_LENGTH = 14;
 const NO_FACE = -10;
 
 // Skip a second turn of the same face, and order commuting opposite faces (U before D, R before L, F before B)
@@ -202,6 +204,16 @@ function allowedMoves({ faces, moves }: SearchOptions): readonly number[] {
   return allowed;
 }
 
+/** Writes the tracked pieces after move `m` from `states[base..]` into the next row of `states`. */
+function advance(layout: PieceLayout, states: Uint8Array, base: number, m: number): void {
+  const width = layout.kinds.length;
+  const row = m * PIECE_STATES;
+  for (let i = 0; i < width; i++) {
+    const table = layout.kinds[i] === 1 ? CORNER_MOVES : EDGE_MOVES;
+    states[base + width + i] = table[row + states[base + i]!]!;
+  }
+}
+
 function idaStar(layout: PieceLayout, spec: SearchSpec, options: SearchOptions): number[] | null {
   const maxDepth = options.maxDepth ?? MAX_PAIR_DEPTH;
   const moves = allowedMoves(options);
@@ -217,11 +229,7 @@ function idaStar(layout: PieceLayout, spec: SearchSpec, options: SearchOptions):
       const face = moveFace(m);
       if (isRedundant(face, prevFace)) continue;
       if (g === 0 && face === options.avoidFirstFace) continue;
-      const row = m * PIECE_STATES;
-      for (let i = 0; i < width; i++) {
-        const table = layout.kinds[i] === 1 ? CORNER_MOVES : EDGE_MOVES;
-        states[childBase + i] = table[row + states[base + i]!]!;
-      }
+      advance(layout, states, base, m);
       const limit = bound - g - 1;
       const h = evaluate(spec, states, childBase, limit);
       if (h > limit) continue;
@@ -238,6 +246,48 @@ function idaStar(layout: PieceLayout, spec: SearchSpec, options: SearchOptions):
     if (dfs(0, bound, NO_FACE)) return path;
   }
   return null;
+}
+
+// Every path of exactly `length` moves that ends at the goal without reaching it earlier, in move-list order.
+function allPaths(
+  layout: PieceLayout,
+  spec: SearchSpec,
+  moves: readonly number[],
+  length: number,
+  limit: number,
+): number[][] {
+  const width = layout.kinds.length;
+  const states = new Uint8Array((length + 1) * width);
+  states.set(layout.start);
+  const found: number[][] = [];
+  const path: number[] = [];
+
+  const dfs = (g: number, prevFace: number): void => {
+    const base = g * width;
+    const childBase = base + width;
+    const remaining = length - g - 1;
+    for (const m of moves) {
+      if (found.length >= limit) return;
+      const face = moveFace(m);
+      if (isRedundant(face, prevFace)) continue;
+      advance(layout, states, base, m);
+      const h = evaluate(spec, states, childBase, remaining);
+      if (h > remaining) continue;
+      // The exact tables make h = 0 mean solved: record a full-length path, and never extend past the goal.
+      if (h === 0) {
+        if (remaining === 0) found.push([...path, m]);
+        continue;
+      }
+      path.push(m);
+      dfs(g + 1, face);
+      path.pop();
+    }
+  };
+
+  const h0 = evaluate(spec, states, 0, length);
+  if (h0 === 0) return length === 0 ? [[]] : [];
+  if (h0 <= length) dfs(0, NO_FACE);
+  return found;
 }
 
 function toSolution(path: readonly number[]): StepSolution {
@@ -273,6 +323,37 @@ export function solveSlots(
   const all = [layout.crossTerm, ...slots.flatMap((slot) => layout.slotTerms(slot))];
   const path = idaStar(layout, { all, anyOf: [] }, options);
   return remember(key, path ? toSolution(path) : null);
+}
+
+export type EnumerateOptions = Pick<SearchOptions, "faces" | "moves"> & {
+  /** Stop after this many sequences (default 1000). */
+  limit?: number;
+};
+
+/**
+ * Every sequence of exactly `length` turns that solves the cross plus every slot in `targets` and `keep` without
+ * reaching that goal before its last turn, so none is a shorter solution padded with turns (nor one ending in a
+ * U turn when the U layer is not part of the goal). Sequences are canonical as in the other searches (no face turned
+ * twice in a row, commuting opposite faces in one order) and come in the order of the allowed moves.
+ */
+export function enumerateSlots(
+  state: CubeState,
+  targets: readonly Slot[],
+  keep: readonly Slot[],
+  length: number,
+  options: EnumerateOptions = {},
+): string[] {
+  if (!Number.isInteger(length) || length < 0 || length > MAX_ENUMERATE_LENGTH) {
+    throw new RangeError(`length must be an integer in 0..${MAX_ENUMERATE_LENGTH}: ${length}`);
+  }
+  const slots = SLOTS.filter((slot) => targets.includes(slot) || keep.includes(slot));
+  if (slots.length === 0) throw new Error("enumerateSlots needs at least one target slot");
+  const { limit = 1000, ...restrict } = options;
+  const layout = buildLayout(state, slots);
+  const all = [layout.crossTerm, ...slots.flatMap((slot) => layout.slotTerms(slot))];
+  return allPaths(layout, { all, anyOf: [] }, allowedMoves(restrict), length, limit).map(
+    (path) => toSolution(path).solution,
+  );
 }
 
 /** Optimal solution for one F2L pair that also keeps the cross and the `keep` slots solved (null beyond 11 turns). */

@@ -408,6 +408,17 @@ export function useTestSolve(): SolveRecord | null {
   return useSyncExternalStore(subscribe, () => testSolve);
 }
 
+/** Solves that aren't in the list (a lookahead drill's) but can be opened in the review, with where Back goes. */
+const reviewOnly = new Map<string, { solve: SolveRecord; back: string }>();
+
+export function addReviewSolve(solve: SolveRecord, back: string): void {
+  reviewOnly.set(solve.id, { solve, back });
+}
+
+export function reviewOnlySolve(id: string): { solve: SolveRecord; back: string } | undefined {
+  return reviewOnly.get(id);
+}
+
 export function newId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }

@@ -4,7 +4,7 @@ import type { TimedToken } from "@/app/lib/display";
 import { formatMs } from "@/app/lib/format";
 import { VERDICTS, type Moment, type Verdict } from "@/app/lib/review";
 import { sentenceCase } from "./model";
-import { StageLines, VerdictDot, type LineId, type Shown, type StageView, type ViewLine } from "./parts";
+import { StageLines, VerdictDot, type LineControls, type LineId, type Shown, type StageView, type ViewLine } from "./parts";
 
 type Props = {
   accuracy: number | null;
@@ -20,6 +20,7 @@ type Props = {
   shown: Shown;
   onToggle: (stage: number) => void;
   onPlay: (stage: number, line: LineId) => void;
+  lineControls: LineControls;
   onOpenStage: (stage: number) => void;
   onDrill: (id: string) => void;
   onStepThrough: () => void;
@@ -74,7 +75,7 @@ function Score({ label, value }: { label: string; value: number | null }) {
 }
 
 function MomentRow({ moment, ...props }: Props & { moment: Moment }) {
-  const { stages, tokens, linesFor, drillFor, open, shown, onToggle, onPlay, onOpenStage, onDrill } = props;
+  const { stages, tokens, linesFor, drillFor, open, shown, onToggle, onPlay, lineControls, onOpenStage, onDrill } = props;
   const stage = stages[moment.stageIndex];
   if (!stage) return null;
 
@@ -112,8 +113,9 @@ function MomentRow({ moment, ...props }: Props & { moment: Moment }) {
           <StageLines
             yours={tokens.slice(stage.span.start, stage.span.end).map((token, i) => ({ token, index: stage.span.start + i }))}
             lines={linesFor(moment.stageIndex)}
-            shownLine={shown?.stage === moment.stageIndex ? shown.line : null}
+            shown={shown?.stage === moment.stageIndex ? shown : null}
             onPlay={(line) => onPlay(moment.stageIndex, line)}
+            controls={lineControls}
           />
         </div>
       )}

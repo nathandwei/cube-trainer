@@ -5,7 +5,7 @@ import { MOVE_NAMES, applyAlg, type CubeState, type Rng } from "@/cube";
 import { randomInt, uniform } from "@/cube/random";
 import type { Move } from "@/cube/types";
 import { bestSolutions } from "./attempt";
-import type { CrossVariant } from "./rating";
+import type { CrossVariant } from "./ladder";
 
 export type SimulatedAttempt = {
   /** Untimed looking before the first turn. */

@@ -26,28 +26,32 @@ import type { SolveAnalysis, SolveRecord } from "@/cube/types";
 import "@/app/review/review.css";
 
 const SPEEDS = [0.5, 1, 2];
+/** A line he plays (show best, or his own) goes at this pace: slow enough to follow every move. */
+const LINE_STEP_MS = 800;
+const LINE_TEMPO = 1.4;
 
-type Props = { solve: SolveRecord | undefined };
+/** `back`: where Back and Escape go (the timer unless the solve came from somewhere else, like the lookahead drill). */
+type Props = { solve: SolveRecord | undefined; back?: string };
 
-export function ReviewPage({ solve }: Props) {
+export function ReviewPage({ solve, back = "/" }: Props) {
   if (!solve?.analysis || solve.moves.length === 0) {
     return (
       <div className="timer">
         <p className="empty">–</p>
-        <button className="pill" onClick={() => navigate("/")}>
-          Timer
+        <button className="pill" onClick={() => navigate(back)}>
+          Back
         </button>
       </div>
     );
   }
-  return <Review key={solve.id} solve={solve} analysis={solve.analysis} />;
+  return <Review key={solve.id} solve={solve} analysis={solve.analysis} back={back} />;
 }
 
 function setupAfter(solve: SolveRecord, tokens: readonly TimedToken[], count: number): string {
   return [solve.scramble, "z2", ...tokens.slice(0, count).map((t) => t.text)].join(" ");
 }
 
-function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalysis }) {
+function Review({ solve, analysis, back }: { solve: SolveRecord; analysis: SolveAnalysis; back: string }) {
   const tokens = useMemo(() => displayTokens(solve, analysis), [solve, analysis]);
   const spans = useMemo(() => stageSpans(tokens, analysis.stages), [tokens, analysis]);
   const stages = useMemo<StageView[]>(
@@ -99,8 +103,15 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [open, setOpen] = useState<number | null>(null);
-  const [shown, setShown] = useState<Shown>(null);
+  const [shown, setShownState] = useState<Shown>(null);
+  // The line timers and the key handler read the line through this, so a key between ticks never sees an old `at`.
+  const shownRef = useRef<Shown>(null);
+  const setShown = useCallback((next: Shown) => {
+    shownRef.current = next;
+    setShownState(next);
+  }, []);
   const frame = useRef<number | undefined>(undefined);
+  const lineTimers = useRef<number[]>([]);
   const speedRef = useRef(speed);
   // True while the cube acts out a line from a stage's start instead of showing the solve after `played` tokens.
   const offTrack = useRef(false);
@@ -108,11 +119,17 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
   const focus = focusedStage(spans, played, pinned);
   const current = currentToken(spans, focus, played);
 
+  const stopLine = useCallback(() => {
+    lineTimers.current.forEach((timer) => window.clearTimeout(timer));
+    lineTimers.current = [];
+  }, []);
+
   const stopPlayback = useCallback(() => {
     if (frame.current !== undefined) cancelAnimationFrame(frame.current);
     frame.current = undefined;
     setPlaying(false);
-  }, []);
+    stopLine();
+  }, [stopLine]);
 
   /** The solve after `count` tokens, without animating; `pin` keeps a stage on show at its start. */
   const snapTo = useCallback(
@@ -126,7 +143,7 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
       cube.current?.setTempo(2);
       cube.current?.show(setupAfter(solve, tokens, clamped));
     },
-    [solve, tokens, stopPlayback],
+    [setShown, solve, tokens, stopPlayback],
   );
 
   const goTo = useCallback((target: Target) => snapTo(target.played, target.stage), [snapTo]);
@@ -152,7 +169,7 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
       setPinned(null);
       setShown(null);
     },
-    [played, solve, tokens, stopPlayback],
+    [played, setShown, solve, tokens, stopPlayback],
   );
 
   const play = useCallback(() => {
@@ -184,42 +201,107 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
       frame.current = requestAnimationFrame(tick);
     };
     frame.current = requestAnimationFrame(tick);
-  }, [played, solve, tokens, stopPlayback]);
+  }, [played, setShown, solve, tokens, stopPlayback]);
 
-  /** Acts out a line on the cube from the stage's start: his own moves or one of the best lines. */
-  const playLine = useCallback(
-    (index: number, line: LineId) => {
+  /** A stage's line as moves: his own (as he saw them) or one of the best lines. */
+  const lineMoves = useCallback(
+    (index: number, line: LineId): string[] | null => {
       const span = spans[index];
-      if (!span) return;
-      const moves =
-        line === "yours"
-          ? tokens
-              .slice(span.start, span.end)
-              .map((t) => t.text)
-              .join(" ")
-          : linesFor(index)[line]?.moves;
-      if (moves === undefined) return;
+      if (!span) return null;
+      const text = line === "yours" ? tokens.slice(span.start, span.end).map((t) => t.text).join(" ") : linesFor(index)[line]?.moves;
+      return text === undefined ? null : text.split(/\s+/).filter(Boolean);
+    },
+    [linesFor, spans, tokens],
+  );
+
+  /** The cube at a stage's start with the first `at` moves of a line done. */
+  const showLineAt = useCallback(
+    (index: number, line: LineId, at: number) => {
+      const span = spans[index];
+      const moves = lineMoves(index, line);
+      if (!span || !moves) return;
       stopPlayback();
+      const clamped = Math.max(0, Math.min(moves.length, at));
       setPlayed(span.start);
       setPinned(index);
-      setShown({ stage: index, line });
+      setShown({ stage: index, line, at: clamped, playing: false });
       offTrack.current = true;
-      cube.current?.setTempo(2);
-      cube.current?.play(setupAfter(solve, tokens, span.start), moves);
+      cube.current?.setTempo(LINE_TEMPO);
+      cube.current?.show([setupAfter(solve, tokens, span.start), ...moves.slice(0, clamped)].join(" "));
     },
-    [linesFor, solve, spans, tokens, stopPlayback],
+    [lineMoves, setShown, solve, spans, stopPlayback, tokens],
   );
+
+  /** Puts a line on the cube at its start: he steps through it or presses play; it doesn't run by itself. */
+  const playLine = useCallback((index: number, line: LineId) => showLineAt(index, line, 0), [showLineAt]);
+
+  const stepLine = useCallback(
+    (direction: 1 | -1) => {
+      const shown = shownRef.current;
+      if (!shown) return;
+      const moves = lineMoves(shown.stage, shown.line);
+      const next = shown.at + direction;
+      if (!moves || next < 0 || next > moves.length) return;
+      stopLine();
+      cube.current?.setTempo(LINE_TEMPO);
+      if (direction === 1) cube.current?.turn(moves[shown.at] ?? "");
+      else cube.current?.unturn(moves[next] ?? "");
+      setShown({ ...shown, at: next, playing: false });
+    },
+    [lineMoves, setShown, stopLine],
+  );
+
+  const toggleLinePlay = useCallback(() => {
+    const shown = shownRef.current;
+    if (!shown) return;
+    if (shown.playing) {
+      stopLine();
+      setShown({ ...shown, playing: false });
+      return;
+    }
+    const moves = lineMoves(shown.stage, shown.line);
+    if (!moves || moves.length === 0) return;
+    // From the end, play it again from the start.
+    const from = shown.at >= moves.length ? 0 : shown.at;
+    if (from !== shown.at) showLineAt(shown.stage, shown.line, 0);
+    const { stage, line } = shown;
+    setShown({ stage, line, at: from, playing: true });
+    cube.current?.setTempo(LINE_TEMPO);
+    lineTimers.current = moves.slice(from).map((move, i) =>
+      window.setTimeout(
+        () => {
+          cube.current?.turn(move);
+          const at = from + i + 1;
+          setShown({ stage, line, at, playing: at < moves.length });
+        },
+        (i === 0 ? 150 : 0) + i * LINE_STEP_MS,
+      ),
+    );
+  }, [lineMoves, setShown, showLineAt, stopLine]);
+
+  const lineControls = useMemo(
+    () => ({
+      onSeek: (at: number) => shown && showLineAt(shown.stage, shown.line, at),
+      onStep: stepLine,
+      onTogglePlay: toggleLinePlay,
+    }),
+    [showLineAt, shown, stepLine, toggleLinePlay],
+  );
+
+  useEffect(() => stopLine, [stopLine]);
 
   const toggleBest = useCallback(
     (index: number) => {
       if (open === index) {
         setOpen(null);
+        // Its line comes off the cube too, back to the solve where it was.
+        if (shown?.stage === index) snapTo(played, pinned);
         return;
       }
       setOpen(index);
       playLine(index, linesFor(index).length > 0 ? 0 : "yours");
     },
-    [linesFor, open, playLine],
+    [linesFor, open, pinned, playLine, played, shown, snapTo],
   );
 
   const openStepper = useCallback(
@@ -244,6 +326,14 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
         Home: () => snapTo(0, null),
         End: () => snapTo(tokens.length, null),
       };
+      if (shownRef.current && (event.key === "ArrowRight" || event.key === "ArrowLeft" || event.code === "Space")) {
+        event.preventDefault();
+        if (event.repeat) return;
+        if (event.code === "Space") toggleLinePlay();
+        else stepLine(event.key === "ArrowRight" ? 1 : -1);
+        event.preventDefault();
+        return;
+      }
       const move = moves[event.key];
       if (move) {
         // The position is shown in the stepper, so moving through the solve opens it.
@@ -253,14 +343,16 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
         if (playing) stopPlayback();
         else play();
       } else if (event.key === "Escape") {
-        if (mode === "stepper") setMode("report");
-        else navigate("/");
+        // Off a line first, then out of the stepper, then out of the review.
+        if (shown) snapTo(played, pinned);
+        else if (mode === "stepper") setMode("report");
+        else navigate(back);
       } else return;
       event.preventDefault();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [mode, nextStage, play, playing, previousStage, snapTo, step, stopPlayback, tokens.length]);
+  }, [back, mode, nextStage, pinned, play, played, playing, previousStage, shown, snapTo, step, stepLine, stopPlayback, toggleLinePlay, tokens.length]);
 
   function cycleSpeed() {
     const next = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length] ?? 1;
@@ -273,7 +365,7 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
     <div className="rv">
       <section className="rv-replay">
         <div className="rv-back">
-          <IconButton icon={ArrowLeft} label="Back" size="lg" onClick={() => navigate("/")} />
+          <IconButton icon={ArrowLeft} label="Back" size="lg" onClick={() => navigate(back)} />
         </div>
         <div className="rv-time">{formatMs(solve.totalMs)}</div>
         <p className="rv-scramble" aria-label="Scramble">
@@ -304,6 +396,7 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
             shown={shown}
             onToggle={toggleBest}
             onPlay={playLine}
+            lineControls={lineControls}
             onOpenStage={openStepper}
             onDrill={(id) => navigate(`/learn/${encodeURIComponent(id)}`)}
             onStepThrough={() => openStepper(open ?? 0)}
@@ -320,6 +413,7 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
             onStage={(index) => goTo({ stage: index, played: spans[index]?.start ?? 0 })}
             onToken={(index) => snapTo(index + 1, null)}
             onPlay={playLine}
+            lineControls={lineControls}
             onPreviousStage={previousStage}
             onPreviousMove={() => step(-1)}
             onNextMove={() => step(1)}

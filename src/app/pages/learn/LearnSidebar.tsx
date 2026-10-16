@@ -1,8 +1,11 @@
+import { Check } from "lucide-react";
+import { useMemo } from "react";
 import { navigate } from "@/app/lib/router";
 import { updateLearnSettings, useLearnSettings, useReps } from "@/app/lib/learnStore";
-import type { CrossRep, LookaheadRep, Rep } from "@/shared/learn";
-import { crossRating } from "./cross/rating";
-import { itemLabel, LEARN_ITEMS, learnItem } from "./items";
+import { computeRatings } from "@/app/lib/ratings";
+import { useSolves } from "@/app/lib/store";
+import type { LookaheadRep, Rep } from "@/shared/learn";
+import { itemLabel, LEARN_ITEMS, learnItem, type LearnItem } from "./items";
 import { currentBpm } from "./lookahead/storage";
 
 function count(id: string, algs: Record<string, string>): string {
@@ -12,60 +15,65 @@ function count(id: string, algs: Record<string, string>): string {
   return `${learned}/${item.cases.length}`;
 }
 
-/** The drills' own numbers, as in round-9 08: the cross ratings and the lookahead bpm. */
-function drillValues(reps: readonly Rep[]): Record<string, string> {
-  const crossReps = reps.filter((rep): rep is CrossRep => rep.kind === "cross");
-  const rating = (variant: string) => {
-    const found = crossRating(crossReps.filter((rep) => rep.item === variant));
-    return found ? String(Math.round(found.rating)) : "";
-  };
+/** The drills' numbers, as in round-9 08: his cross rating (from solves; drills never move it) and the bpm. */
+function drillValues(reps: readonly Rep[], crossRating: number | null): Record<string, string> {
+  const rating = crossRating === null ? "" : String(Math.round(crossRating));
   const lookahead = reps.filter((rep): rep is LookaheadRep => rep.kind === "lookahead");
-  return { cross: rating("cross"), xcross: rating("xcross"), lookahead: `${currentBpm(lookahead)} bpm` };
+  return { cross: rating, xcross: rating, lookahead: `${currentBpm(lookahead)} bpm` };
 }
 
-function ItemList({ ids, selected, value }: { ids: readonly string[]; selected?: string; value: (id: string) => string }) {
+/** Learning it or not: unchecking only takes it off the list; its algs and reps stay, so checking it brings them back. */
+function setLearning(id: string, on: boolean): void {
+  updateLearnSettings((s) => ({ ...s, items: on ? [...s.items.filter((item) => item !== id), id] : s.items.filter((item) => item !== id) }));
+}
+
+type RowProps = { item: LearnItem; learning: boolean; selected: boolean; value: string };
+
+function Row({ item, learning, selected, value }: RowProps) {
+  const label = itemLabel(item.id);
   return (
-    <ul className="learn-items">
-      {ids.map((id) => (
-        <li key={id} className={id === selected ? "selected" : ""}>
-          <button onClick={() => navigate(`/learn/${encodeURIComponent(id)}`)}>
-            <span>{itemLabel(id)}</span>
-            <span className="count">{value(id)}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <li className={[selected ? "selected" : "", learning ? "" : "off"].filter(Boolean).join(" ")}>
+      <button
+        role="checkbox"
+        aria-checked={learning}
+        aria-label={`Learning ${label}`}
+        className="learn-check"
+        onClick={() => setLearning(item.id, !learning)}
+      >
+        {learning && <Check strokeWidth={2.5} aria-hidden="true" />}
+      </button>
+      <button className="learn-open" onClick={() => navigate(`/learn/${encodeURIComponent(item.id)}`)}>
+        <span>{label}</span>
+        <span className="count">{learning ? value : ""}</span>
+      </button>
+    </li>
   );
 }
 
-/** What he's learning: case sets, then the skill drills, then everything else he could add (round-9 08). */
+/**
+ * Everything he could learn, case sets then drills (round-9 08), each with a check for whether he's learning it.
+ * Picking a row opens it either way.
+ */
 export function LearnSidebar({ set }: { set?: string }) {
   const settings = useLearnSettings();
   const reps = useReps();
+  const solves = useSolves();
+  const crossRating = useMemo(() => computeRatings(solves).cross?.rating ?? null, [solves]);
   // Not memoised: the bpm comes from what he last set on the lookahead page, not only from reps.
-  const values = drillValues(reps);
-  const added = settings.items;
-  const selected = set ?? added[0];
-  const sets = added.filter((id) => learnItem(id)?.kind === "cases");
-  const drills = added.filter((id) => learnItem(id) !== undefined && learnItem(id)?.kind !== "cases");
-  const available = LEARN_ITEMS.filter((item) => !added.includes(item.id));
+  const values = drillValues(reps, crossRating);
+  const selected = set ?? settings.items[0];
+  const valueOf = (item: LearnItem) => (item.kind === "cases" ? count(item.id, settings.algs) : (values[item.id] ?? ""));
+  const groups = [LEARN_ITEMS.filter((item) => item.kind === "cases"), LEARN_ITEMS.filter((item) => item.kind !== "cases")];
 
   return (
     <div className="learn-sidebar">
-      {sets.length > 0 && <ItemList ids={sets} selected={selected} value={(id) => count(id, settings.algs)} />}
-      {drills.length > 0 && <ItemList ids={drills} selected={selected} value={(id) => values[id] ?? ""} />}
-      {available.length > 0 && (
-        <div className="add-more">
-          <span className="label">Add</span>
-          <ul>
-            {available.map((item) => (
-              <li key={item.id}>
-                <button onClick={() => updateLearnSettings((s) => ({ ...s, items: [...s.items, item.id] }))}>+ {itemLabel(item.id)}</button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {groups.map((items, i) => (
+        <ul key={i} className="learn-items">
+          {items.map((item) => (
+            <Row key={item.id} item={item} learning={settings.items.includes(item.id)} selected={item.id === selected} value={valueOf(item)} />
+          ))}
+        </ul>
+      ))}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { facelets, type Face } from "@/app/lib/facelets";
-import { caseState, type CaseDef } from "@/cube";
+import { caseArrows, caseState, viewState, type CaseArrow, type CaseDef, type CubeState } from "@/cube";
 
 /** Muted sticker colours for the solver frame (yellow on top, green in front), matching the oat palette. */
 const COLOR: Record<Face, string> = {
@@ -30,19 +30,44 @@ type Props = {
   view?: "auto" | "iso" | "top";
   /** A case not learned yet: only the cube's outline, like the empty cubes in the mockup's grid. */
   ghost?: boolean;
+  /** His alg for the case: the picture turns to the angle he starts it from. */
+  alg?: string;
+  /** Draw where each piece goes (PLL / EPLL, top view), like jperm.net. */
+  arrows?: boolean;
 };
+
+function arrowsFor(caseDef: CaseDef, alg: string | undefined): CaseArrow[] {
+  try {
+    return caseArrows(caseDef.id, alg ?? caseDef.algs[0] ?? "");
+  } catch (error) {
+    console.warn(`No arrows for ${caseDef.id}`, error);
+    return [];
+  }
+}
+
+function stateFor(caseDef: CaseDef, alg: string | undefined): CubeState {
+  if (!alg) return caseState(caseDef.id);
+  try {
+    return viewState(caseDef.id, alg);
+  } catch (error) {
+    // An alg that can't be placed (typed oddly, or for another case) still shows the case, at the usual angle.
+    console.warn(`Can't place ${alg} on ${caseDef.id}`, error);
+    return caseState(caseDef.id);
+  }
+}
 
 /**
  * A small picture of a case, drawn from the engine's state. By default the last layer from above with its side
  * stickers for last-layer sets, and the top, front and right faces for F2L.
  */
-export function CaseDiagram({ caseDef, size = 64, view = "auto", ghost = false }: Props) {
-  const stickers = useMemo(() => facelets(caseState(caseDef.id)), [caseDef.id]);
+export function CaseDiagram({ caseDef, size = 64, view = "auto", ghost = false, alg, arrows = false }: Props) {
+  const stickers = useMemo(() => facelets(stateFor(caseDef, alg)), [caseDef, alg]);
+  const trips = useMemo(() => (arrows ? arrowsFor(caseDef, alg) : []), [arrows, caseDef, alg]);
   const iso = view === "iso" || (view === "auto" && caseDef.set === "F2L");
-  return iso ? <Iso stickers={stickers} set={caseDef.set} size={size} ghost={ghost} /> : <TopView stickers={stickers} set={caseDef.set} size={size} />;
+  return iso ? <Iso stickers={stickers} set={caseDef.set} size={size} ghost={ghost} /> : <TopView stickers={stickers} set={caseDef.set} size={size} arrows={trips} />;
 }
 
-function TopView({ stickers, set, size }: { stickers: Stickers; set: CaseDef["set"]; size: number }) {
+function TopView({ stickers, set, size, arrows = [] }: { stickers: Stickers; set: CaseDef["set"]; size: number; arrows?: readonly CaseArrow[] }) {
   const cell = 10;
   const strip = 3;
   const gap = 1.2;
@@ -64,11 +89,46 @@ function TopView({ stickers, set, size }: { stickers: Stickers; set: CaseDef["se
     rects.push({ x: o + (2 - i) * cell, y: 0, w: cell, h: strip, fill: colourFor(set, stickers.B[i] ?? "B", isEdge) });
     rects.push({ x: 0, y: o + i * cell, w: strip, h: cell, fill: colourFor(set, stickers.L[i] ?? "L", isEdge) });
   }
+  // Arrows join sticker centres; a swap (A to B and B to A) is one line with a head at each end.
+  const centre = (index: number) => ({ x: o + (index % 3) * cell + cell / 2, y: o + Math.floor(index / 3) * cell + cell / 2 });
+  const lines = arrows.flatMap((arrow) => {
+    const swap = arrows.some((other) => other.from === arrow.to && other.to === arrow.from);
+    if (swap && arrow.from > arrow.to) return [];
+    return [{ ...arrow, swap }];
+  });
   return (
     <svg className="case-diagram" width={size} height={size} viewBox={`-1 -1 ${span + 2} ${span + 2}`} aria-hidden="true">
+      <defs>
+        <marker id="case-arrow-head" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
+          <path d="M0,0 L6,3 L0,6 z" fill="#3a2e28" />
+        </marker>
+      </defs>
       {rects.map((r, i) => (
         <rect key={i} x={r.x + 0.4} y={r.y + 0.4} width={r.w - 0.8} height={r.h - 0.8} rx={1.4} fill={r.fill} stroke="#3a2e28" strokeOpacity={0.25} strokeWidth={0.5} />
       ))}
+      {lines.map(({ from, to, swap }) => {
+        const a = centre(from);
+        const b = centre(to);
+        // Stop short of the centres so the heads sit inside the stickers.
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const length = Math.hypot(dx, dy) || 1;
+        const inset = cell * 0.28;
+        return (
+          <line
+            key={`${from}-${to}`}
+            x1={a.x + (dx / length) * inset}
+            y1={a.y + (dy / length) * inset}
+            x2={b.x - (dx / length) * inset}
+            y2={b.y - (dy / length) * inset}
+            stroke="#3a2e28"
+            strokeWidth={0.9}
+            strokeLinecap="round"
+            markerEnd="url(#case-arrow-head)"
+            markerStart={swap ? "url(#case-arrow-head)" : undefined}
+          />
+        );
+      })}
     </svg>
   );
 }

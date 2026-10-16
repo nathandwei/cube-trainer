@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { IconButton } from "@/app/components/IconButton";
 import { CubeStatus } from "@/app/components/CubeStatus";
 import { formatSeconds } from "@/app/lib/format";
-import { loadAllReps, updateLearnSettings, useLearnSettings, useReps } from "@/app/lib/learnStore";
+import { loadAllReps, useLearnSettings, useReps } from "@/app/lib/learnStore";
 import { navigate } from "@/app/lib/router";
 import { median } from "@/app/lib/averages";
 import { ConnectSheet } from "@/app/smartcube/ConnectSheet";
@@ -11,13 +11,14 @@ import { useSmartCube } from "@/app/smartcube/connection";
 import type { CaseDef } from "@/cube";
 import type { CaseRep } from "@/shared/learn";
 import { CaseDiagram } from "./CaseDiagram";
+import { CasePage } from "./CasePage";
 import { CrossDrill } from "./CrossDrill";
 import { LookaheadDrill } from "./LookaheadDrill";
 import { LearnChart } from "./LearnChart";
 import { casesOf, itemLabel, LEARN_ITEMS, learnItem } from "./items";
 import { caseProgress, currentCaseReps, setOf, totalMs, targetMs } from "./progress";
 import { pickSession } from "./scheduler";
-import { Session, Summary, type DrillInput } from "./Session";
+import { chooseAlg, Session, Summary, type DrillInput } from "./Session";
 
 /** The input is fixed when a session starts: a Bluetooth blip mid-session must not reset the case it's on. */
 type Running = { caseIds: string[]; startedAt: number; input: DrillInput };
@@ -30,6 +31,8 @@ export function LearnPage({ set }: { set?: string }) {
   const [running, setRunning] = useState<Running | null>(null);
   const [finished, setFinished] = useState<Finished | null>(null);
   const [custom, setCustom] = useState(false);
+  /** A case opened from the grid: its algs, Choose / Record mine, and Drill. */
+  const [openCase, setOpenCase] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   // Picking another item in the sidebar leaves whatever was open here (a session, the alg picker, a summary).
   const [shownSet, setShownSet] = useState(set);
@@ -38,6 +41,7 @@ export function LearnPage({ set }: { set?: string }) {
     setRunning(null);
     setFinished(null);
     setCustom(false);
+    setOpenCase(null);
   }
   const cubeLink = useSmartCube();
   // Without a cube the drill still runs, on screen, for trying it out (nothing is saved).
@@ -47,7 +51,8 @@ export function LearnPage({ set }: { set?: string }) {
     void loadAllReps();
   }, []);
 
-  const open = learnItem(set ?? settings.items[0]);
+  // With nothing ticked (and nothing picked) the first set still shows: the sidebar's checks are how he adds things.
+  const open = learnItem(set ?? settings.items[0] ?? LEARN_ITEMS[0]?.id);
   const hasCases = casesOf(settings.items).length > 0;
 
   function start(caseIds: string[]) {
@@ -86,20 +91,28 @@ export function LearnPage({ set }: { set?: string }) {
     );
   }
 
-  if (settings.items.length === 0) {
-    return (
-      <div className="learn-empty">
-        {LEARN_ITEMS.map((item) => (
-          <button key={item.id} className="pill" onClick={() => updateLearnSettings((s) => ({ ...s, items: [...s.items, item.id] }))}>
-            + {itemLabel(item.id)}
-          </button>
-        ))}
-      </div>
-    );
-  }
-
   const openCases = open?.kind === "cases" ? open.cases : null;
   const learnedCount = openCases ? openCases.filter((c) => settings.algs[c.id] !== undefined).length : 0;
+
+  if (openCase) {
+    const caseId = openCase;
+    const alg = settings.algs[caseId];
+    return (
+      <CasePage
+        caseId={caseId}
+        current={alg}
+        onChoose={(chosen) => chooseAlg(caseId, chosen)}
+        onBack={() => setOpenCase(null)}
+        action={
+          alg && (
+            <button className="pill primary" onClick={() => start([caseId, caseId, caseId, caseId, caseId])}>
+              Drill
+            </button>
+          )
+        }
+      />
+    );
+  }
 
   // The skill drills bring their own header (title, number, Start, Test), sheet and attempt page.
   if (open?.kind === "cross") return <CrossDrill variant={open.id} />;
@@ -126,7 +139,7 @@ export function LearnPage({ set }: { set?: string }) {
       </div>
       {sheetOpen && <ConnectSheet onClose={() => setSheetOpen(false)} />}
       {custom && hasCases && <CustomSession items={settings.items} onStart={(ids) => start(ids)} />}
-      {openCases && <CaseSetView cases={openCases} reps={reps} algs={settings.algs} onDrill={(id) => start([id, id, id, id, id])} />}
+      {openCases && <CaseSetView cases={openCases} reps={reps} algs={settings.algs} onOpen={setOpenCase} />}
       {!open && settings.items[0] && (
         <button className="pill" onClick={() => navigate(`/learn/${settings.items[0]}`)}>
           {itemLabel(settings.items[0])}
@@ -136,7 +149,7 @@ export function LearnPage({ set }: { set?: string }) {
   );
 }
 
-function CaseSetView({ cases, reps, algs, onDrill }: { cases: readonly CaseDef[]; reps: readonly CaseRep[]; algs: Record<string, string>; onDrill: (caseId: string) => void }) {
+function CaseSetView({ cases, reps, algs, onOpen }: { cases: readonly CaseDef[]; reps: readonly CaseRep[]; algs: Record<string, string>; onOpen: (caseId: string) => void }) {
   const setId = cases[0]?.set;
   const target = setId ? targetMs(setId, reps) : 0;
   return (
@@ -148,8 +161,8 @@ function CaseSetView({ cases, reps, algs, onDrill }: { cases: readonly CaseDef[]
           const isLearned = algs[c.id] !== undefined;
           const time = progress.medianMs === null ? "" : ` · ${formatSeconds(progress.medianMs)}`;
           return (
-            <button key={c.id} className={`case-cell ${isLearned ? "" : "new"} ${progress.fluent ? "fluent" : ""}`} onClick={() => onDrill(c.id)} data-tip={`${c.label}${time}`}>
-              <CaseDiagram caseDef={c} size={74} view="iso" ghost={!isLearned} />
+            <button key={c.id} className={`case-cell ${isLearned ? "" : "new"} ${progress.fluent ? "fluent" : ""}`} onClick={() => onOpen(c.id)} data-tip={`${c.label}${time}`}>
+              <CaseDiagram caseDef={c} size={74} view="iso" ghost={!isLearned} alg={algs[c.id]} />
               <span className="name">{c.name}</span>
             </button>
           );

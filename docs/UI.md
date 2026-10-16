@@ -6,7 +6,7 @@ Rules every screen follows. Nathan judges the site on looks; inconsistency reads
 
 - **Sentence case everywhere** a word is shown: tabs (`Timer`, `Learn`, `Stats`), buttons (`Start`), labels
   (`Accuracy`), headings, verdicts (`Best`, `Inaccuracy`), switch options (`Off`, `On`), settings
-  (`Hide time while solving`), tags (`New`, `Fewest`).
+  (`Hide time while solving`), tags (`New`, `Recommended`, `Yours`, `Mirror`).
 - **Smart cube only.** There is no keyboard or virtual mode; the cube status pill shows the connected cube (or
   "No cube"), and Test buttons (test solve, test rep) stand in for the cube when trying a screen without one.
 - Kept as written, because that's the notation: moves (`R U R'`), case names (`Ua`, `T3`, `OLL 27`), set and
@@ -45,7 +45,7 @@ Rules every screen follows. Nathan judges the site on looks; inconsistency reads
 | Test solve | `IconButton icon={Play}` "Test solve" (timer: `size="xl"`) |
 | Delete | `IconButton icon={Trash2}` "Delete" |
 | Custom session | `IconButton icon={SlidersHorizontal}` "Custom session" |
-| Add an item | `+` row in the sidebar ("Add" section label) |
+| Learn / stop learning an item | the checkbox on its sidebar row (unticking keeps its algs and reps) |
 | Choose (alg) | `pill` "Choose" |
 | Again / slowest / done (summary) | `pill primary` "Again", `pill` "Slowest", `IconButton icon={X}` "Close" |
 | Drill this (from review) | `IconButton icon={Dumbbell}` "Drill" |
@@ -68,7 +68,7 @@ Approved references per screen (concepts/):
 | Solving | round-8 03 |
 | Review | round-9 02 |
 | Stats | round-8 07, 08 |
-| Learn (a set) | round-9 08 (+ "Add" items in the sidebar) |
+| Learn (a set) | round-9 08 (sidebar rows have checkboxes for what he's learning) |
 | Drill running | round-9 09 |
 | Pick alg | round-8 13 |
 | Drill done | round-8 12 |

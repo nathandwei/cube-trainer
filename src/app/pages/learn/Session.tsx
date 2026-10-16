@@ -1,10 +1,10 @@
-import { ArrowLeft, Play, X } from "lucide-react";
+import { Play, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CubeView, type CubeHandle } from "@/app/components/CubeView";
 import { IconButton, Key } from "@/app/components/IconButton";
 import { formatSeconds } from "@/app/lib/format";
 import { median } from "@/app/lib/averages";
-import { addReps, newRepId, updateLearnSettings, useLearnSettings, useReps } from "@/app/lib/learnStore";
+import { addReps, newRepId, updateLearnSettings, useLearnSettings } from "@/app/lib/learnStore";
 import { smartCube } from "@/app/smartcube/connection";
 import { solveFix } from "@/app/smartcube/fixup";
 import { ScrambleProgress } from "@/app/smartcube/ScrambleProgress";
@@ -23,10 +23,16 @@ import {
 } from "@/cube";
 import type { CaseRep } from "@/shared/learn";
 import { CaseDiagram } from "./CaseDiagram";
+import { CasePage } from "./CasePage";
 import { totalMs } from "./progress";
 
 /** cube: the connected smart cube; test: no cube, the Test button plays the alg (nothing is saved). */
 export type DrillInput = "cube" | "test";
+
+/** Locks in his alg for a case; reps from before belong to the old alg (algChosenAt). */
+export function chooseAlg(caseId: string, alg: string): void {
+  updateLearnSettings((s) => ({ ...s, algs: { ...s.algs, [caseId]: alg }, algChosenAt: { ...s.algChosenAt, [caseId]: Date.now() } }));
+}
 
 /** Test reps: a beat to "recognise", then turns at a quick human pace. */
 const TEST_RECOGNITION_MS = 650;
@@ -288,7 +294,7 @@ export function Session({ caseIds, input, onExit }: Props) {
   }, []);
 
   if (needsAlg && caseDef && caseId) {
-    return <PickAlg caseId={caseId} onChoose={(chosen) => updateLearnSettings((s) => ({ ...s, algs: { ...s.algs, [caseId]: chosen }, algChosenAt: { ...s.algChosenAt, [caseId]: Date.now() } }))} onExit={finish} />;
+    return <CasePage key={caseId} caseId={caseId} onChoose={(chosen) => chooseAlg(caseId, chosen)} onBack={finish} />;
   }
 
   const suggestion = last && caseId && last.correct ? fasterAlg(caseId, totalMs(last), 7, alg) : null;
@@ -324,63 +330,6 @@ export function Session({ caseIds, input, onExit }: Props) {
           </div>
         )}
         {input === "test" && phase === "ready" && !loading && <IconButton icon={Play} label="Test" variant="soft" size="lg" filled onClick={runTest} />}
-      </div>
-    </div>
-  );
-}
-
-function PickAlg({ caseId, onChoose, onExit }: { caseId: string; onChoose: (alg: string) => void; onExit: () => void }) {
-  const caseDef = getCase(caseId);
-  const reps = useReps();
-  const preview = useRef<CubeHandle>(null);
-
-  useEffect(() => {
-    preview.current?.show(`z2 ${caseDef.setup}`);
-  }, [caseDef]);
-
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onExit();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onExit]);
-
-  function play(alg: string) {
-    preview.current?.setTempo(1.6);
-    preview.current?.play(`z2 ${caseDef.setup}`, alg);
-  }
-
-  /** His median with each alg, if he has drilled it before (a previous pick, or another case's same alg). */
-  function yours(alg: string): number | null {
-    const times = reps.filter((r): r is CaseRep => r.kind === "case" && r.item === caseId && r.alg === alg && r.correct).map(totalMs);
-    return median(times);
-  }
-
-  const fewest = Math.min(...caseDef.moves);
-  return (
-    <div className="learn-pick">
-      <IconButton icon={ArrowLeft} label="Back" className="pick-back" onClick={onExit} />
-      <CubeView ref={preview} className="cube pick-cube" setup={`z2 ${caseDef.setup}`} />
-      <h2 className="case-title">{caseDef.label}</h2>
-      <div className="alg-options">
-        {caseDef.algs.map((option, i) => {
-          const mine = yours(option);
-          const best = caseDef.moves[i] === fewest;
-          return (
-            <div key={option} className={`alg-option ${best ? "best" : ""}`}>
-              <code>{option}</code>
-              <span className="moves">{caseDef.moves[i]}</span>
-              <span className="note">{mine !== null ? `Yours ${formatSeconds(mine)}` : best && caseDef.algs.length > 1 ? <span className="tag">Fewest</span> : ""}</span>
-              <div className="alg-actions">
-                <IconButton icon={Play} label="Play" filled className="outline" onClick={() => play(option)} />
-                <button className={`pill ${best ? "primary" : ""}`} onClick={() => onChoose(option)}>
-                  Choose
-                </button>
-              </div>
-            </div>
-          );
-        })}
       </div>
     </div>
   );
@@ -434,7 +383,7 @@ export function Summary({ reps, previousMedian, onAgain, onSlow, onClose }: { re
       <div className="summary-grid">
         {shown.map((rep) => (
           <div key={rep.id} className={`summary-case ${isSlow(rep) ? "slow" : ""}`}>
-            <CaseDiagram caseDef={getCase(rep.item)} size={66} view="top" />
+            <CaseDiagram caseDef={getCase(rep.item)} size={66} view="top" alg={rep.alg} />
             <span>{rep.correct ? formatSeconds(totalMs(rep)) : "×"}</span>
           </div>
         ))}

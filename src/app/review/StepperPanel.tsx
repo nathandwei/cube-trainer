@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from "lucid
 import { IconButton } from "@/app/components/IconButton";
 import type { TimedToken } from "@/app/lib/display";
 import { formatMs } from "@/app/lib/format";
-import { StageLines, VerdictDot, type LineId, type Shown, type StageView, type ViewLine } from "./parts";
+import { StageLines, VerdictDot, type LineControls, type LineId, type Shown, type StageView, type ViewLine } from "./parts";
 
 type Props = {
   stages: readonly StageView[];
@@ -15,6 +15,7 @@ type Props = {
   onStage: (stage: number) => void;
   onToken: (index: number) => void;
   onPlay: (stage: number, line: LineId) => void;
+  lineControls: LineControls;
   onPreviousStage: () => void;
   onPreviousMove: () => void;
   onNextMove: () => void;
@@ -24,7 +25,7 @@ type Props = {
 
 /** The right panel while stepping through: one stage at a time, its moves as the position, controls underneath. */
 export function StepperPanel(props: Props) {
-  const { stages, tokens, focus, played, current, lines, shown, onStage, onToken, onPlay, onClose } = props;
+  const { stages, tokens, focus, played, current, lines, shown, onStage, onToken, onPlay, lineControls, onClose } = props;
   const stage = stages[focus];
   if (!stage) return null;
   const atStart = played === 0;
@@ -56,8 +57,9 @@ export function StepperPanel(props: Props) {
       <StageLines
         yours={tokens.slice(stage.span.start, stage.span.end).map((token, i) => ({ token, index: stage.span.start + i }))}
         lines={lines}
-        shownLine={shown?.stage === focus ? shown.line : null}
+        shown={shown?.stage === focus ? shown : null}
         onPlay={(line) => onPlay(focus, line)}
+        controls={lineControls}
         nav={{ played, current, onToken }}
       />
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SolveRecord, Stage } from "@/cube/types";
-import { computeRatings, msForRating, partPerformance, partTimes, ratingForMs } from "./ratings";
+import { computeRatings, lookaheadPerformance, msForRating, partPerformance, partTimes, ratingForMs } from "./ratings";
 
 function stage(kind: Stage["kind"], totalMs: number, slots?: Stage["slots"]): Stage {
   return { kind, label: kind, startMove: 0, endMove: 1, recognitionMs: 0, executionMs: totalMs, totalMs, moveCount: 1, longestPauseMs: 0, slots };
@@ -40,12 +40,12 @@ describe("computeRatings", () => {
   const typical15 = [stage("cross", 15_000 * 0.135), stage("pair", 15_000 * 0.52), stage("ll", 15_000 * 0.345)];
 
   it.each(["virtual", "demo", "keyboard"] as const)("ignores %s solves", (source) => {
-    expect(computeRatings([solve("a", typical15, source)])).toEqual({ cross: null, f2l: null, ll: null });
+    expect(computeRatings([solve("a", typical15, source)])).toEqual({ cross: null, f2l: null, ll: null, lookahead: null });
   });
 
   it("skips a DNF", () => {
     const dnf: SolveRecord = { ...solve("d", typical15), penalty: "dnf" };
-    expect(computeRatings([dnf])).toEqual({ cross: null, f2l: null, ll: null });
+    expect(computeRatings([dnf])).toEqual({ cross: null, f2l: null, ll: null, lookahead: null });
   });
 
   it("starts at the first solve's performance", () => {
@@ -72,5 +72,38 @@ describe("computeRatings", () => {
 
   it("reads performance as the overall time a part is typical of", () => {
     expect(Math.round(partPerformance("cross", 1920))).toBe(Math.round(ratingForMs(1920 / 0.135)));
+  });
+});
+
+describe("lookahead", () => {
+  const typical15 = [stage("cross", 15_000 * 0.135), stage("pair", 15_000 * 0.52), stage("ll", 15_000 * 0.345)];
+  const timed = (gaps: number[]): SolveRecord["moves"] => {
+    let t = 0;
+    return gaps.map((gap) => ({ move: "R", t: (t += gap) }));
+  };
+
+  it("rates like the solve speed when pauses are 30% of the solve", () => {
+    // 15 s with 4.5 s of pauses (30%) rates like a 15 s solver.
+    const moves = timed([...Array(9).fill(500), ...Array(100).fill(105)]);
+    const record: SolveRecord = { ...solve("a", typical15), moves };
+    expect(Math.round(lookaheadPerformance(record) ?? 0)).toBe(Math.round(ratingForMs(4500 / 0.3)));
+  });
+
+  it.each([
+    { pausesMs: 2000, better: true },
+    { pausesMs: 9000, better: false },
+  ])("fewer pauses rate higher ($pausesMs ms)", ({ pausesMs, better }) => {
+    const moves = timed([pausesMs, ...Array(80).fill(120)]);
+    const performance = lookaheadPerformance({ ...solve("a", typical15), moves }) ?? 0;
+    expect(performance > ratingForMs(15_000)).toBe(better);
+  });
+
+  it("is capped for a solve with no pauses at all", () => {
+    const moves = timed(Array(80).fill(120));
+    expect(Number.isFinite(lookaheadPerformance({ ...solve("a", typical15), moves }))).toBe(true);
+  });
+
+  it.each(["demo", "keyboard", "virtual"] as const)("doesn't rate %s solves", (source) => {
+    expect(lookaheadPerformance(solve("a", typical15, source))).toBeNull();
   });
 });

@@ -1,19 +1,19 @@
-import { msForRating, PARTS, type Ratings } from "@/app/lib/ratings";
+import { msForRating, RATING_KEYS, type Ratings } from "@/app/lib/ratings";
 import { formatSeconds } from "@/app/lib/format";
 
-const LABEL = { cross: "Cross", f2l: "F2L", ll: "LL" } as const;
+const LABEL = { cross: "Cross", f2l: "F2L", ll: "LL", lookahead: "Lookahead" } as const;
 
 export function RatingsBar({ ratings }: { ratings: Ratings }) {
   return (
     <div className="ratings" aria-label="ratings">
-      {PARTS.map((part) => {
+      {RATING_KEYS.map((part) => {
         const r = ratings[part];
         const delta = r ? Math.round(r.delta) : 0;
         return (
           <div
             key={part}
             className="rating"
-            title={r ? `As fast as a typical ${formatSeconds(msForRating(r.rating))} s solver` : undefined}
+            title={r ? (part === "lookahead" ? `Pauses like a typical ${formatSeconds(msForRating(r.rating))} s solver` : `As fast as a typical ${formatSeconds(msForRating(r.rating))} s solver`) : undefined}
           >
             <span className="label">{LABEL[part]}</span>
             <span className="value">

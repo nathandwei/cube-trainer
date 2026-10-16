@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { MOVE_NAMES, SOLVED, applyAlg, moveFace, moveIndex, scrambledState, type CubeState } from "./cubie";
+import { MOVE_NAMES, SOLVED, applyAlg, invertAlg, moveFace, moveIndex, scrambledState, type CubeState } from "./cubie";
 import { SLOTS, isCrossSolved, isSlotSolved, solvedSlots } from "./pieces";
 import { createRng, randomInt, randomScramble, shuffled } from "./random";
-import { crossDistance, solveCross, solvePair, solveSlots, solveXCross } from "./solvers";
+import {
+  MAX_ENUMERATE_LENGTH,
+  crossDistance,
+  enumerateSlots,
+  solveCross,
+  solvePair,
+  solveSlots,
+  solveXCross,
+} from "./solvers";
 import { UNREACHED, getCrossTable, getFarTable, getNearTable } from "./tables";
 import type { Slot } from "./types";
 
@@ -177,6 +185,62 @@ describe("solvePair", () => {
     }
     console.info(`solvePair: ${calls} calls, mean ${(total / calls).toFixed(2)} ms, worst ${worst.toFixed(1)} ms`);
     expect(worst).toBeLessThan(150);
+  });
+});
+
+describe("enumerateSlots", () => {
+  const F2L_DONE = (s: CubeState): boolean => isCrossSolved(s) && SLOTS.every((slot) => isSlotSolved(s, slot));
+  const URF = ["U", "R", "F"] as const;
+
+  /** Every ⟨U, R, F⟩ sequence of exactly `length` turns ending at F2L solved and not passing it, by brute force. */
+  function bruteForceAll(start: CubeState, length: number): string[] {
+    const moves = MOVE_NAMES.filter((move) => URF.some((face) => move.startsWith(face)));
+    const found: string[] = [];
+    const walk = (state: CubeState, path: string[]): void => {
+      if (path.length === length) {
+        if (F2L_DONE(state)) found.push(path.join(" "));
+        return;
+      }
+      if (path.length > 0 && F2L_DONE(state)) return;
+      for (const move of moves) {
+        if (path.length > 0 && path.at(-1)![0] === move[0]) continue;
+        walk(applyAlg(state, [move]), [...path, move]);
+      }
+    };
+    walk(start, []);
+    return found;
+  }
+
+  it.each([
+    ["U R U' R'", 4],
+    ["U R U' R'", 5],
+    ["U R U' R'", 6],
+    ["F R' F' R", 4],
+    ["F R' F' R", 6],
+    ["R U2 R' U' R U R'", 6],
+    ["R U R'", 3],
+  ])("matches brute force for the pair %s at %i turns", (alg, length) => {
+    const state = applyAlg(SOLVED, invertAlg(alg));
+    const all = enumerateSlots(state, ["FR"], ["FL", "BL", "BR"], length, { faces: [...URF] });
+    expect([...all].sort()).toEqual(bruteForceAll(state, length).sort());
+  });
+
+  it("finds U' F' U F for F2L 2 and never pads a solution", () => {
+    const state = applyAlg(SOLVED, invertAlg("F R' F' R"));
+    const four = enumerateSlots(state, ["FR"], ["FL", "BL", "BR"], 4, { faces: [...URF] });
+    expect(four).toContain("U' F' U F");
+    expect(four).toContain("F R' F' R");
+    expect(enumerateSlots(state, ["FR"], ["FL", "BL", "BR"], 5, { faces: [...URF] })).toEqual([]);
+  });
+
+  it("stops at the limit, handles the solved goal and checks the length", () => {
+    const state = applyAlg(SOLVED, invertAlg("F R' F' R"));
+    expect(enumerateSlots(state, ["FR"], [], 4, { faces: [...URF], limit: 1 })).toHaveLength(1);
+    expect(enumerateSlots(SOLVED, ["FR"], [], 0)).toEqual([""]);
+    expect(enumerateSlots(SOLVED, ["FR"], [], 3)).toEqual([]);
+    expect(() => enumerateSlots(state, ["FR"], [], MAX_ENUMERATE_LENGTH + 1)).toThrow(RangeError);
+    expect(() => enumerateSlots(state, ["FR"], [], 2.5)).toThrow(RangeError);
+    expect(() => enumerateSlots(state, [], [], 4)).toThrow();
   });
 });
 
