@@ -109,6 +109,8 @@ type SearchSpec = {
   all: Term[];
   /** At least one group must have all of its terms at 0 (empty = no such requirement). */
   anyOf: Term[][];
+  /** Tracked pieces (indices into the piece vector) that must end in the given state. */
+  held?: readonly { index: number; goal: number }[];
 };
 
 type PieceLayout = {
@@ -129,7 +131,8 @@ function lookup(term: Term, states: Uint8Array, base: number): number {
 
 /** Heuristic value, or any number above `limit` as soon as the bound is known to be exceeded. */
 function evaluate(spec: SearchSpec, states: Uint8Array, base: number, limit: number): number {
-  let h = 0;
+  // A held piece out of place takes at least one more turn.
+  let h = spec.held?.some(({ index, goal }) => states[base + index] !== goal) ? 1 : 0;
   for (const term of spec.all) {
     const value = lookup(term, states, base);
     if (value > h) h = value;
@@ -180,6 +183,34 @@ function buildLayout(state: CubeState, slots: readonly Slot[]): PieceLayout {
 }
 
 /**
+ * The pieces sitting in the slots that are neither targets nor kept, tracked so a search can put them back: a
+ * pair's best line shouldn't break up the other pairs he's building. A target's own piece stuck in such a slot is
+ * left free, since it has to come out.
+ */
+function holdOtherSlots(state: CubeState, layout: PieceLayout, slots: readonly Slot[]): { layout: PieceLayout; held: { index: number; goal: number }[] } {
+  const own = new Set(slots.flatMap((slot) => [`c${SLOT_INFO[slot].corner}`, `e${SLOT_INFO[slot].edge}`]));
+  const kinds = [...layout.kinds];
+  const start = [...layout.start];
+  const held: { index: number; goal: number }[] = [];
+  for (const slot of SLOTS) {
+    if (slots.includes(slot)) continue;
+    const corner = state.cp[SLOT_INFO[slot].corner]!;
+    const edge = state.ep[SLOT_INFO[slot].edge]!;
+    if (!own.has(`c${corner}`)) {
+      held.push({ index: kinds.length, goal: cornerState(state, corner) });
+      kinds.push(1);
+      start.push(cornerState(state, corner));
+    }
+    if (!own.has(`e${edge}`) && !CROSS_EDGES.includes(edge as 4 | 5 | 6 | 7)) {
+      held.push({ index: kinds.length, goal: edgeState(state, edge) });
+      kinds.push(0);
+      start.push(edgeState(state, edge));
+    }
+  }
+  return { layout: { ...layout, kinds: Uint8Array.from(kinds), start: Uint8Array.from(start) }, held };
+}
+
+/**
  * `faces` and `moves` restrict the turns (fixed-centre names), tried in the order given; pass one or neither.
  * Among equally short solutions the search returns the first in that order, so listing what a person favours
  * first biases it towards them.
@@ -191,6 +222,8 @@ export type SearchOptions = {
   faces?: readonly Face[];
   /** Turn only these outer turns, e.g. ["U", "U2", "U'", "R", "R'"]. */
   moves?: readonly Move[];
+  /** solveSlots: also put back whatever sits in the other slots (see holdOtherSlots). */
+  holdOthers?: boolean;
 };
 
 const ALL_MOVES: readonly number[] = Array.from({ length: MOVE_COUNT }, (_, m) => m);
@@ -315,13 +348,14 @@ export function solveSlots(
 ): StepSolution | null {
   const slots = SLOTS.filter((slot) => targets.includes(slot) || keep.includes(slot));
   if (slots.length === 0) throw new Error("solveSlots needs at least one target slot");
-  const { maxDepth = "", avoidFirstFace = "", faces = [], moves = [] } = options;
-  const key = `${stateKey(state)}|${slots.join(",")}|${maxDepth}|${avoidFirstFace}|${faces.join("")}|${moves.join(" ")}`;
+  const { maxDepth = "", avoidFirstFace = "", faces = [], moves = [], holdOthers = false } = options;
+  const key = `${stateKey(state)}|${slots.join(",")}|${maxDepth}|${avoidFirstFace}|${faces.join("")}|${moves.join(" ")}|${holdOthers}`;
   const cached = cache.get(key);
   if (cached !== undefined) return cached;
-  const layout = buildLayout(state, slots);
-  const all = [layout.crossTerm, ...slots.flatMap((slot) => layout.slotTerms(slot))];
-  const path = idaStar(layout, { all, anyOf: [] }, options);
+  const base = buildLayout(state, slots);
+  const all = [base.crossTerm, ...slots.flatMap((slot) => base.slotTerms(slot))];
+  const { layout, held } = holdOthers ? holdOtherSlots(state, base, slots) : { layout: base, held: [] };
+  const path = idaStar(layout, { all, anyOf: [], held }, options);
   return remember(key, path ? toSolution(path) : null);
 }
 

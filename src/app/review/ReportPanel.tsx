@@ -1,15 +1,19 @@
-import { Dumbbell, Footprints, Lightbulb } from "lucide-react";
+import { ArrowLeftRight, Dumbbell, Footprints, Lightbulb } from "lucide-react";
 import { IconButton } from "@/app/components/IconButton";
 import type { TimedToken } from "@/app/lib/display";
 import { formatMs } from "@/app/lib/format";
-import { VERDICTS, type MovesMoment, type PauseSummary, type Verdict } from "@/app/lib/review";
-import { PAUSE_DRILL, sentenceCase } from "./model";
+import type { MovesMoment, PauseSummary } from "@/app/lib/review";
+import { PAUSE_DRILL } from "./model";
+import type { PartSplit } from "./parts-splits";
 import { PairChips, StageLines, VerdictDot, type LineControls, type LineId, type Shown, type StageView, type ViewLine } from "./parts";
 
 type Props = {
   accuracy: number | null;
   flow: number | null;
-  counts: Record<Verdict, number>;
+  parts: readonly PartSplit[];
+  /** Steps done without his alg for the case. */
+  algMoments: readonly StageView[];
+  onSwitchAlg: (stage: StageView) => void;
   moves: readonly MovesMoment[];
   pauses: PauseSummary | null;
   stages: readonly StageView[];
@@ -28,7 +32,7 @@ type Props = {
 
 /** The right panel's default: the scores, the verdict counts, and the moments worth a second look. */
 export function ReportPanel(props: Props) {
-  const { accuracy, flow, counts, moves, pauses, stages, onOpenStage, onDrill, onStepThrough } = props;
+  const { accuracy, flow, parts, algMoments, onSwitchAlg, moves, pauses, stages, onOpenStage, onDrill, onStepThrough } = props;
   return (
     <div className="rv-report">
       <div className="rv-scores">
@@ -37,18 +41,24 @@ export function ReportPanel(props: Props) {
         <Score label="Flow" value={flow} />
       </div>
 
-      <ul className="rv-verdicts">
-        {VERDICTS.map((verdict) => (
-          <li key={verdict} className={counts[verdict] === 0 ? "zero" : undefined}>
-            <VerdictDot verdict={verdict} />
-            <span>{sentenceCase(verdict)}</span>
-            <span className="rv-count">{counts[verdict]}</span>
+      <ul className="rv-splits" aria-label="Splits">
+        {parts.map((split) => (
+          <li key={split.part}>
+            <span className="rv-split-label">{split.label}</span>
+            <span className="rv-split-time">{formatMs(split.ms)}</span>
+            <span className="rv-split-rating">{split.rating ? Math.round(split.rating.value) : "–"}</span>
+            <span className={`rv-split-delta ${split.rating ? (Math.round(split.rating.delta) > 0 ? "up" : Math.round(split.rating.delta) < 0 ? "down" : "") : ""}`}>
+              {split.rating ? signed(Math.round(split.rating.delta)) : ""}
+            </span>
           </li>
         ))}
       </ul>
 
-      {(moves.length > 0 || pauses) && (
+      {(algMoments.length > 0 || moves.length > 0 || pauses) && (
         <ul className="rv-moments">
+          {algMoments.map((stage) => (
+            <AlgRow key={`alg-${stage.index}`} stage={stage} onOpenStage={onOpenStage} onDrill={onDrill} onSwitchAlg={onSwitchAlg} />
+          ))}
           {moves.map((moment) => (
             <MovesRow key={moment.stageIndex} moment={moment} {...props} />
           ))}
@@ -66,12 +76,43 @@ export function ReportPanel(props: Props) {
   );
 }
 
+/** "+12", "−5", "0": a rating change, with a real minus sign. */
+function signed(delta: number): string {
+  return delta > 0 ? `+${delta}` : delta < 0 ? `−${Math.abs(delta)}` : "0";
+}
+
 function Score({ label, value }: { label: string; value: number | null }) {
   return (
     <div className="rv-score">
       <span className="rv-score-label">{label}</span>
       <span className="rv-score-num">{value ?? "–"}</span>
     </div>
+  );
+}
+
+type AlgRowProps = Pick<Props, "onOpenStage" | "onDrill" | "onSwitchAlg"> & { stage: StageView };
+
+/** A step done with another alg than his: switch to it when the model rates it faster, else drill his own. */
+function AlgRow({ stage, onOpenStage, onDrill, onSwitchAlg }: AlgRowProps) {
+  const use = stage.algUse;
+  if (!use || use.used) return null;
+  return (
+    <li className="rv-moment">
+      <button className="rv-moment-open" onClick={() => onOpenStage(stage.index)}>
+        <span className="rv-moment-label">
+          <VerdictDot verdict={stage.verdict} />
+          {stage.name}
+          {stage.caseName && <span className="rv-moment-case">{stage.caseName}</span>}
+        </span>
+        <span className="rv-moment-value">{use.faster ? "Faster alg" : "Other alg"}</span>
+        <span className="rv-moment-detail" />
+      </button>
+      {use.faster && use.switchable ? (
+        <IconButton icon={ArrowLeftRight} label="Use this alg" variant="soft" onClick={() => onSwitchAlg(stage)} />
+      ) : (
+        stage.drill && <IconButton icon={Dumbbell} label={stage.drill.label} variant="soft" onClick={() => onDrill(stage.drill!.path)} />
+      )}
+    </li>
   );
 }
 

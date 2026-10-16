@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Dumbbell, X } from "lucide-react";
+import { ArrowLeftRight, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Dumbbell, X } from "lucide-react";
 import { IconButton } from "@/app/components/IconButton";
 import type { TimedToken } from "@/app/lib/display";
 import { formatMs } from "@/app/lib/format";
@@ -21,12 +21,14 @@ type Props = {
   onNextMove: () => void;
   onNextStage: () => void;
   onDrill: (path: string) => void;
+  /** Make the alg he did on a step his alg for its case. */
+  onSwitchAlg: (stage: StageView) => void;
   onClose: () => void;
 };
 
 /** The right panel while stepping through: one stage at a time, its moves as the position, controls underneath. */
 export function StepperPanel(props: Props) {
-  const { stages, tokens, focus, played, current, lines, shown, onStage, onToken, onPlay, lineControls, onDrill, onClose } = props;
+  const { stages, tokens, focus, played, current, lines, shown, onStage, onToken, onPlay, lineControls, onDrill, onSwitchAlg, onClose } = props;
   const stage = stages[focus];
   if (!stage) return null;
   const { drill } = stage;
@@ -52,6 +54,8 @@ export function StepperPanel(props: Props) {
           {stage.name}
           <PairChips pairs={stage.pairs} size="lg" />
           {stage.caseName && <span className="rv-head-case">{stage.caseName}</span>}
+          {stage.algUse?.used && <span className="tag">Yours</span>}
+          {stage.algUse && !stage.algUse.used && <span className="tag neutral">{stage.algUse.faster ? "Faster alg" : "Other alg"}</span>}
         </span>
         <span className="rv-head-moves">{stage.best === null ? stage.moves : `${stage.moves} / ${stage.best}`}</span>
         <span className="rv-head-time">{formatMs(stage.ms)}</span>
@@ -74,6 +78,9 @@ export function StepperPanel(props: Props) {
         <IconButton icon={ChevronRight} label="Next move" variant="soft" onClick={props.onNextMove} disabled={atEnd} />
         <IconButton icon={ChevronsRight} label="Next stage" variant="soft" onClick={props.onNextStage} disabled={atEnd} />
         {/* The stage's drill closes the row: the head is full once a stage has a pair chip and a pause. */}
+        {stage.algUse && !stage.algUse.used && stage.algUse.faster && stage.algUse.switchable && (
+          <IconButton icon={ArrowLeftRight} label="Use this alg" variant="soft" className="rv-nav-drill" onClick={() => onSwitchAlg(stage)} />
+        )}
         {drill && <IconButton icon={Dumbbell} label={drill.label} variant="soft" className="rv-nav-drill" onClick={() => onDrill(drill.path)} />}
       </div>
     </div>

@@ -39,6 +39,7 @@ import { getCase, type CaseSetId } from "./cases";
 import { tokenizeAlg, type MoveToken } from "./cubie";
 import { algOptions } from "./options";
 import { isSameAlg } from "./algs";
+import { referencePick, sameAlgLoose, type ReferenceSource } from "./popular";
 
 /** Every cost in the model, in ms. */
 export const SPEED_COSTS = {
@@ -133,7 +134,7 @@ export type AlgSpeedOptions = {
   ignoreAuf?: boolean;
 };
 
-type Hand = "right" | "left";
+export type Hand = "right" | "left";
 
 type Finger = "none" | "rWrist" | "lWrist" | "rIndex" | "rRing" | "rThumb" | "lIndex" | "lRing" | "lThumb";
 
@@ -525,13 +526,16 @@ function wideTurnFor(rotation: MoveToken, turn: MoveToken): MoveToken | null {
   return null;
 }
 
-function mergeRotations(tokens: readonly MoveToken[]): MoveToken[] {
-  const merged: MoveToken[] = [];
+/** An executed turn and the written tokens (tokenizeAlg indices) it stands for: two for an "x R'" done as l'. */
+type Executed = { token: MoveToken; sources: number[] };
+
+function mergeRotations(tokens: readonly Executed[]): Executed[] {
+  const merged: Executed[] = [];
   for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i]!;
+    const current = tokens[i]!;
     const next = tokens[i + 1];
-    const wide = next === undefined ? null : (wideTurnFor(token, next) ?? wideTurnFor(next, token));
-    merged.push(wide ?? token);
+    const wide = next === undefined ? null : (wideTurnFor(current.token, next.token) ?? wideTurnFor(next.token, current.token));
+    merged.push(wide && next ? { token: wide, sources: [...current.sources, ...next.sources] } : current);
     if (wide) i++;
   }
   return merged;
@@ -539,7 +543,7 @@ function mergeRotations(tokens: readonly MoveToken[]): MoveToken[] {
 
 // Rotations after the last turn are never done. With ignoreAuf, leading U turns and y rotations are the pre-AUF (a y
 // in front of a last-layer alg only picks the angle) and trailing U turns the post-AUF, so they are dropped too.
-function executedTokens(alg: string, ignoreAuf: boolean): MoveToken[] {
+function executedSteps(alg: string, ignoreAuf: boolean): Executed[] {
   const tokens = tokenizeAlg(alg);
   const skipsAtStart = ({ family }: MoveToken): boolean => ignoreAuf && (family === "U" || family === "y");
   const skipsAtEnd = ({ family }: MoveToken): boolean => ROTATIONS.has(family) || (ignoreAuf && family === "U");
@@ -547,7 +551,7 @@ function executedTokens(alg: string, ignoreAuf: boolean): MoveToken[] {
   let end = tokens.length;
   while (first < end && skipsAtStart(tokens[first]!)) first++;
   while (end > first && skipsAtEnd(tokens[end - 1]!)) end--;
-  return mergeRotations(tokens.slice(first, end));
+  return mergeRotations(tokens.slice(first, end).map((token, i) => ({ token, sources: [first + i] })));
 }
 
 function eventsOf(node: Node): Event[] {
@@ -582,6 +586,19 @@ function report(events: readonly Event[]): { regrips: number; notes: string[] } 
   return { regrips, notes };
 }
 
+/** The cheapest fingering's final node for the executed turns, or null for an alg with nothing to do. */
+function cheapest(alg: string, steps: readonly Executed[]): Node | null {
+  if (steps.length === 0) return null;
+  let layer = startLayer();
+  steps.forEach(({ token }, index) => {
+    layer = step(layer, token, index === 0);
+  });
+  let best: Node | null = null;
+  for (const node of layer.values()) if (!best || node.ms < best.ms) best = node;
+  if (!best) throw new Error(`No fingering for "${alg}"`);
+  return best;
+}
+
 /**
  * Estimated execution time of `alg` for a competent CFOP solver, from the cheapest fingering a two-hand simulation
  * finds (see the top of this file), with the turns executed, the regrips and rotations on that fingering, and notes
@@ -590,18 +607,71 @@ function report(events: readonly Event[]): { regrips: number; notes: string[] } 
  * anything that is not a move.
  */
 export function algSpeed(alg: string, options: AlgSpeedOptions = {}): AlgSpeed {
-  const tokens = executedTokens(alg, options.ignoreAuf ?? false);
-  const moves = tokens.filter(({ family }) => !ROTATIONS.has(family)).length;
-  if (tokens.length === 0) return { ms: 0, moves: 0, regrips: 0, notes: [] };
-  let layer = startLayer();
-  tokens.forEach((token, index) => {
-    layer = step(layer, token, index === 0);
-  });
-  let best: Node | null = null;
-  for (const node of layer.values()) if (!best || node.ms < best.ms) best = node;
-  if (!best) throw new Error(`No fingering for "${alg}"`);
+  const steps = executedSteps(alg, options.ignoreAuf ?? false);
+  const moves = steps.filter(({ token }) => !ROTATIONS.has(token.family)).length;
+  const best = cheapest(alg, steps);
+  if (!best) return { ms: 0, moves: 0, regrips: 0, notes: [] };
   const { regrips, notes } = report(eventsOf(best));
   return { ms: Math.round(C.start + best.ms), moves, regrips, notes };
+}
+
+/** How a move is done on the cheapest fingering: by which hand, with what, and whether a hand regrips first. */
+export type Fingering = {
+  /** "both" for a rotation, which both hands do. */
+  hand: Hand | "both";
+  tool: "wrist" | "index" | "ring" | "thumb" | "rotation";
+  /** The hands that regrip just before it. */
+  regrips: Hand[];
+};
+
+const TOOLS: Readonly<Record<Finger, Fingering["tool"]>> = {
+  none: "rotation",
+  rWrist: "wrist",
+  lWrist: "wrist",
+  rIndex: "index",
+  lIndex: "index",
+  rRing: "ring",
+  lRing: "ring",
+  rThumb: "thumb",
+  lThumb: "thumb",
+};
+
+function fingeringOf(action: Action, regrips: Hand[]): Fingering {
+  switch (action.kind) {
+    case "wrist":
+      return { hand: action.hand, tool: "wrist", regrips };
+    case "finger":
+      return { hand: action.hand, tool: TOOLS[action.finger], regrips };
+    case "x":
+    case "rotation":
+      return { hand: "both", tool: "rotation", regrips };
+  }
+}
+
+/**
+ * The cheapest fingering of `alg` (the one algSpeed times), move by move: one entry per token as written (tokenizeAlg
+ * order, brackets ignored), null for a token that isn't done (a trailing rotation, or an AUF with ignoreAuf). An
+ * "x R'" done as l' gives both tokens the same entry. Throws on anything that is not a move.
+ */
+export function algFingering(alg: string, options: AlgSpeedOptions = {}): (Fingering | null)[] {
+  const fingering: (Fingering | null)[] = tokenizeAlg(alg).map(() => null);
+  const steps = executedSteps(alg, options.ignoreAuf ?? false);
+  const best = cheapest(alg, steps);
+  if (!best) return fingering;
+  let regrips: Hand[] = [];
+  let at = 0;
+  for (const event of eventsOf(best)) {
+    if (event.kind === "regrip") {
+      regrips.push(event.hand);
+      continue;
+    }
+    const done = steps[at++];
+    if (!done) throw new Error(`Fingering of "${alg}" has more turns than the alg`);
+    const entry = fingeringOf(event.action, regrips);
+    for (const source of done.sources) fingering[source] = entry;
+    regrips = [];
+  }
+  return fingering;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -619,7 +689,8 @@ export type RecommendOptions = {
   personalMs?: Readonly<Record<string, number>>;
 };
 
-export type Recommendation = { alg: string; ms: number };
+/** `source`: who recommends it (popular.ts), or "model" when it's the speed model's fastest. */
+export type Recommendation = { alg: string; ms: number; source: ReferenceSource | "model" };
 
 function measuredFor(alg: string, personal: readonly (readonly [string, number])[]): number | undefined {
   return personal.find(([key]) => isSameAlg(key, alg))?.[1];
@@ -642,14 +713,14 @@ function personalFactor(caseId: string, personal: readonly (readonly [string, nu
 }
 
 /**
- * "Best overall" alg for a case: the option (algOptions) with the lowest execution time, where an alg's time is the
- * solver's measured median when personalMs has one, and otherwise the model's estimate (caseAlgSpeed) scaled by his
- * speed relative to the model: the median of measured / estimated over every alg in personalMs (1 when empty). The
- * scaling keeps measured and estimated times comparable for a solver slower or faster than the model; pass medians
- * from other cases too for a steadier factor (with only one alg timed, the factor makes that alg's estimate equal
- * its time and the model's order stands). Ties go to fewer moves, then algOptions' order. Throws on an unknown case,
- * a personalMs key that is not an alg, or a time that is not a positive number; null only when the case has no
- * options.
+ * The alg to recommend for a case: what the references say when they cover it (his ruling, J Perm's pick, the
+ * community's most voted: popular.ts), matched to the option it is; otherwise the option (algOptions) with the lowest
+ * execution time. An alg's time is the solver's measured median when personalMs has one, and otherwise the model's
+ * estimate (caseAlgSpeed) scaled by his speed relative to the model: the median of measured / estimated over every
+ * alg in personalMs (1 when empty). The scaling keeps measured and estimated times comparable for a solver slower or
+ * faster than the model; pass medians from other cases too for a steadier factor. Ties go to fewer moves, then
+ * algOptions' order. Throws on an unknown case, a personalMs key that is not an alg, or a time that is not a
+ * positive number; null only when the case has no options.
  */
 export function recommendAlg(caseId: string, options: RecommendOptions = {}): Recommendation | null {
   const personal = Object.entries(options.personalMs ?? {});
@@ -657,11 +728,16 @@ export function recommendAlg(caseId: string, options: RecommendOptions = {}): Re
     if (!Number.isFinite(ms) || ms <= 0) throw new RangeError(`personalMs for "${alg}" must be positive: ${ms}`);
   }
   const factor = personalFactor(caseId, personal);
+  const timeOf = (alg: string): number => measuredFor(alg, personal) ?? caseAlgSpeed(caseId, alg).ms * factor;
+  const all = algOptions(caseId);
+  const pick = referencePick(caseId);
+  const picked = pick && all.find((option) => sameAlgLoose(option.alg, pick.alg));
+  if (pick && picked) return { alg: picked.alg, ms: Math.round(timeOf(picked.alg)), source: pick.source };
   let best: (Recommendation & { moves: number }) | null = null;
-  for (const option of algOptions(caseId)) {
-    const ms = measuredFor(option.alg, personal) ?? caseAlgSpeed(caseId, option.alg).ms * factor;
+  for (const option of all) {
+    const ms = timeOf(option.alg);
     if (best && (ms > best.ms || (ms === best.ms && option.moves >= best.moves))) continue;
-    best = { alg: option.alg, ms, moves: option.moves };
+    best = { alg: option.alg, ms, moves: option.moves, source: "model" };
   }
-  return best && { alg: best.alg, ms: Math.round(best.ms) };
+  return best && { alg: best.alg, ms: Math.round(best.ms), source: best.source };
 }

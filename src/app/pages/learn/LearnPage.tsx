@@ -13,7 +13,9 @@ import type { CaseRep } from "@/shared/learn";
 import { Calibrate } from "./Calibrate";
 import { clearCalibration, requestCalibration, usePendingCalibration } from "./calibrateRequest";
 import { CaseDiagram } from "./CaseDiagram";
+import { CaseDetail } from "./CaseDetail";
 import { CasePage } from "./CasePage";
+import { LearnAlg } from "./LearnAlg";
 import { CrossDrill } from "./CrossDrill";
 import { RecordAlg } from "./RecordAlg";
 import { LookaheadDrill } from "./LookaheadDrill";
@@ -50,6 +52,8 @@ export function LearnPage({ set, caseId }: { set?: string; caseId?: string }) {
   const openCase = knownCase(caseId, set);
   /** Recording his own alg for the open case (Record mine). */
   const [recording, setRecording] = useState(false);
+  /** The open case with an alg: its page, the alg picker (Change), or learning the alg just chosen. */
+  const [caseMode, setCaseMode] = useState<"detail" | "change" | "learn">("detail");
   const pendingCalibration = usePendingCalibration();
   const [sheetOpen, setSheetOpen] = useState(false);
   // Picking another item in the sidebar leaves whatever was open here (a session, the alg picker, a summary).
@@ -60,6 +64,7 @@ export function LearnPage({ set, caseId }: { set?: string; caseId?: string }) {
     setFinished(null);
     setCustom(false);
     setRecording(false);
+    setCaseMode("detail");
   }
   const cubeLink = useSmartCube();
   // Without a cube the drill still runs, on screen, for trying it out (nothing is saved).
@@ -143,21 +148,38 @@ export function LearnPage({ set, caseId }: { set?: string; caseId?: string }) {
   if (openCase) {
     const caseId = openCase;
     const alg = settings.algs[caseId];
+    const drill = () => {
+      setCaseMode("detail");
+      start([caseId, caseId, caseId, caseId, caseId]);
+    };
+    if (alg && caseMode === "learn") {
+      return <LearnAlg key={`${caseId}-${alg}`} caseId={caseId} alg={alg} onDrill={drill} onBack={() => setCaseMode("detail")} />;
+    }
+    if (alg && caseMode === "detail") {
+      return (
+        <CaseDetail
+          key={caseId}
+          caseId={caseId}
+          alg={alg}
+          onDrill={drill}
+          onLearn={() => setCaseMode("learn")}
+          onChange={() => setCaseMode("change")}
+          onBack={() => navigate(`/learn/${encodeURIComponent(open?.id ?? "")}`, { replace: true })}
+        />
+      );
+    }
+    // No alg yet, or Change: the algs on offer. Choosing one goes on to learning it.
     return (
       <CasePage
         key={caseId}
         onRecord={() => setRecording(true)}
         caseId={caseId}
         current={alg}
-        onChoose={(chosen) => chooseAlg(caseId, chosen)}
-        onBack={() => navigate(`/learn/${encodeURIComponent(open?.id ?? "")}`, { replace: true })}
-        action={
-          alg && (
-            <button className="pill primary" onClick={() => start([caseId, caseId, caseId, caseId, caseId])}>
-              Drill
-            </button>
-          )
-        }
+        onChoose={(chosen) => {
+          chooseAlg(caseId, chosen);
+          setCaseMode("learn");
+        }}
+        onBack={() => (alg ? setCaseMode("detail") : navigate(`/learn/${encodeURIComponent(open?.id ?? "")}`, { replace: true }))}
       />
     );
   }

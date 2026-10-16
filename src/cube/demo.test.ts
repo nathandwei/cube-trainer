@@ -10,6 +10,8 @@ import { createRng, randomScramble } from "./random";
 
 const rng = createRng(2024);
 const scrambles = Array.from({ length: 20 }, () => randomScramble(rng));
+// Scrambles whose EO → COLL demo did an O-case COLL that also finished the cube (found by search): a PLL by name.
+const finishingOCases = Array.from({ length: 400 }, (_, i) => randomScramble(createRng(9000 + i)));
 
 function tokensIn(tokens: readonly DisplayToken[], stage: DemoStage): DisplayToken[] {
   return tokens.filter((token) => token.start >= stage.startMove && token.start < stage.endMove);
@@ -120,9 +122,21 @@ describe("generateDemoSolve", () => {
     expect(checked).toBeGreaterThan(30);
   });
 
+  it("names an O-case COLL that also finishes the cube a PLL, as the analysis does", () => {
+    let checked = 0;
+    finishingOCases.forEach((scramble, i) => {
+      const { moves, stages } = generateDemoPlan(scramble, i, "eo-coll");
+      const labels = analyzeSolve(scramble, moves, { method: "eo-coll" }).stages.map(({ label, caseName }) => [label, caseName]);
+      expect(labels, scramble).toEqual(stages.map(({ label, caseName }) => [label, caseName]));
+      if (stages.some((s) => s.kind === "pll")) checked++;
+    });
+    expect(checked).toBeGreaterThan(0);
+    // 400 full analyses, each searching every pair's best line.
+  }, 120_000);
+
   it.each([
     ["oll-pll", ["cross", "xcross", "pair", "oll", "pll"]],
-    ["eo-coll", ["cross", "xcross", "pair", "eo", "ll", "coll", "epll"]],
+    ["eo-coll", ["cross", "xcross", "pair", "eo", "ll", "coll", "pll", "epll"]],
   ] as const)("follows the CFOP order (%s) and pauses between stages", (method, order) => {
     const { stages } = generateDemoPlan(scrambles[1]!, 3, method);
     const ranks = stages.map((s) => (order as readonly string[]).indexOf(s.kind));

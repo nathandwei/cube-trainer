@@ -1,13 +1,13 @@
-import { LogOut, Minus, Plus } from "lucide-react";
+import { LogOut, Minus, Plus, RotateCcw, Shuffle } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { CubeView } from "@/app/components/CubeView";
+import { CubeView, type CubeHandle } from "@/app/components/CubeView";
 import { IconButton } from "@/app/components/IconButton";
 import { CUBE_LOOKS, type CubeLook } from "@/app/cube3d/looks";
 import { signOut, useAccount } from "@/app/lib/account";
 import { updateLearnSettings, useLearnSettings, useLearnStatus } from "@/app/lib/learnStore";
 import { DEFAULT_METHOD } from "@/app/lib/method";
 import { setSetting, useSettings } from "@/app/lib/settings";
-import { LAST_LAYER_METHODS, type LastLayerMethod } from "@/cube";
+import { LAST_LAYER_METHODS, createRng, randomScramble, type LastLayerMethod } from "@/cube";
 import { loadMoreSolves, useHasMoreSolves, useSolves } from "@/app/lib/store";
 import { ConnectSheet } from "@/app/smartcube/ConnectSheet";
 import { shortCubeName, smartCube, useSmartCube } from "@/app/smartcube/connection";
@@ -176,14 +176,34 @@ function LearnSection() {
   );
 }
 
+/** Scramble turns play this fast, so the look can be seen in motion without a long wait. */
+const SCRAMBLE_STEP_MS = 140;
+const SCRAMBLE_TEMPO = 4;
+
 function AppearanceSection() {
   const settings = useSettings();
+  const cube = useRef<CubeHandle>(null);
+
+  function scramble() {
+    cube.current?.setTempo(SCRAMBLE_TEMPO);
+    cube.current?.play("z2", randomScramble(createRng(Date.now())), SCRAMBLE_STEP_MS);
+  }
+
+  function reset() {
+    cube.current?.show("z2");
+    cube.current?.resetView();
+  }
+
   return (
     <div className="prefs">
       <Row label="Cube">
         <Segmented label="Cube" value={settings.cubeLook} options={CUBE_LOOKS} names={LOOK_NAMES} onChange={(look) => setSetting("cubeLook", look)} />
       </Row>
-      <CubeView className="cube prefs-cube" setup={PREVIEW_SETUP} />
+      <CubeView ref={cube} className="cube prefs-cube" setup={PREVIEW_SETUP} />
+      <div className="prefs-cube-actions">
+        <IconButton icon={Shuffle} label="Scramble" variant="soft" onClick={scramble} />
+        <IconButton icon={RotateCcw} label="Reset" variant="soft" onClick={reset} />
+      </div>
     </div>
   );
 }

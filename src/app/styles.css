@@ -773,11 +773,17 @@ a:focus-visible {
   height: calc(320 * var(--u));
 }
 
-/* The 3D cube's canvas fills whatever box its page gives the cube. */
+/* The 3D cube's canvas fills whatever box its page gives the cube; dragging it turns the view round the cube. */
 .cube canvas {
   display: block;
   width: 100%;
   height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.cube canvas.dragging {
+  cursor: grabbing;
 }
 
 .section-label {
@@ -1366,6 +1372,237 @@ a:focus-visible {
   margin: 0;
 }
 
+/* A case he has an alg for: his alg, then his drills and solves of it side by side. */
+.case-detail .case-head {
+  margin-bottom: calc(18 * var(--u));
+}
+
+.case-alg {
+  display: flex;
+  align-items: baseline;
+  gap: calc(22 * var(--u));
+  margin-bottom: calc(34 * var(--u));
+}
+
+.case-alg code {
+  font-family: var(--sans);
+  font-size: calc(26 * var(--ut));
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.case-alg-meta {
+  display: flex;
+  gap: calc(16 * var(--u));
+  font-size: calc(20 * var(--ut));
+  color: var(--muted);
+}
+
+.case-stats {
+  display: flex;
+  gap: calc(64 * var(--u));
+  align-items: flex-start;
+}
+
+.case-stats h3 {
+  margin: 0 0 calc(12 * var(--u));
+  font-size: calc(18 * var(--ut));
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.case-stat-row {
+  display: flex;
+  gap: calc(34 * var(--u));
+}
+
+.case-stat {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4 * var(--u));
+  min-width: calc(90 * var(--u));
+}
+
+.case-stat-label {
+  font-size: calc(17 * var(--ut));
+  color: var(--muted);
+}
+
+.case-stat-value {
+  font-size: calc(34 * var(--ut));
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.case-sightings {
+  list-style: none;
+  margin: calc(18 * var(--u)) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.case-sightings button {
+  display: grid;
+  grid-template-columns: calc(90 * var(--u)) repeat(2, calc(80 * var(--u))) calc(50 * var(--u)) calc(30 * var(--u));
+  align-items: center;
+  gap: calc(10 * var(--u));
+  width: 100%;
+  height: calc(40 * var(--u));
+  padding: 0 calc(10 * var(--u));
+  border-radius: calc(8 * var(--u));
+  font-size: calc(19 * var(--ut));
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.case-sightings button:hover {
+  background: color-mix(in srgb, var(--sidebar) 60%, var(--page));
+}
+
+.case-sightings .when,
+.case-sightings .moves {
+  color: var(--muted);
+}
+
+.case-sightings .used svg {
+  width: calc(18 * var(--u));
+  height: calc(18 * var(--u));
+  color: var(--good);
+}
+
+/* Learning a chosen alg (full page, like a drill): the cube, then the alg in chunks with each move's hand and finger. */
+.learn-alg .learn-alg-back {
+  position: absolute;
+  top: calc(28 * var(--u));
+  left: calc(36 * var(--u));
+}
+
+.learn-alg-title {
+  margin: 0;
+  font-size: calc(40 * var(--ut));
+  font-weight: 700;
+}
+
+.learn-alg-chunks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: calc(14 * var(--u));
+  max-width: calc(1100 * var(--u));
+}
+
+.learn-chunk {
+  display: flex;
+  gap: calc(14 * var(--u));
+  padding: calc(12 * var(--u)) calc(18 * var(--u));
+  border: 1.5px solid var(--rule);
+  border-radius: calc(14 * var(--u));
+  transition: border-color 150ms, opacity 150ms;
+}
+
+.learn-chunk.current {
+  border-color: var(--accent);
+}
+
+.learn-chunk.done {
+  opacity: 0.55;
+}
+
+.learn-move {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(4 * var(--u));
+  min-width: calc(34 * var(--u));
+}
+
+.learn-move-name {
+  display: flex;
+  align-items: center;
+  gap: calc(3 * var(--u));
+  font-size: calc(28 * var(--ut));
+  font-weight: 600;
+}
+
+.learn-move-how {
+  font-size: calc(14 * var(--ut));
+  color: var(--muted);
+}
+
+.learn-move.right .learn-move-name,
+.learn-alg-legend .right {
+  color: var(--accent);
+}
+
+.learn-move.left .learn-move-name,
+.learn-alg-legend .left {
+  color: var(--s-blue, #3a6fae);
+}
+
+.learn-regrip {
+  width: calc(14 * var(--u));
+  height: calc(14 * var(--u));
+  color: var(--muted);
+}
+
+.learn-alg-legend {
+  display: flex;
+  gap: calc(22 * var(--u));
+  font-size: calc(16 * var(--ut));
+  font-weight: 500;
+}
+
+.learn-alg-controls {
+  display: flex;
+  align-items: center;
+  gap: calc(12 * var(--u));
+}
+
+.learn-alg-controls .pill {
+  margin-left: calc(20 * var(--u));
+}
+
+/* Typing his own alg: the box, a play button and Choose, which lights up once the alg solves the case. */
+.type-alg {
+  display: flex;
+  align-items: center;
+  gap: calc(12 * var(--u));
+  margin: calc(-8 * var(--u)) 0 calc(26 * var(--u));
+}
+
+.type-alg input {
+  width: calc(520 * var(--u));
+  height: calc(52 * var(--u));
+  padding: 0 calc(22 * var(--u));
+  border: 1.5px solid var(--rule);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sidebar) 45%, var(--page));
+  color: var(--ink);
+  font: inherit;
+  font-size: calc(22 * var(--ut));
+  font-weight: 500;
+  outline: none;
+}
+
+.type-alg input:focus {
+  border-color: var(--accent);
+}
+
+.type-alg input[aria-invalid="true"] {
+  border-color: var(--bad);
+}
+
+.type-alg .icon-btn.outline {
+  width: calc(52 * var(--u));
+  height: calc(52 * var(--u));
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+
+.type-alg .pill {
+  height: calc(52 * var(--u));
+}
+
 .alg-actions .chosen {
   display: grid;
   place-items: center;
@@ -1445,13 +1682,17 @@ a:focus-visible {
   margin-top: calc(18 * var(--u));
   min-height: calc(34 * var(--u));
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
+  gap: calc(8 * var(--u));
   font-size: calc(20 * var(--ut));
   color: var(--muted);
 }
 
 .alg-actions {
   margin-top: auto;
+  padding-top: calc(22 * var(--u));
   display: flex;
   gap: calc(34 * var(--u));
   align-items: center;

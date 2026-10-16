@@ -112,9 +112,14 @@ export {
   SPEED_COSTS,
   algSpeed,
   caseAlgSpeed,
+  algFingering,
   recommendAlg,
   type AlgSpeed,
   type AlgSpeedOptions,
+  type Fingering,
+  type Hand,
   type Recommendation,
   type RecommendOptions,
 } from "./speed";
+export { algChunks, type AlgChunk } from "./triggers";
+export { turnsMatchAlg } from "./popular";

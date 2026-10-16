@@ -44,10 +44,17 @@ const SEAM_SHADE = 0.62;
 const LATITUDE = 30;
 const LONGITUDE = 32;
 const FIELD_OF_VIEW = 22;
-/** The cube's corners, rounded off, lie within this radius (in cubie widths; the cube spans 3). */
-const CUBE_RADIUS = 2.5;
-/** Far enough back that the whole cube fits the view however it's turned. */
+/**
+ * How much room the cube gets, as the radius (in cubie widths; the cube spans 3) the view fits: about cubing.js's
+ * framing, which every page's layout was drawn around, with room for the cube however it's turned.
+ */
+const CUBE_RADIUS = 3.1;
 const DISTANCE = CUBE_RADIUS / Math.sin((FIELD_OF_VIEW * Math.PI) / 360);
+/** The cube's outer corners (cubie widths from its centre), tiles included. */
+const CORNER = 1.52;
+/** Dragging: degrees of turn per pixel, and how far over or under the cube the view may go. */
+const DRAG_DEGREES = 0.45;
+const MAX_LATITUDE = 80;
 
 /** The six outward normals in BoxGeometry's group order (+x, -x, +y, -y, +z, -z) and the WCA face each one is. */
 const NORMALS: readonly { normal: Vector3; face: FaceName }[] = [
@@ -179,6 +186,8 @@ export class CubeRenderer {
   #tempo = 1;
   #frame: number | null = null;
   #lastFrame = 0;
+  #latitude = LATITUDE;
+  #longitude = LONGITUDE;
 
   constructor(host: HTMLElement, look: CubeLook) {
     this.#host = host;
@@ -207,10 +216,8 @@ export class CubeRenderer {
     fill.position.set(5, 1, 2);
     this.#scene.add(fill);
 
-    const lat = (LATITUDE * Math.PI) / 180;
-    const lon = (LONGITUDE * Math.PI) / 180;
-    this.#camera.position.set(DISTANCE * Math.cos(lat) * Math.sin(lon), DISTANCE * Math.sin(lat), DISTANCE * Math.cos(lat) * Math.cos(lon));
-    this.#camera.lookAt(0, 0, 0);
+    this.#placeCamera();
+    this.#listenForDrags(this.#renderer.domElement);
 
     this.#build();
     this.#resize = new ResizeObserver(() => this.#fit());
@@ -242,6 +249,14 @@ export class CubeRenderer {
     this.#invalidate();
   }
 
+  /** Back to the usual view (above the cube, round to the right), as after a double click. */
+  resetView(): void {
+    this.#latitude = LATITUDE;
+    this.#longitude = LONGITUDE;
+    this.#placeCamera();
+    this.#invalidate();
+  }
+
   setTempo(scale: number): void {
     this.#tempo = scale > 0 ? scale : 1;
   }
@@ -265,6 +280,67 @@ export class CubeRenderer {
     // Browsers allow only a handful of live WebGL contexts; free this one now rather than at garbage collection.
     this.#renderer.forceContextLoss();
     this.#renderer.domElement.remove();
+  }
+
+  #placeCamera(): void {
+    const lat = (this.#latitude * Math.PI) / 180;
+    const lon = (this.#longitude * Math.PI) / 180;
+    this.#camera.position.set(DISTANCE * Math.cos(lat) * Math.sin(lon), DISTANCE * Math.sin(lat), DISTANCE * Math.cos(lat) * Math.cos(lon));
+    this.#camera.lookAt(0, 0, 0);
+    this.#camera.updateMatrixWorld();
+    this.#markDrawnBox();
+  }
+
+  /**
+   * Where the cube is drawn in the canvas, in CSS px, so layout checks (e2e/layout.spec.ts) can tell the cube from the
+   * canvas's empty margin: data-cube-points, its eight corners on screen, and data-cube-box, their bounding box
+   * (left, top, width, height). The corners stay where they are however the cube turns.
+   */
+  #markDrawnBox(): void {
+    const canvas = this.#renderer.domElement;
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    if (width === 0 || height === 0) return;
+    const points: [number, number][] = [];
+    for (const x of [-CORNER, CORNER])
+      for (const y of [-CORNER, CORNER])
+        for (const z of [-CORNER, CORNER]) {
+          const p = new Vector3(x, y, z).project(this.#camera);
+          points.push([((p.x + 1) / 2) * width, ((1 - p.y) / 2) * height]);
+        }
+    const xs = points.map(([x]) => x);
+    const ys = points.map(([, y]) => y);
+    const [left, top] = [Math.min(...xs), Math.min(...ys)];
+    canvas.dataset.cubeBox = [left, top, Math.max(...xs) - left, Math.max(...ys) - top].map((v) => v.toFixed(1)).join(",");
+    canvas.dataset.cubePoints = points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  }
+
+  /** Drag to look at the cube from anywhere; a double click puts the view back. Turns are unaffected. */
+  #listenForDrags(canvas: HTMLCanvasElement): void {
+    let last: { x: number; y: number } | null = null;
+    canvas.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      last = { x: event.clientX, y: event.clientY };
+      canvas.setPointerCapture(event.pointerId);
+      canvas.classList.add("dragging");
+    });
+    canvas.addEventListener("pointermove", (event) => {
+      if (!last) return;
+      this.#longitude -= (event.clientX - last.x) * DRAG_DEGREES;
+      this.#latitude = Math.max(-MAX_LATITUDE, Math.min(MAX_LATITUDE, this.#latitude + (event.clientY - last.y) * DRAG_DEGREES));
+      last = { x: event.clientX, y: event.clientY };
+      this.#placeCamera();
+      this.#invalidate();
+    });
+    const stop = (event: PointerEvent) => {
+      if (!last) return;
+      last = null;
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+      canvas.classList.remove("dragging");
+    };
+    canvas.addEventListener("pointerup", stop);
+    canvas.addEventListener("pointercancel", stop);
+    canvas.addEventListener("dblclick", () => this.resetView());
   }
 
   #parse(move: string): LayerTurn | null {
@@ -308,6 +384,7 @@ export class CubeRenderer {
     const fov = width >= height ? FIELD_OF_VIEW : (2 * Math.atan(Math.tan((FIELD_OF_VIEW * Math.PI) / 360) / this.#camera.aspect) * 180) / Math.PI;
     this.#camera.fov = fov;
     this.#camera.updateProjectionMatrix();
+    this.#markDrawnBox();
     this.#invalidate();
   }
 

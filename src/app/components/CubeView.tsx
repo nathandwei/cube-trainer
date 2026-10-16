@@ -13,6 +13,8 @@ export type CubeHandle = {
   /** Show `setup`, then animate `alg` one turn every `stepMs`. The next show() or play() cuts it short. */
   play(setup: string, alg: string, stepMs?: number): void;
   setTempo(scale: number): void;
+  /** The usual view again after he has dragged the cube round. */
+  resetView(): void;
 };
 
 /** Queuing a whole alg at once makes the cube catch up within a few frames, so play() feeds turns one at a time. */
@@ -138,6 +140,9 @@ export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
     setTempo(scale) {
       waiting.current.tempo = scale;
       player.current?.setTempo(scale);
+    },
+    resetView() {
+      player.current?.resetView();
     },
   }));
 

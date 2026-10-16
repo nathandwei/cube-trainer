@@ -13,6 +13,7 @@ export const PLL_DATA: readonly CaseData[] = [
     group: "Adjacent corners",
     algs: [
       "x (R' U R') D2 (R U' R') D2 R2 x'", // cubingapp
+      "(R U R' F') (r U R' U') r' F R2 U' R'", // Nathan's: the Jb perm's shape with a wide r (its mirror does Ab)
     ],
   },
   {

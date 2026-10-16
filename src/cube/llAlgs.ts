@@ -143,3 +143,4 @@ export function splitAlgs(moves: readonly Move[], index: AlgIndex, times?: reado
   }
   return best?.sets ?? null;
 }
+

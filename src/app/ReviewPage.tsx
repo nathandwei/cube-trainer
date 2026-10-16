@@ -8,8 +8,13 @@ import { formatMs } from "@/app/lib/format";
 import { useAnalysisOptions } from "@/app/lib/method";
 import { navigate } from "@/app/lib/router";
 import { useSettings } from "@/app/lib/settings";
-import { accuracy, bestPossibleMoves, flow, LONG_RECOGNITION_MS, reportMoments, stageVerdict, verdictCounts } from "@/app/lib/review";
+import { useLearnSettings } from "@/app/lib/learnStore";
+import { accuracy, bestPossibleMoves, flow, LONG_RECOGNITION_MS, REPORT_ROWS, reportMoments, stageVerdict } from "@/app/lib/review";
+import { useSolves } from "@/app/lib/store";
+import { partSplits } from "@/app/review/parts-splits";
+import { chooseAlg } from "@/app/pages/learn/Session";
 import { learnItem } from "@/app/pages/learn/items";
+import { algUse } from "@/app/review/algUse";
 import { stageCase } from "@/app/review/cases";
 import {
   bestLines,
@@ -100,28 +105,42 @@ function Review({ solve, analysis, back }: { solve: SolveRecord; analysis: Solve
   const starts = useMemo(() => stageStarts(solve, analysis), [solve, analysis]);
   /** A slot's pair, named for his view as stage `index` began. */
   const pairTag = useCallback((index: number, slot: Slot): PairTag => ({ slot, name: slotInView(tokens, spans[index]?.start ?? 0, slot) }), [spans, tokens]);
+  const { algs } = useLearnSettings();
   const stages = useMemo<StageView[]>(
     () =>
       analysis.stages.map((stage, index) => {
         const start = starts[index];
+        const span = spans[index] ?? { start: 0, end: 0 };
+        const caseId = start ? stageCase(stage, start) : null;
+        const turns = solve.moves.slice(stage.startMove, stage.endMove).map((m) => m.move);
+        const use = algUse(stage, caseId, algs, turns, tokens.slice(span.start, span.end).map((t) => t.text));
         return {
           index,
           name: stageName(stage.label),
           caseName: stage.caseName,
-          verdict: stageVerdict(stage),
+          verdict: stageVerdict(stage) ?? use?.verdict ?? null,
           moves: stage.moveCount,
           best: bestPossibleMoves(stage),
           ms: stage.totalMs,
           pauseMs: index > 0 && stage.recognitionMs >= LONG_RECOGNITION_MS ? stage.recognitionMs : null,
           span: spans[index] ?? { start: 0, end: 0 },
           pairs: stage.kind === "pair" || stage.kind === "xcross" ? (stage.slots ?? []).map((slot) => pairTag(index, slot)) : [],
-          drill: stageDrill(stage, start ? stageCase(stage, start) : null, (id) => learnItem(id) !== undefined),
+          drill: stageDrill(stage, caseId, (id) => learnItem(id) !== undefined),
+          algUse: use,
         };
       }),
-    [analysis, pairTag, spans, starts],
+    [algs, analysis, pairTag, solve.moves, spans, starts, tokens],
   );
-  const { moves: movesMoments, pauses } = useMemo(() => reportMoments(analysis), [analysis]);
-  const counts = useMemo(() => verdictCounts(analysis), [analysis]);
+  // Steps done without his alg lead the key moments (up to two), then extra moves and pauses share the rest.
+  const algMoments = useMemo(() => stages.filter((stage) => stage.algUse && !stage.algUse.used).slice(0, 2), [stages]);
+  const { moves: movesMoments, pauses } = useMemo(() => reportMoments(analysis, REPORT_ROWS - algMoments.length), [algMoments.length, analysis]);
+  // The solve's parts as the ratings count them, and how this solve moved each rating (if it rated).
+  const solves = useSolves();
+  const parts = useMemo(() => partSplits(solve, analysis, solves), [analysis, solve, solves]);
+  const switchAlg = useCallback((stage: StageView) => {
+    const use = stage.algUse;
+    if (use && !use.used && use.switchable) chooseAlg(use.caseId, use.did);
+  }, []);
 
   /** A best line in his view at stage `index`'s start. */
   const inView = useCallback(
@@ -453,7 +472,9 @@ function Review({ solve, analysis, back }: { solve: SolveRecord; analysis: Solve
           <ReportPanel
             accuracy={accuracy(analysis)}
             flow={flow(solve.moves, solve.totalMs)}
-            counts={counts}
+            parts={parts}
+            algMoments={algMoments}
+            onSwitchAlg={switchAlg}
             moves={movesMoments}
             pauses={pauses}
             stages={stages}
@@ -466,7 +487,7 @@ function Review({ solve, analysis, back }: { solve: SolveRecord; analysis: Solve
             lineControls={lineControls}
             onOpenStage={openStepper}
             onDrill={navigate}
-            onStepThrough={() => openStepper(open ?? 0)}
+            onStepThrough={() => openStepper(0)}
           />
         ) : (
           <StepperPanel
@@ -486,6 +507,7 @@ function Review({ solve, analysis, back }: { solve: SolveRecord; analysis: Solve
             onNextMove={() => step(1)}
             onNextStage={nextStage}
             onDrill={navigate}
+            onSwitchAlg={switchAlg}
             onClose={() => setMode("report")}
           />
         )}

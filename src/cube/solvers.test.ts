@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MOVE_NAMES, SOLVED, applyAlg, invertAlg, moveFace, moveIndex, scrambledState, type CubeState } from "./cubie";
-import { SLOTS, isCrossSolved, isSlotSolved, solvedSlots } from "./pieces";
+import { SLOTS, SLOT_INFO, isCrossSolved, isSlotSolved, solvedSlots } from "./pieces";
 import { createRng, randomInt, randomScramble, shuffled } from "./random";
 import {
   MAX_ENUMERATE_LENGTH,
@@ -253,5 +253,37 @@ describe("solveXCross", () => {
     expect(isCrossSolved(after) && isSlotSolved(after, result!.slot)).toBe(true);
     const perSlot = SLOTS.map((slot) => solveSlots(state, [slot], [], { maxDepth: 14 })!.moves);
     expect(result!.moves).toBe(Math.min(...perSlot));
+  });
+});
+
+describe("solveSlots holding the other slots", () => {
+  it("never finds a line that moves another slot's pieces, and is never shorter than the free search", () => {
+    const rng = createRng(77);
+    let compared = 0;
+    for (let i = 0; i < 40 && compared < 12; i++) {
+      const state = scrambledState(randomScramble(rng));
+      const cross = solveCross(state, 1)[0];
+      if (cross === undefined) continue;
+      const crossed = applyAlg(state, cross);
+      const free = solveSlots(crossed, ["FR"], []);
+      const held = solveSlots(crossed, ["FR"], [], { holdOthers: true });
+      if (!free || !held) continue;
+      expect(held.moves).toBeGreaterThanOrEqual(free.moves);
+      const after = applyAlg(crossed, held.solution);
+      for (const slot of ["FL", "BL", "BR"] as const) {
+        const { corner, edge } = SLOT_INFO[slot];
+        const own = [SLOT_INFO.FR.corner];
+        if (!own.includes(crossed.cp[corner]!)) {
+          expect(after.cp[corner]).toBe(crossed.cp[corner]);
+          expect(after.co[corner]).toBe(crossed.co[corner]);
+        }
+        if (crossed.ep[edge] !== SLOT_INFO.FR.edge) {
+          expect(after.ep[edge]).toBe(crossed.ep[edge]);
+          expect(after.eo[edge]).toBe(crossed.eo[edge]);
+        }
+      }
+      compared++;
+    }
+    expect(compared).toBeGreaterThan(5);
   });
 });

@@ -15,6 +15,12 @@ Rules every screen follows. Nathan judges the site on looks; inconsistency reads
 - No sentences on screen. No explanatory copy, no AI copy. Labels and numbers only; the few hints that need a key
   use the `Key` chip (`<Key>Space</Key>`).
 
+## Layout
+
+- **Nothing overlaps.** The 3D cube as drawn never touches text, a button or an input outside it, and no two pieces
+  of text overlap. `pnpm test:layout` checks this on the built app for every page and state at five window sizes
+  (e2e/layout.spec.ts); a new page or state gets a line there, and the check passes before anything ships.
+
 ## Buttons
 
 - **A text button has one word.** Anything that needs two or more words becomes an icon button (`IconButton` in

@@ -1,9 +1,10 @@
-// Community preference data for validating the speed model (speed.ts): for each PLL, OLL and COLL case, the four
-// most-voted algs on SpeedCubeDB with their community vote counts, retrieved 2026-10-16 from
-// https://www.speedcubedb.com/a/3x3/PLL, https://www.speedcubedb.com/a/3x3/OLL and
-// https://www.speedcubedb.com/a/3x3/COLL (the case list pages show each case's top four algs).
+// Community preference: for each PLL, OLL, COLL and F2L case, the most-voted algs on SpeedCubeDB with their community
+// vote counts, retrieved 2026-10-16 from https://www.speedcubedb.com/a/3x3/PLL, /OLL, /COLL (each case's top four,
+// as the case list pages show them) and /F2L (the front-right slot's algs; the four most-voted that solve the
+// catalog case, since the site also lists other slots' inserts there). They validate the speed model (speed.ts),
+// add the voted algs to a case's options, and pick "Recommended" where J Perm lists nothing (popular.ts).
 //
-// Vote counts are facts recorded for testing only; the app does not show them. SpeedCubeDB publishes no licence, so
+// Vote counts are facts used only for ranking; the app does not show them. SpeedCubeDB publishes no licence, so
 // nothing else from the site is copied. Algs are written as the site writes them (leading y rotations included).
 // Each entry is filed under the catalog case its algs solve (checked by speed.test.ts), since the site's case
 // names and angles are not always the catalog's; SpeedCubeDB has no COLL entries for O-adj and O-diag.
@@ -11,7 +12,7 @@
 /** One case: its catalog id and the site's top algs, most-voted first, as [alg, votes]. */
 export type CommunityCase = { caseId: string; algs: readonly (readonly [alg: string, votes: number])[] };
 
-export const COMMUNITY_VOTES: Readonly<Record<"PLL" | "OLL" | "COLL", readonly CommunityCase[]>> = {
+export const COMMUNITY_VOTES: Readonly<Record<"PLL" | "OLL" | "COLL" | "F2L", readonly CommunityCase[]>> = {
   PLL: [
     {
       caseId: "PLL-Aa",
@@ -1077,6 +1078,377 @@ export const COMMUNITY_VOTES: Readonly<Record<"PLL" | "OLL" | "COLL", readonly C
         ["y F U R U' R' U R U' R' U R U' R' F'", 11],
         ["U F R U R' U' R U R' U' R U R' U' F'", 1],
         ["y' F R U R' U' R U R' U' R U R' U' F'", 1],
+      ],
+    },
+  ],
+  F2L: [
+    {
+      caseId: "F2L-1",
+      algs: [
+        ["U R U' R'", 132],
+        ["R' F R F'", 46],
+        ["y' r' U' R U M'", 16],
+        ["y U F' L F L2 U L", 11],
+      ],
+    },
+    {
+      caseId: "F2L-2",
+      algs: [
+        ["F R' F' R", 61],
+        ["y' U' R' U R", 27],
+        ["U' F' U F", 16],
+        ["y U' L' U L", 12],
+      ],
+    },
+    {
+      caseId: "F2L-3",
+      algs: [
+        ["F' U' F", 48],
+        ["y' R' U' R", 28],
+        ["y L' U' L", 12],
+        ["S U R U' R' S'", 6],
+      ],
+    },
+    {
+      caseId: "F2L-4",
+      algs: [
+        ["R U R'", 61],
+        ["y' f R f'", 7],
+        ["y F U F'", 4],
+        ["y2 L U L'", 3],
+      ],
+    },
+    {
+      caseId: "F2L-5",
+      algs: [
+        ["U' R U R' U2 R U' R'", 71],
+        ["F2 L' U' L U F2", 19],
+        ["U' R U R' U' R U2 R'", 9],
+        ["U' R U R' U R' F R F'", 5],
+      ],
+    },
+    {
+      caseId: "F2L-6",
+      algs: [
+        ["U' r U' R' U R U r'", 51],
+        ["y' U R' U' R U2 R' U R", 26],
+        ["d R' U' R U2 R' U R", 14],
+        ["y U L' U' L U2 L' U L", 6],
+      ],
+    },
+    {
+      caseId: "F2L-7",
+      algs: [
+        ["U' R U2 R' U' R U2 R'", 36],
+        ["M' U' M U2 r U' r'", 29],
+        ["U' R U2 R' U2 R U' R'", 13],
+        ["U' R U2 R' U R' F R F'", 5],
+      ],
+    },
+    {
+      caseId: "F2L-8",
+      algs: [
+        ["r' U2 R2 U R2 U r", 38],
+        ["d R' U2 R U R' U2 R", 34],
+        ["y' U R' U2 R U2 R' U R", 12],
+        ["y U L' U2 L U2 L' U L", 11],
+      ],
+    },
+    {
+      caseId: "F2L-9",
+      algs: [
+        ["U' R U' R' U F' U' F", 40],
+        ["F R U R' U' F' R U' R'", 15],
+        ["U' R U' R' d R' U' R", 10],
+        ["d R' U' R U' R' U' R", 8],
+      ],
+    },
+    {
+      caseId: "F2L-10",
+      algs: [
+        ["U' R U R' U R U R'", 40],
+        ["U2 R U' R' U' R U R'", 14],
+        ["d R' U R d' R U R'", 3],
+        ["y' U R' U R U' f R f'", 2],
+      ],
+    },
+    {
+      caseId: "F2L-11",
+      algs: [
+        ["U' R U2 R' U F' U' F", 44],
+        ["y' R U2 R2 U' R2 U' R'", 39],
+        ["U' R U2 R' d R' U' R", 10],
+        ["F' U L' U2 L U2 F", 9],
+      ],
+    },
+    {
+      caseId: "F2L-12",
+      algs: [
+        ["R U' R' U R U' R' U2 R U' R'", 35],
+        ["R' U2 R2 U R2 U R", 27],
+        ["U F' U2 F U' R U R'", 6],
+        ["U R U' R' U' R U R' U' R U R'", 5],
+      ],
+    },
+    {
+      caseId: "F2L-13",
+      algs: [
+        ["y' U R' U R U' R' U' R", 41],
+        ["M' U' R U R' U2 R U' r'", 16],
+        ["R U' R' U R' F R F' R U' R'", 12],
+        ["d R' U R U' R' U' R", 12],
+      ],
+    },
+    {
+      caseId: "F2L-14",
+      algs: [
+        ["U' R U' R' U R U R'", 47],
+        ["R U2 R' U2 R U R' U2 R U' R'", 4],
+        ["U' R2 D R' U R D' R2", 1],
+        ["U2 R2 U R' U R U2 R2", 1],
+      ],
+    },
+    {
+      caseId: "F2L-15",
+      algs: [
+        ["M U r U' r' U' M'", 41],
+        ["R U R' U2 R U' R' U R U' R'", 37],
+        ["R' D' R U' R' D R U R U' R'", 37],
+        ["F' U F U2 R U R'", 20],
+      ],
+    },
+    {
+      caseId: "F2L-16",
+      algs: [
+        ["R U' R' U2 F' U' F", 35],
+        ["R U' R' U2 y' R' U' R", 12],
+        ["U M' U R U' r' U' R U R'", 6],
+        ["U F U R U' R' F' R U R'", 4],
+      ],
+    },
+    {
+      caseId: "F2L-17",
+      algs: [
+        ["R U2 R' U' R U R'", 43],
+        ["y2 L U2 L' U' L U L'", 2],
+        ["R U R' U' R U2 R' U2 R U R'", 1],
+        ["y L F' L' F L' U L U' L' U L", 0],
+      ],
+    },
+    {
+      caseId: "F2L-18",
+      algs: [
+        ["y' R' U2 R U R' U' R", 27],
+        ["y L' U2 L U L' U' L", 14],
+        ["F' U2 F U F' U' F", 9],
+        ["R' F R F' R U' R' U R U' R'", 4],
+      ],
+    },
+    {
+      caseId: "F2L-19",
+      algs: [
+        ["U R U2 R' U R U' R'", 37],
+        ["U R U2 R2 F R F'", 3],
+        ["d f R2 f' U f R' f'", 2],
+        ["R U' R' U R U' R' U R U R'", 2],
+      ],
+    },
+    {
+      caseId: "F2L-20",
+      algs: [
+        ["y' U' R' U2 R U' R' U R", 32],
+        ["U' R U' R2 F R F' R U' R'", 20],
+        ["y U' L' U2 L U' L' U L", 8],
+        ["U' F' U2 F U' F' U F", 5],
+      ],
+    },
+    {
+      caseId: "F2L-21",
+      algs: [
+        ["U2 R U R' U R U' R'", 27],
+        ["R U' R' U2 R U R'", 15],
+        ["R B U2 B' R'", 6],
+        ["y' f R' f' U2 f R f'", 2],
+      ],
+    },
+    {
+      caseId: "F2L-22",
+      algs: [
+        ["r U' r' U2 r U r'", 28],
+        ["F' L' U2 L F", 22],
+        ["y' U2 R' U' R U' R' U R", 17],
+        ["y U2 L' U' L U' L' U L", 5],
+      ],
+    },
+    {
+      caseId: "F2L-23",
+      algs: [
+        ["U R U' R' U' R U' R' U R U' R'", 33],
+        ["R U R' U2 R U R' U' R U R'", 17],
+        ["U2 R2 U2 R' U' R U' R2", 10],
+        ["R U' R2 D' R U2 R' D R", 7],
+      ],
+    },
+    {
+      caseId: "F2L-24",
+      algs: [
+        ["F U R U' R' F' R U' R'", 37],
+        ["U' R U R2 F R F' R U' R'", 7],
+        ["y' R' U' R U2 R' U' R U R' U' R", 6],
+        ["U F' L' U L F R U R'", 4],
+      ],
+    },
+    {
+      caseId: "F2L-25",
+      algs: [
+        ["U' R' F R F' R U R'", 31],
+        ["R' F' R U R U' R' F", 13],
+        ["U' F' U F U R U' R'", 13],
+        ["l' U' l U l F' l' F", 4],
+      ],
+    },
+    {
+      caseId: "F2L-26",
+      algs: [
+        ["U R U' R' F R' F' R", 24],
+        ["R S' R' U R S R'", 13],
+        ["U R U R' U' y L' U' L", 6],
+        ["U R U' R' U' F' U F", 4],
+      ],
+    },
+    {
+      caseId: "F2L-27",
+      algs: [
+        ["R U' R' U R U' R'", 33],
+        ["F' U' F U2 R U' R'", 3],
+        ["y' f R' f' U f R' f'", 1],
+        ["y' f R' f' r' U' R U M'", 1],
+      ],
+    },
+    {
+      caseId: "F2L-28",
+      algs: [
+        ["R U R' U' F R' F' R", 24],
+        ["y L' U L U' L' U L", 12],
+        ["F' U F U' F' U F", 6],
+        ["y' R' U R U' R' U R", 4],
+      ],
+    },
+    {
+      caseId: "F2L-29",
+      algs: [
+        ["R' F R F' U R U' R'", 22],
+        ["y L' U' L U L' U' L", 16],
+        ["y' R' U' R U R' U' R", 16],
+        ["R' F R F' R' F R F'", 6],
+      ],
+    },
+    {
+      caseId: "F2L-30",
+      algs: [
+        ["R U R' U' R U R'", 34],
+        ["U' R U2 R' U2 R U R'", 2],
+        ["U' F R' F' R2 U R'", 2],
+        ["U2 F' U F R U R'", 0],
+      ],
+    },
+    {
+      caseId: "F2L-31",
+      algs: [
+        ["U' R' F R F' R U' R'", 29],
+        ["R U' R' U y' R' U R", 7],
+        ["F' U F R U2 R'", 5],
+        ["R U' R' U y L' U L", 5],
+      ],
+    },
+    {
+      caseId: "F2L-32",
+      algs: [
+        ["U R U' R' U R U' R' U R U' R'", 38],
+        ["R U R' U' R U R' U' R U R'", 25],
+        ["R2 U R2 U R2 U2 R2", 21],
+        ["U' F R' F' R U' R U R'", 9],
+      ],
+    },
+    {
+      caseId: "F2L-33",
+      algs: [
+        ["U' R U' R' U2 R U' R'", 31],
+        ["y R' D R U' R' D' R", 3],
+        ["R U R' U' R U' R' U R U' R'", 3],
+        ["U' R U' R' U' R U2 R'", 2],
+      ],
+    },
+    {
+      caseId: "F2L-34",
+      algs: [
+        ["U R U R' U2 R U R'", 28],
+        ["U' R U2 R' U R U R'", 20],
+        ["U R' D' R U' R' D R", 9],
+        ["y U L' U L U2 L' U L", 7],
+      ],
+    },
+    {
+      caseId: "F2L-35",
+      algs: [
+        ["U' R U R' U F' U' F", 25],
+        ["U' R U R' d R' U' R", 17],
+        ["U2 R U R' F R' F' R", 12],
+        ["U' R U R' U y' R' U' R", 5],
+      ],
+    },
+    {
+      caseId: "F2L-36",
+      algs: [
+        ["U F' U' F U' R U R'", 23],
+        ["U2 R' F R F' U2 R U R'", 13],
+        ["R U R' U R U R' U' F' U' F", 3],
+        ["R2 u R U R' U' u' R' U R'", 3],
+      ],
+    },
+    {
+      caseId: "F2L-37",
+      algs: [
+        ["R2 U2 F R2 F' U2 R' U R'", 37],
+        ["R' F R F' R U' R' U R U' R' U2 R U' R'", 20],
+        ["R U2 R' U R U2 R' U F' U' F", 10],
+        ["R U R' U2 R U2 R' U y' R' U' R", 7],
+      ],
+    },
+    {
+      caseId: "F2L-38",
+      algs: [
+        ["R U' R' U' R U R' U2 R U' R'", 22],
+        ["R U R' U' R U2 R' U' R U R'", 12],
+        ["R2 U2 R' U' R U' R' U2 R'", 7],
+        ["R U' R' U' R U R' U' R U2 R'", 4],
+      ],
+    },
+    {
+      caseId: "F2L-39",
+      algs: [
+        ["R U' R' U R U2 R' U R U' R'", 29],
+        ["R U2 R U R' U R U2 R2", 6],
+        ["R U R' U2 R U' R' U R U R'", 4],
+        ["R U2 R' U R U' R' U R U R'", 3],
+      ],
+    },
+    {
+      caseId: "F2L-40",
+      algs: [
+        ["r U' r' U2 r U r' R U R'", 27],
+        ["F' L' U2 L F R U R'", 15],
+        ["R U' R' F R U R' U' F' R U' R'", 10],
+        ["R U' R' U' R U' R' U y' R' U' R", 9],
+      ],
+    },
+    {
+      caseId: "F2L-41",
+      algs: [
+        ["R U' R' r U' r' U2 r U r'", 24],
+        ["R U' R' F' L' U2 L F", 9],
+        ["R U R' U' y M U' R' F R U M'", 7],
+        ["R U R' U' R U' R' U2 y' R' U' R", 6],
       ],
     },
   ],

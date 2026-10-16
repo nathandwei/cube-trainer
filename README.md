@@ -10,6 +10,7 @@ design mockups are generated locally into `concepts/` (gitignored) with `uv run 
 ```sh
 pnpm install
 pnpm dev       # SPA + Worker + local D1, http://localhost:5173 (Google sign-in only works on this port)
+pnpm test:layout  # build, then check no page has overlapping text or a cube covering anything (docs/UI.md)
 pnpm preview   # builds, then serves the production build (Worker and local D1 included), http://localhost:8788
 ```
 

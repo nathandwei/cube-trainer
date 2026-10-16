@@ -1,19 +1,21 @@
 // The algs a solver can pick from for a case, and the angle each one expects the case to be held at.
 //
-// Options come from three places: the catalog's own algs; the left/right mirrors of the algs of the case's mirror
-// image (Sune's algs mirrored solve Antisune, for a solver who learns one hand and mirrors it); and, for F2L, short
-// solutions found by search in ⟨U, R, F⟩, so finger-friendly inserts the datasets leave out (F2L 2's U' F' U F)
-// show up. Every option is written in the solver frame like the catalog (yellow up, green front).
+// Options come from four places: the catalog's own algs; the references (J Perm's algs and the community's most
+// voted, popular.ts); the left/right mirrors of the algs of the case's mirror image (Sune's algs mirrored solve
+// Antisune, for a solver who learns one hand and mirrors it); and, for F2L, short solutions found by search in
+// ⟨U, R, F⟩, so finger-friendly inserts the datasets leave out show up. Catalog and search options are written in
+// the solver frame (yellow up, green front); reference algs as their source writes them.
 
 import { algMoveCount, isSameAlg } from "./algs";
 import { caseState, getCase, isGoalReached, recognizeCase, type CaseDef, type CaseSetId } from "./cases";
-import { SOLVED, applyAlg, invertAlg, toFaceTurns, tokenizeAlg, type CubeState } from "./cubie";
+import { SOLVED, applyAlg, invertAlg, toFaceTurns, toFaceTurnsDetailed, tokenizeAlg, type CubeState } from "./cubie";
 import { llCornerAlignment } from "./milestones";
 import { mirrorAlg } from "./mirror";
+import { referenceAlgs, sameAlgLoose } from "./popular";
 import { enumerateSlots, solveSlots } from "./solvers";
 import type { Slot } from "./types";
 
-export type AlgSource = "catalog" | "mirror" | "search";
+export type AlgSource = "catalog" | "pro" | "jperm" | "community" | "mirror" | "search";
 
 export type AlgOption = {
   /** As written: catalog algs keep their brackets, wide moves, slices and rotations; search results are face turns. */
@@ -26,7 +28,7 @@ export type AlgOption = {
 /** F2L search: the faces it turns, how far past the shortest it looks, and the most options a case gets. */
 export const F2L_SEARCH = { faces: ["U", "R", "F"], slack: 2, maxOptions: 6 } as const;
 
-const SOURCE_ORDER: Record<AlgSource, number> = { catalog: 0, mirror: 1, search: 2 };
+const SOURCE_ORDER: Record<AlgSource, number> = { catalog: 0, pro: 1, jperm: 2, community: 3, mirror: 4, search: 5 };
 
 // As in cases.ts: no AUF, then quarter turns, then a half turn.
 const PRE_AUFS = ["", "U", "U'", "U2"] as const;
@@ -124,6 +126,20 @@ function* f2lSolutions(caseId: string): Generator<string, void, undefined> {
 // ---------------------------------------------------------------------------------------------------------------
 // Options
 
+function inverseRotation(rotation: string): string {
+  if (rotation.endsWith("2")) return rotation;
+  return rotation.endsWith("'") ? rotation.slice(0, -1) : `${rotation}'`;
+}
+
+/**
+ * The alg with the rotations it leaves open undone at its end, as the catalog writes them ("x L2 D2 ... L' x'"), so
+ * playing it leaves the cube held the way it started. The angle it starts from (its leading AUF) stays as written.
+ */
+function closeRotations(set: CaseSetId, alg: string): string {
+  const { rotations } = toFaceTurnsDetailed(splitLeadingAuf(set, alg).body);
+  return rotations.length === 0 ? alg : `${alg} ${rotations.map(inverseRotation).reverse().join(" ")}`;
+}
+
 const optionCache = new Map<string, readonly AlgOption[]>();
 
 function buildOptions(caseDef: CaseDef): AlgOption[] {
@@ -133,6 +149,10 @@ function buildOptions(caseDef: CaseDef): AlgOption[] {
     options.push(Object.freeze({ alg, moves: algMoveCount(alg), source }));
   };
   for (const alg of caseDef.algs) add(alg, "catalog");
+  // A reference alg is often a catalog alg from another angle ("y x R' U ..." for "x R' U ..."): offered once.
+  for (const { alg, source } of referenceAlgs(caseDef.id)) {
+    if (!options.some((option) => sameAlgLoose(option.alg, alg))) add(closeRotations(caseDef.set, alg), source);
+  }
   for (const alg of mirroredAlgs(caseDef)) add(alg, "mirror");
   if (caseDef.set === "F2L") {
     for (const alg of f2lSolutions(caseDef.id)) {
@@ -144,10 +164,12 @@ function buildOptions(caseDef: CaseDef): AlgOption[] {
 }
 
 /**
- * Every alg on offer for a case, sorted by move count, then catalog before mirror before search (each keeping its
- * own order). Two algs count as one when they are the same moves up to spelling, brackets and a leading or trailing
- * U turn (isSameAlg), and the earlier source wins; algs that solve the case with different moves are all kept.
+ * Every alg on offer for a case, sorted by move count, then catalog, pro, J Perm, community, mirror, search (each keeping
+ * its own order). Two algs count as one when they are the same moves up to spelling, brackets and a leading or
+ * trailing U turn (isSameAlg; reference algs also up to their starting angle, sameAlgLoose), and the earlier source
+ * wins; algs that solve the case with different moves are all kept.
  * - catalog: the case's own algs.
+ * - pro, jperm, community: what top solvers use now, J Perm's algs and the community's most voted (popular.ts).
  * - mirror: the left/right mirrors of the algs of mirrorCaseId(caseId), e.g. Sune's algs mirrored for Antisune.
  * - search (F2L only): solutions in ⟨U, R, F⟩ from the exact case state, up to F2L_SEARCH.slack moves longer than
  *   the shortest, ranked shortest, two-generator, fewest F turns first, until the case has F2L_SEARCH.maxOptions

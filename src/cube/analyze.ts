@@ -1,4 +1,6 @@
-// Splits a timed solve into CFOP stages and annotates each with timing, optimal alternatives and LL case names.
+// Splits a timed solve into CFOP stages and annotates each with timing, optimal alternatives and LL case names. A
+// pair's optimum puts back whatever sits in the slots it isn't solving (solvers.ts holdOthers): the shortest line
+// that wrecks another pair isn't one to learn from, and isn't fair to grade his moves against.
 //
 // Stage boundaries come from milestones measured after every move:
 // - cross: the first move after which the cross is solved.
@@ -193,7 +195,7 @@ function bestSinglePair(state: CubeState, keep: readonly Slot[], prefer: readonl
   const order = [...prefer, ...SLOTS.filter((slot) => !prefer.includes(slot))];
   for (const slot of order) {
     if (keep.includes(slot)) continue;
-    const found = solveSlots(state, [slot], keep);
+    const found = solveSlots(state, [slot], keep, { holdOthers: true });
     if (found && (!best || found.moves < best.moves)) best = { slot, ...found };
   }
   return best;
@@ -227,7 +229,7 @@ function annotate(kind: StageKind, label: string, states: readonly CubeState[], 
       // A joint search over three or four pairs can take over a second; such multislots go unscored.
       if (slots.length > 2) return { slots, bestAlternative };
       const keep = solvedAtStart.filter((slot) => !slots.includes(slot));
-      return { slots, bestAlternative, ...asOptimal(solveSlots(startState, slots, keep)) };
+      return { slots, bestAlternative, ...asOptimal(solveSlots(startState, slots, keep, { holdOthers: true })) };
     }
     case "eo":
       return { caseName: recognizeEO(startState)?.caseName };

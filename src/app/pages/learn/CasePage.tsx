@@ -1,11 +1,22 @@
-import { ArrowLeft, Check, Disc, Play, RotateCcw } from "lucide-react";
+import { ArrowLeft, Check, Disc, Keyboard, Play, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CubeView, type CubeHandle } from "@/app/components/CubeView";
 import { IconButton } from "@/app/components/IconButton";
 import { median } from "@/app/lib/averages";
 import { formatSeconds } from "@/app/lib/format";
 import { useReps } from "@/app/lib/learnStore";
-import { algMoveCount, algOptions, caseAlgSpeed, getCase, isSameAlg, playback, recommendAlg, viewAuf, type AlgSource } from "@/cube";
+import {
+  algMoveCount,
+  algOptions,
+  caseAlgSpeed,
+  getCase,
+  isSameAlg,
+  playback,
+  recommendAlg,
+  viewAuf,
+  type AlgSource,
+  type Recommendation,
+} from "@/cube";
 import type { CaseRep } from "@/shared/learn";
 import { CaseDiagram } from "./CaseDiagram";
 import { totalMs } from "./progress";
@@ -42,20 +53,33 @@ function angleOf(caseId: string, alg: string | undefined): string {
   }
 }
 
+type Pick = { card: Card; source: Recommendation["source"] };
+
+/** Who a recommendation comes from, as its tag's tooltip. */
+const PICK_SOURCES: Readonly<Record<Recommendation["source"], string>> = {
+  ruling: "Your call",
+  pros: "Top solvers",
+  jperm: "J Perm",
+  votes: "Most voted",
+  model: "Fastest",
+};
+
 /**
- * Best overall: the option the fingertrick model expects to run fastest (moves and how they sit in the hands), with
- * his own measured times standing in for the estimate where he has them. Fewest moves if the model can't say.
+ * Recommended: what the references say (his ruling, J Perm's pick, the community's most voted), else the option
+ * the fingertrick model expects to run fastest, with his own measured times standing in for the estimate where he
+ * has them. Fewest moves if neither can say.
  */
-function recommended(caseId: string, options: readonly Card[], personalMs: Record<string, number>): Card | undefined {
+function recommended(caseId: string, options: readonly Card[], personalMs: Record<string, number>): Pick | undefined {
   try {
     const pick = recommendAlg(caseId, { personalMs });
     const card = pick && options.find((option) => sameAlg(option.alg, pick.alg));
-    if (card) return card;
+    if (pick && card) return { card, source: pick.source };
   } catch (error) {
     console.warn(`No recommendation for ${caseId}`, error);
   }
   const fewest = Math.min(...options.map((option) => option.moves));
-  return options.find((option) => option.moves === fewest);
+  const card = options.find((option) => option.moves === fewest);
+  return card && { card, source: "model" };
 }
 
 /** The model's execution time for an alg, or null when it can't read it. */
@@ -74,6 +98,20 @@ function sameAlg(a: string, b: string): boolean {
     return isSameAlg(a, b);
   } catch (error) {
     console.warn(`Can't compare ${a} and ${b}`, error);
+    return false;
+  }
+}
+
+/** An alg he typed counts once it parses and solves the case from some angle (what playback needs). */
+function solvesCase(caseId: string, alg: string): boolean {
+  if (alg.trim() === "") return false;
+  try {
+    algMoveCount(alg);
+    playback(caseId, alg);
+    return true;
+  } catch (error) {
+    if (!(error instanceof Error)) throw error;
+    // Half-typed text or an alg for another case: not one to choose yet.
     return false;
   }
 }
@@ -102,6 +140,9 @@ export function CasePage({ caseId, current, onChoose, onBack, action, onRecord }
   const reps = useReps();
   const preview = useRef<CubeHandle>(null);
   const [more, setMore] = useState(false);
+  // His own alg, typed: null while the box is closed.
+  const [typed, setTyped] = useState<string | null>(null);
+  const typedWorks = typed !== null && solvesCase(caseId, typed);
   const setup = `z2 ${caseDef.setup} ${angleOf(caseId, current)}`.trim();
 
   // His median per alg he has drilled on this case: his real speed beats the model's estimate.
@@ -120,13 +161,18 @@ export function CasePage({ caseId, current, onChoose, onBack, action, onRecord }
   }, [caseId, reps]);
 
   // His alg, then the recommended one, then the rest (his ask), each option once.
-  const { cards, recommendedAlg } = useMemo(() => {
+  const { cards, recommendedAlg, recommendedBy } = useMemo(() => {
     const options = algOptions(caseId).map((option): Card => ({ alg: option.alg, moves: option.moves, source: option.source }));
-    const best = recommended(caseId, options, personalMs);
+    const pick = recommended(caseId, options, personalMs);
+    const best = pick?.card;
     const mine: Card[] = current ? [{ alg: current, moves: movesOf(current), source: "yours" }] : [];
     const rest = options.filter((option) => option !== best && !(current && sameAlg(option.alg, current)));
     const bestIsMine = best !== undefined && current !== undefined && sameAlg(best.alg, current);
-    return { cards: [...mine, ...(best && !bestIsMine ? [best] : []), ...rest], recommendedAlg: bestIsMine ? current : best?.alg };
+    return {
+      cards: [...mine, ...(best && !bestIsMine ? [best] : []), ...rest],
+      recommendedAlg: bestIsMine ? current : best?.alg,
+      recommendedBy: pick && PICK_SOURCES[pick.source],
+    };
   }, [caseId, current, personalMs]);
   const shown = more ? cards : cards.slice(0, FIRST_CARDS);
 
@@ -172,8 +218,39 @@ export function CasePage({ caseId, current, onChoose, onBack, action, onRecord }
       <div className="case-head">
         <h2 className="case-title">{caseDef.label}</h2>
         {onRecord && <IconButton icon={Disc} label="Record mine" variant="soft" onClick={onRecord} />}
+        <IconButton icon={Keyboard} label="Type mine" variant="soft" onClick={() => setTyped(typed === null ? "" : null)} />
         {action}
       </div>
+      {typed !== null && (
+        <form
+          className="type-alg"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!typedWorks) return;
+            onChoose(typed.trim());
+            setTyped(null);
+          }}
+        >
+          <input
+            autoFocus
+            spellCheck={false}
+            aria-label="Your alg"
+            aria-invalid={typed.trim() !== "" && !typedWorks}
+            value={typed}
+            onChange={(event) => setTyped(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.stopPropagation();
+                setTyped(null);
+              }
+            }}
+          />
+          <IconButton icon={Play} label="Play" filled className="outline" disabled={!typedWorks} onClick={() => play(typed)} />
+          <button type="submit" className="pill primary" disabled={!typedWorks}>
+            Choose
+          </button>
+        </form>
+      )}
       <div className="alg-options">
         {shown.map((card) => {
           const mine = yours(card.alg);
@@ -186,7 +263,11 @@ export function CasePage({ caseId, current, onChoose, onBack, action, onRecord }
               <span className="estimate">{formatEstimate(estimateMs(caseId, card.alg))}</span>
               <span className="note">
                 {isCurrent && <span className="tag neutral">{mine !== null ? `Yours ${formatSeconds(mine)}` : "Yours"}</span>}
-                {isRecommended && <span className="tag">Recommended</span>}
+                {isRecommended && (
+                  <span className="tag" data-tip={recommendedBy}>
+                    Recommended
+                  </span>
+                )}
                 {!isCurrent && !isRecommended && mine !== null && `Yours ${formatSeconds(mine)}`}
                 {!isCurrent && !isRecommended && mine === null && card.source === "mirror" && <span className="tag neutral">Mirror</span>}
               </span>

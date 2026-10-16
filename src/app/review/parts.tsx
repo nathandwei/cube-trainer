@@ -3,6 +3,7 @@ import { IconButton } from "@/app/components/IconButton";
 import type { TimedToken } from "@/app/lib/display";
 import type { Verdict } from "@/app/lib/review";
 import type { Slot } from "@/cube/types";
+import type { AlgUse } from "./algUse";
 import type { Drill, LineGroup, Span } from "./model";
 
 /** A pair as the review names it: the slot its pieces belong to (so its colours) and that slot's name in his view. */
@@ -24,6 +25,8 @@ export type StageView = {
   /** The pairs a pair or xcross stage made. */
   pairs: readonly PairTag[];
   drill: Drill | null;
+  /** A last-layer step against his alg for its case; null when there's nothing to compare. */
+  algUse: AlgUse | null;
 };
 
 /** A best line as the solver would read it: renamed into his view, with the pairs it solves. */

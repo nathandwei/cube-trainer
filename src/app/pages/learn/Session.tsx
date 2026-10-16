@@ -24,6 +24,7 @@ import {
 import type { CaseRep } from "@/shared/learn";
 import { CaseDiagram } from "./CaseDiagram";
 import { CasePage } from "./CasePage";
+import { LearnAlg } from "./LearnAlg";
 import { totalMs } from "./progress";
 
 /** cube: the connected smart cube; test: no cube, the Test button plays the alg (nothing is saved). */
@@ -61,6 +62,8 @@ export function Session({ caseIds, input, onExit }: Props) {
   const [setup, setSetup] = useState<CaseScramble | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [last, setLast] = useState<CaseRep | null>(null);
+  // A case whose alg he just chose: he learns it before its first rep.
+  const [learning, setLearning] = useState<string | null>(null);
   const done = useRef<CaseRep[]>([]);
   const cube = useRef<CubeHandle>(null);
   const shownAt = useRef(0);
@@ -117,7 +120,7 @@ export function Session({ caseIds, input, onExit }: Props) {
 
   // Each case with an alg: set it up from a real scramble.
   useEffect(() => {
-    if (!caseId || needsAlg) return;
+    if (!caseId || needsAlg || learning === caseId) return;
     let stale = false;
     scrambleFor(index)
       ?.then((next) => {
@@ -145,7 +148,7 @@ export function Session({ caseIds, input, onExit }: Props) {
     return () => {
       stale = true;
     };
-  }, [caseId, cubeSession, index, input, needsAlg, scrambleFor, tick]);
+  }, [caseId, cubeSession, index, input, learning, needsAlg, scrambleFor, tick]);
 
   const record = useCallback(
     (correct: boolean, recognitionMs: number, executionMs: number) => {
@@ -294,7 +297,21 @@ export function Session({ caseIds, input, onExit }: Props) {
   }, []);
 
   if (needsAlg && caseDef && caseId) {
-    return <CasePage key={caseId} caseId={caseId} onChoose={(chosen) => chooseAlg(caseId, chosen)} onBack={finish} />;
+    return (
+      <CasePage
+        key={caseId}
+        caseId={caseId}
+        onChoose={(chosen) => {
+          chooseAlg(caseId, chosen);
+          setLearning(caseId);
+        }}
+        onBack={finish}
+      />
+    );
+  }
+
+  if (learning === caseId && caseId && alg) {
+    return <LearnAlg key={caseId} caseId={caseId} alg={alg} onDrill={() => setLearning(null)} onBack={() => setLearning(null)} />;
   }
 
   const suggestion = last && caseId && last.correct ? fasterAlg(caseId, totalMs(last), 7, alg) : null;

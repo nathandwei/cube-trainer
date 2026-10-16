@@ -24,7 +24,7 @@ import { DEFAULT_LAST_LAYER, type LastLayerMethod } from "./analyze";
 import { getCase, recognizeCase } from "./cases";
 import { FrameTracker, splitMoves, type FrameStep } from "./frame";
 import { recognizeCOLL, recognizeEO, recognizeEPLL } from "./ll";
-import { AUFS, aufToSolve, isSolvedUpToAuf } from "./milestones";
+import { AUFS, aufToSolve, isSolvedUpToAuf, llCornersOriented } from "./milestones";
 import { SLOTS, SLOT_INFO, isCrossSolved, solvedSlots } from "./pieces";
 import { createRng, hashString, shuffled, uniform, type Rng } from "./random";
 import {
@@ -339,10 +339,15 @@ function planEoColl(p: Planner): void {
     p.segments.push({ kind, label: kind, steps, ...(kind === "eo" ? { caseName: eo.caseName } : {}) });
     requireUpright(p.view.frame, `after ${eo.alg}`);
   }
-  const coll = recognizeCOLL(viewState(p));
+  const before = viewState(p);
+  const coll = recognizeCOLL(before);
   if (coll) {
     const steps = playInView(p, `${coll.preAuf} ${coll.alg}`);
-    p.segments.push({ kind: "coll", label: "coll", steps, caseName: coll.caseName });
+    // With the corners already oriented (COLL's O cases), an alg that also finishes the cube is a PLL, and the
+    // analysis names it as one.
+    const pll = llCornersOriented(before) && isSolvedUpToAuf(p.state) ? recognizeCase("PLL", before) : null;
+    if (pll) p.segments.push({ kind: "pll", label: "pll", steps, caseName: getCase(pll.caseId).name });
+    else p.segments.push({ kind: "coll", label: "coll", steps, caseName: coll.caseName });
     requireUpright(p.view.frame, `after ${coll.alg}`);
   }
   const epll = recognizeEPLL(viewState(p));

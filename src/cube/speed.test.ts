@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isSameAlg } from "./algs";
 import { CASE_SETS, caseState, getCase, isGoalReached } from "./cases";
 import { applyAlg, toFaceTurns } from "./cubie";
 import { algOptions } from "./options";
-import { SPEED_COSTS, algSpeed, caseAlgSpeed, recommendAlg } from "./speed";
+import { SPEED_COSTS, algFingering, algSpeed, caseAlgSpeed, recommendAlg } from "./speed";
+import { referencePick, sameAlgLoose } from "./popular";
 import { COMMUNITY_VOTES, type CommunityCase } from "./speed-votes";
 
 const SEXY = "R U R' U'";
@@ -11,6 +11,8 @@ const SUNE = "R U R' U R U2 R'";
 const T_PERM = "(R U R' U') R' F R2 U' R' U' (R U R' F')";
 const UA_M2 = "M2 U M U2 M' U M2";
 const UA_RU = "R U R' U R' U' R2 U' R' U R' U R";
+/** The RU Ua as top solvers use it (pro-data.ts): the same alg. */
+const UA_RU_PRO = UA_RU;
 const AUFS = ["", "U", "U'", "U2"] as const;
 
 function turns(alg: string): string[] {
@@ -155,41 +157,57 @@ describe("algSpeed fingering", () => {
 
 describe("recommendAlg", () => {
   it.each(CASE_SETS.flatMap((set) => set.cases.map(({ id }) => [id] as const)))(
-    "%s: recommends its fastest option",
+    "%s: recommends the references' pick when they cover it, else its fastest option",
     (id) => {
       const recommended = recommendAlg(id);
       expect(recommended).not.toBeNull();
+      expect(algOptions(id).some(({ alg }) => alg === recommended!.alg)).toBe(true);
+      const pick = referencePick(id);
+      if (pick) {
+        expect(sameAlgLoose(recommended!.alg, pick.alg)).toBe(true);
+        expect(recommended!.source).toBe(pick.source);
+        return;
+      }
       const times = algOptions(id).map(({ alg }) => caseAlgSpeed(id, alg).ms);
       expect(recommended!.ms).toBe(Math.min(...times));
-      expect(algOptions(id).some(({ alg }) => alg === recommended!.alg)).toBe(true);
+      expect(recommended!.source).toBe("model");
     },
   );
+
+  it("follows top solvers, then J Perm, then the votes for F2L, and Nathan's ruling for F2L 2", () => {
+    expect(recommendAlg("PLL-Ua")).toMatchObject({ alg: UA_RU_PRO, source: "pros" });
+    expect(recommendAlg("EPLL-Ua")).toMatchObject({ source: "pros" });
+    expect(recommendAlg("PLL-T")).toMatchObject({ source: "jperm" });
+    expect(recommendAlg("OLL-27")).toMatchObject({ alg: "R U R' U R U2 R'", source: "jperm" });
+    expect(recommendAlg("F2L-1")).toMatchObject({ alg: "U R U' R'", source: "votes" });
+    expect(recommendAlg("F2L-2")).toMatchObject({ alg: "U' F' U F", source: "ruling" });
+  });
+
+  it("keeps the references' pick even when he's faster with another alg", () => {
+    expect(recommendAlg("PLL-Ua", { personalMs: { [UA_M2]: 500 } })).toMatchObject({ alg: UA_RU_PRO, source: "pros" });
+  });
 
   it("picks a T-perm alg for COLL O-adj, ahead of the shorter x/r alg (Nathan: what people use)", () => {
     const xAlg = "x R2 F R F' R U2 r' U r U2 x'";
     const tBased = [T_PERM, "(R U R' F') (R U R' U') R' F R2 U' R' U'"];
     const options = algOptions("COLL-O-adj").map(({ alg }) => alg);
     for (const alg of [xAlg, ...tBased]) expect(options).toContain(alg);
+    expect(referencePick("COLL-O-adj")).toBeNull();
     expect(tBased).toContain(recommendAlg("COLL-O-adj")!.alg);
     expect(caseAlgSpeed("COLL-O-adj", T_PERM).ms).toBeLessThan(caseAlgSpeed("COLL-O-adj", xAlg).ms);
   });
 
-  it("uses a measured time that beats the solver's usual pace", () => {
-    expect(recommendAlg("PLL-Ua")!.alg).toBe(UA_M2);
-    // He runs Sune and T perm 30% slower than the model, but the RU Ua 14% faster: his RU Ua is his best.
-    const personalMs = {
-      [SUNE]: algSpeed(SUNE).ms * 1.3,
-      [T_PERM]: algSpeed(T_PERM).ms * 1.3,
-      "(R U R' U) (R' U' R2 U') (R' U R' U R)": 1000,
-    };
-    expect(recommendAlg("PLL-Ua", { personalMs })).toEqual({ alg: UA_RU, ms: 1000 });
+  it("uses a measured time where the model decides", () => {
+    const xAlg = "x R2 F R F' R U2 r' U r U2 x'";
+    const personalMs = { [T_PERM]: algSpeed(T_PERM).ms * 1.3, [xAlg]: 600 };
+    expect(recommendAlg("COLL-O-adj", { personalMs })).toEqual({ alg: xAlg, ms: 600, source: "model" });
   });
 
   it("scales estimates to the solver's pace, so one timed alg leaves the model's order", () => {
-    const slow = algSpeed(UA_RU).ms * 1.5;
-    const recommended = recommendAlg("PLL-Ua", { personalMs: { [UA_RU]: slow } });
-    expect(recommended!.alg).toBe(UA_M2);
-    expect(recommended!.ms).toBe(Math.round(algSpeed(UA_M2).ms * 1.5));
+    const pick = recommendAlg("COLL-O-adj")!;
+    const recommended = recommendAlg("COLL-O-adj", { personalMs: { [pick.alg]: caseAlgSpeed("COLL-O-adj", pick.alg).ms * 1.5 } });
+    expect(recommended!.alg).toBe(pick.alg);
+    expect(recommended!.ms).toBe(Math.round(caseAlgSpeed("COLL-O-adj", pick.alg).ms * 1.5));
   });
 
   it.each([0, -5, Number.NaN, Number.POSITIVE_INFINITY])("rejects a measured time of %s", (ms) => {
@@ -214,31 +232,13 @@ describe("community data", () => {
   });
 });
 
-function withoutAuf(alg: string): string {
-  return alg.replace(/^(\s*(y2|y'|y|U2|U'|U)\s+)+/, "");
-}
-
-// Spellings of one alg for validation: the same face turns once leading and trailing U and D turns are dropped (a D
-// moved from one end to the other only shifts the alg cyclically, and the site splits its votes between such
-// spellings) and adjacent U/D pairs are put in one order (they commute). "x R'" and "l'" come out the same.
-function spellingKey(alg: string): string {
-  const t = turns(withoutAuf(alg));
-  while (t.length > 0 && /^[UD]/.test(t[0]!)) t.shift();
-  while (t.length > 0 && /^[UD]/.test(t.at(-1)!)) t.pop();
-  for (let i = 0; i + 1 < t.length; i++) {
-    if (t[i]![0] === "D" && t[i + 1]![0] === "U") [t[i], t[i + 1]] = [t[i + 1]!, t[i]!];
-  }
-  return t.join(" ");
-}
-
 type Candidate = { algs: string[]; votes: number; ms: number };
 
 // The case's options plus the site's top algs, spellings of one alg merged (votes summed, the faster spelling's time).
 function candidates({ caseId, algs }: CommunityCase): Candidate[] {
   const groups: { algs: string[]; votes: number }[] = [];
   const add = (alg: string, votes: number): void => {
-    const same = (other: string): boolean =>
-      isSameAlg(withoutAuf(other), withoutAuf(alg)) || spellingKey(other) === spellingKey(alg);
+    const same = (other: string): boolean => sameAlgLoose(other, alg);
     const group = groups.find((g) => g.algs.some(same));
     if (!group) {
       groups.push({ algs: [alg], votes });
@@ -291,5 +291,32 @@ describe("speed model vs the community's most-voted alg", () => {
     );
     expect(top1).toBeGreaterThanOrEqual(FLOORS[set].top1);
     expect(top2).toBeGreaterThanOrEqual(FLOORS[set].top2);
+  });
+});
+
+describe("algFingering", () => {
+  it("fingers T perm's moves the way the model times them", () => {
+    const fingering = algFingering(T_PERM);
+    expect(fingering).toHaveLength(14);
+    expect(fingering[0]).toEqual({ hand: "right", tool: "wrist", regrips: [] });
+    expect(fingering[1]).toMatchObject({ hand: "right", tool: "index" });
+    expect(fingering.every((f) => f !== null)).toBe(true);
+  });
+
+  it("gives an x R' done as l' one entry for both, and nothing to a trailing rotation", () => {
+    const fingering = algFingering("x R' U R' D2 R U' R' D2 R2 x'");
+    expect(fingering[0]).toEqual(fingering[1]);
+    expect(fingering[0]).toMatchObject({ hand: "left", tool: "wrist" });
+    expect(fingering.at(-1)).toBeNull();
+  });
+
+  it("skips the AUF only when asked", () => {
+    expect(algFingering(`U ${SUNE}`, { ignoreAuf: true })[0]).toBeNull();
+    expect(algFingering(`U ${SUNE}`)[0]).not.toBeNull();
+  });
+
+  it("marks a regrip on the move after it", () => {
+    const fingering = algFingering("R U' R U R U R U' R' U' R2");
+    expect(fingering.some((f) => (f?.regrips.length ?? 0) > 0)).toBe(true);
   });
 });

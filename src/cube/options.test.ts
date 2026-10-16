@@ -9,7 +9,7 @@ import { solveSlots } from "./solvers";
 
 const ALL_CASES = CASE_SETS.flatMap((set) => set.cases);
 const AUFS = ["", "U", "U'", "U2"] as const;
-const SOURCE_ORDER = { catalog: 0, mirror: 1, search: 2 } as const;
+const SOURCE_ORDER = { catalog: 0, pro: 1, jperm: 2, community: 3, mirror: 4, search: 5 } as const;
 const SUNE = "R U R' U R U2 R'";
 
 function apply(state: CubeState, ...algs: string[]): CubeState {
@@ -112,7 +112,7 @@ describe("algOptions", () => {
   it("offers F2L 2's U' F' U F next to the catalog's F R' F' R", () => {
     const options = algOptions("F2L-2");
     expect(options[0]).toEqual({ alg: "F R' F' R", moves: 4, source: "catalog" });
-    expect(options).toContainEqual({ alg: "U' F' U F", moves: 4, source: "search" });
+    expect(options).toContainEqual({ alg: "U' F' U F", moves: 4, source: "community" });
     // The sequence as first reported (U F' U' F) solves F2L 2 from no angle, so it is rightly not on offer.
     expect(workingPreAufs("F2L", caseState("F2L-2"), "U F' U' F")).toEqual([]);
   });

@@ -61,12 +61,18 @@
   flex-direction: column;
 }
 
-/* The appearance section's preview: the cube as every page will show it. */
+/* The appearance section's preview: the cube as every page will show it, to drag round and scramble. */
 .prefs .prefs-cube {
   align-self: center;
-  width: calc(420 * var(--u));
-  height: calc(400 * var(--u));
-  margin-top: calc(48 * var(--u));
+  width: calc(460 * var(--u));
+  height: calc(440 * var(--u));
+  margin-top: calc(32 * var(--u));
+}
+
+.prefs-cube-actions {
+  align-self: center;
+  display: flex;
+  gap: calc(12 * var(--u));
 }
 
 .prefs-row {
