@@ -1,0 +1,12 @@
+// The Worker as api.test.ts runs it. wrangler.jsonc cannot be used directly: its assets block has no directory until
+// the Vite plugin supplies one. Keep the compatibility date and D1 binding in step with wrangler.jsonc. Living in
+// worker/ also keeps the repo's .dev.vars (real Google credentials) out of the tests; they set their own secrets.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "cube-trainer-test",
+  "main": "./index.ts",
+  "compatibility_date": "2026-10-01",
+  "d1_databases": [
+    { "binding": "DB", "database_name": "cube-trainer", "database_id": "test", "migrations_dir": "../migrations" }
+  ]
+}

@@ -1,0 +1,6 @@
+# Local secrets for `pnpm dev`: copy this file to .dev.vars (gitignored) and fill it in.
+# Google Cloud console > APIs & Services > Credentials > OAuth client ID (Web application), with
+# authorised redirect URI http://localhost:5173/api/auth/callback/google
+# Production reads the same names from Worker secrets (`pnpm exec wrangler secret put GOOGLE_CLIENT_ID`).
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=

@@ -17,3 +17,6 @@ concepts/
 # python tooling
 .venv/
 __pycache__/
+
+# local Worker secrets
+.dev.vars

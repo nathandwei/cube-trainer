@@ -7,13 +7,15 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite build && wrangler dev --port 8788",
+    "dev": "wrangler d1 migrations apply DB --local && vite",
+    "build": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json && vite build",
+    "preview": "vite build && vite preview --port 8788",
     "deploy": "vite build && wrangler deploy",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "cf-typegen": "wrangler types worker/worker-configuration.d.ts"
   },
   "dependencies": {
     "cubing": "0.63.8",
@@ -22,6 +24,7 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "1.64.0",
     "@eslint/js": "9.39.5",
     "@playwright/test": "1.63.0",
     "@types/node": "^22.20.5",
@@ -36,6 +39,6 @@
     "typescript-eslint": "8.71.2",
     "vite": "8.3.4",
     "vitest": "5.0.3",
-    "wrangler": "4.147.0"
+    "wrangler": "4.151.0"
   }
 }

@@ -2,10 +2,25 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   // Must match the Worker name in Cloudflare or Workers Builds fails.
   "name": "cube-trainer",
+  "main": "./worker/index.ts",
   "compatibility_date": "2026-10-01",
+  // The Vite plugin sets the assets directory to its client build output (dist/client).
   "assets": {
-    "directory": "./dist",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    // Without this, browser navigations to /api/* (the OAuth redirects) would get index.html instead of the Worker.
+    "run_worker_first": ["/api/*"]
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cube-trainer",
+      // Production database (created 2026-10-15, region ENAM). Local dev only uses the id to name its local copy.
+      "database_id": "edd89e77-6dc5-4820-8232-bf6b8adddc58",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Google OAuth client. Deploys fail until both are set (`pnpm exec wrangler secret put GOOGLE_CLIENT_ID`); locally
+  // they come from .dev.vars, and listing them keeps any other keys in .env out of the Worker.
+  "secrets": { "required": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] },
   "routes": [{ "pattern": "cube.nathanwei.org", "custom_domain": true }]
 }

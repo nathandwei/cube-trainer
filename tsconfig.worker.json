@@ -1,0 +1,19 @@
+{
+  // The Worker runs on workerd, not in a browser: no DOM lib, runtime types from `pnpm cf-typegen`.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "types": [],
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["worker", "src/shared"],
+  // Those tests also exercise the cube engine and are typechecked with the app (tsconfig.json).
+  "exclude": ["src/shared/**/*.test.ts"]
+}

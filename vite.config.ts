@@ -1,9 +1,11 @@
 import { fileURLToPath } from "node:url";
+import { cloudflare } from "@cloudflare/vite-plugin";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [react()],
+  // The Cloudflare plugin runs worker/index.ts (the /api routes) and the SPA together in dev and in the build.
+  plugins: [react(), cloudflare()],
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   // cubing.js runs its scramble and search code in module workers.
   worker: { format: "es" },
