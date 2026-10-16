@@ -12,6 +12,7 @@ export {
   scrambleToSolverFrame,
   scrambledState,
   simplifyMoves,
+  solverFrameToScramble,
   stateKey,
   toFaceTurns,
   toFaceTurnsDetailed,
@@ -55,4 +56,32 @@ export {
 } from "./ll";
 export { analyzeSolve } from "./analyze";
 export { generateDemoPlan, generateDemoSolve, type DemoSolve, type DemoStage } from "./demo";
-export { createRng, randomScramble } from "./random";
+export { createRng, randomScramble, type Rng } from "./random";
+export { algMoveCount, isSameAlg } from "./algs";
+export {
+  CASES_BY_ID,
+  CASE_SETS,
+  FASTER_ALG_RULES,
+  caseState,
+  fasterAlg,
+  getCase,
+  getCaseSet,
+  isGoalReached,
+  recognizeCase,
+  type AlgSuggestion,
+  type CaseDef,
+  type CaseMatch,
+  type CaseSet,
+  type CaseSetId,
+} from "./cases";
+export {
+  MAX_CROSS_MOVES,
+  MAX_XCROSS_MOVES,
+  SCRAMBLE_MAX_MOVES,
+  SCRAMBLE_MIN_MOVES,
+  caseScramble,
+  crossScramble,
+  stateScramble,
+  xcrossScramble,
+  type CaseScramble,
+} from "./scramble";

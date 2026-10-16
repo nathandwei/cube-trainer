@@ -316,6 +316,13 @@ export function scrambleToSolverFrame(scramble: string): Move[] {
   return toFaceTurnsDetailed(scramble).moves.map((move) => Z2_FACE[move[0] as Face] + move.slice(1));
 }
 
+/** The WCA-orientation scramble for outer turns written in the solver frame (the inverse of scrambleToSolverFrame). */
+export function solverFrameToScramble(moves: string | readonly Move[]): string {
+  return canonical(moves)
+    .map((move) => Z2_FACE[move[0] as Face] + move.slice(1))
+    .join(" ");
+}
+
 /** The cube state, in the solver frame, after a WCA-orientation scramble. */
 export function scrambledState(scramble: string): CubeState {
   return applyAlg(SOLVED, scrambleToSolverFrame(scramble));

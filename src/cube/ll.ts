@@ -26,16 +26,24 @@ export const EO_CASES = withFaceTurns(EO_ALGS);
 export const COLL_CASES = withFaceTurns(COLL_ALGS);
 export const EPLL_CASES = withFaceTurns(EPLL_ALGS);
 
-type Signature = (state: CubeState) => string;
+export type Signature = (state: CubeState) => string;
 
 const eoSignature: Signature = (s) => s.eo.slice(0, 4).join("");
 const cornerSignature: Signature = (s) => `${s.cp.slice(0, 4).join("")}${s.co.slice(0, 4).join("")}`;
-const permutationSignature: Signature = (s) => `${s.cp.slice(0, 4).join("")}${s.ep.slice(0, 4).join("")}`;
+export const permutationSignature: Signature = (s) => `${s.cp.slice(0, 4).join("")}${s.ep.slice(0, 4).join("")}`;
 
 // Preferred AUF order when several work: none, then quarter turns, then a half turn.
 const AUF_PREFERENCE = [0, 1, 3, 2];
 
-function buildIndex(cases: readonly LLCase[], signature: Signature, withPostAuf: boolean): Map<string, LLMatch> {
+/**
+ * Maps the signature of every state each case covers (all pre-AUFs, and post-AUFs when `withPostAuf`) to the case
+ * and the AUFs that solve it, preferring the AUFs in AUF_PREFERENCE order.
+ */
+export function buildIndex(
+  cases: readonly Pick<LLCase, "name" | "alg" | "faceTurns">[],
+  signature: Signature,
+  withPostAuf: boolean,
+): Map<string, LLMatch> {
   const index = new Map<string, LLMatch>();
   for (const pre of AUF_PREFERENCE) {
     for (const llCase of cases) {
