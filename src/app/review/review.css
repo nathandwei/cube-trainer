@@ -9,6 +9,11 @@
   --v-inaccuracy: #e2a184;
   --v-mistake: #d0704f;
   --v-blunder: #a6402e;
+  /* The matte sticker colours of the cube views (CubeView, CaseDiagram), for the pair chips. */
+  --s-green: #4a9461;
+  --s-orange: #e07a36;
+  --s-red: #c2493c;
+  --s-blue: #3a6fae;
   /* .main's top padding: the column rule runs the full height of the window, through it. */
   --rv-pad-top: calc(33 * var(--u));
   display: grid;
@@ -193,6 +198,53 @@
   box-shadow: inset 0 0 0 calc(2 * var(--u)) var(--faint);
 }
 
+/* pair chips: a slot's two side colours as stickers, so "P2" says which pair */
+
+.rv-pairs {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(8 * var(--u));
+}
+
+.rv-pair {
+  position: relative;
+  display: inline-flex;
+  gap: calc(2 * var(--u));
+  --sticker: calc(13 * var(--u));
+}
+
+.rv-pair.xs {
+  --sticker: calc(9 * var(--u));
+  gap: calc(1.5 * var(--u));
+}
+
+.rv-pair.lg {
+  --sticker: calc(19 * var(--u));
+  gap: calc(3 * var(--u));
+}
+
+.rv-sticker {
+  width: var(--sticker);
+  height: var(--sticker);
+  border-radius: calc(var(--sticker) * 0.24);
+}
+
+.rv-sticker.green {
+  background: var(--s-green);
+}
+
+.rv-sticker.orange {
+  background: var(--s-orange);
+}
+
+.rv-sticker.red {
+  background: var(--s-red);
+}
+
+.rv-sticker.blue {
+  background: var(--s-blue);
+}
+
 /* key moments: one aligned table between two rules */
 
 .rv-moments {
@@ -225,6 +277,18 @@
   transition: color 150ms;
 }
 
+.rv-moment-label {
+  display: flex;
+  align-items: center;
+  gap: calc(10 * var(--u));
+}
+
+.rv-moment-detail-ms {
+  margin-left: calc(10 * var(--u));
+  color: var(--ink);
+  font-weight: 500;
+}
+
 .rv-moment-value {
   font-weight: 500;
 }
@@ -249,11 +313,12 @@
   width: 100%;
 }
 
-/* yours / best lines: one table across rows (subgrid), moves starting under the moment values */
+/* yours / best lines: one table across rows (subgrid), moves starting under the moment values (the label column
+   grows past them only when a label and its pair chips need more room) */
 
 .rv-lines {
   display: grid;
-  grid-template-columns: calc(92 * var(--u)) minmax(0, max-content) auto;
+  grid-template-columns: minmax(calc(92 * var(--u)), max-content) minmax(0, max-content) auto;
   column-gap: calc(14 * var(--u));
   justify-content: start;
   align-content: start;
@@ -268,8 +333,16 @@
 }
 
 .rv-line-label {
+  display: flex;
+  align-items: center;
+  gap: calc(10 * var(--u));
   font-size: calc(22 * var(--ut));
   color: var(--muted);
+}
+
+/* At the label column's right edge, so the chips of every row line up, labelled or not. */
+.rv-line-label .rv-pairs {
+  margin-left: auto;
 }
 
 .rv-line-moves {
@@ -285,9 +358,18 @@
   gap: calc(8 * var(--u));
 }
 
-.rv-line-tag {
-  font-size: calc(16 * var(--ut));
+.rv-line-count {
+  min-width: calc(20 * var(--u));
+  font-size: calc(18 * var(--ut));
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
+}
+
+/* The cross's xcross section starts under a rule of its own. */
+.rv-line.first-xcross {
+  margin-top: calc(8 * var(--u));
+  padding-top: calc(8 * var(--u));
+  border-top: 1px solid var(--rule);
 }
 
 /* A line not on the cube yet reads as text; clicking it puts it on the cube. */
@@ -362,7 +444,12 @@
   font-size: calc(20 * var(--ut));
 }
 
+/* A pair tab carries its chip under the name, so the tabs keep to one row. */
 .rv-tabs button {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(3 * var(--u));
   color: var(--muted);
   padding: calc(6 * var(--u)) 0;
   border-bottom: calc(3 * var(--u)) solid transparent;
@@ -398,6 +485,11 @@
   line-height: 1.1;
 }
 
+.rv-head-label .rv-pairs {
+  margin-left: calc(14 * var(--u));
+  vertical-align: calc(2 * var(--u));
+}
+
 .rv-head-case {
   margin-left: calc(14 * var(--u));
   font-size: calc(26 * var(--ut));
@@ -421,13 +513,17 @@
   color: var(--muted);
 }
 
-/* Room for his line and three best lines, so the controls stay put from stage to stage. */
+/* Room for his line, two best crosses and two xcrosses, so the controls stay put from stage to stage. */
 .rv-stepper .rv-lines {
-  min-height: calc(230 * var(--u));
+  min-height: calc(266 * var(--u));
 }
 
 .rv-nav {
   display: flex;
   gap: calc(12 * var(--u));
   margin-top: calc(28 * var(--u));
+}
+
+.rv-nav-drill {
+  margin-left: auto;
 }

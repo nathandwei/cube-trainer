@@ -5,24 +5,27 @@ import { IconButton } from "@/app/components/IconButton";
 import { displayTokens, inViewAfter, slotInView, type TimedToken } from "@/app/lib/display";
 import { formatMs } from "@/app/lib/format";
 import { navigate } from "@/app/lib/router";
-import { accuracy, bestPossibleMoves, flow, LONG_RECOGNITION_MS, momentsInOrder, stageVerdict, verdictCounts } from "@/app/lib/review";
+import { accuracy, bestPossibleMoves, flow, LONG_RECOGNITION_MS, reportMoments, stageVerdict, verdictCounts } from "@/app/lib/review";
 import { learnItem } from "@/app/pages/learn/items";
+import { stageCase } from "@/app/review/cases";
 import {
   bestLines,
   currentToken,
-  drillFor,
   focusedStage,
   nextStageTarget,
   previousStageTarget,
+  stageDrill,
   stageName,
   stageSpans,
+  xcrossLines,
+  type BestLine,
   type Target,
 } from "@/app/review/model";
-import type { LineId, Shown, StageView, ViewLine } from "@/app/review/parts";
+import type { LineId, PairTag, Shown, StageView, ViewLine } from "@/app/review/parts";
 import { ReportPanel } from "@/app/review/ReportPanel";
 import { StepperPanel } from "@/app/review/StepperPanel";
-import { scrambledState } from "@/cube";
-import type { SolveAnalysis, SolveRecord } from "@/cube/types";
+import { applyAlg, scrambledState, type CubeState } from "@/cube";
+import type { Slot, SolveAnalysis, SolveRecord } from "@/cube/types";
 import "@/app/review/review.css";
 
 const SPEEDS = [0.5, 1, 2];
@@ -51,48 +54,60 @@ function setupAfter(solve: SolveRecord, tokens: readonly TimedToken[], count: nu
   return [solve.scramble, "z2", ...tokens.slice(0, count).map((t) => t.text)].join(" ");
 }
 
+/** The cube (centre frame) as each stage began. */
+function stageStarts(solve: SolveRecord, analysis: SolveAnalysis): CubeState[] {
+  let state = scrambledState(solve.scramble);
+  let done = 0;
+  return analysis.stages.map((stage) => {
+    state = applyAlg(state, solve.moves.slice(done, stage.startMove).map((m) => m.move));
+    done = stage.startMove;
+    return state;
+  });
+}
+
 function Review({ solve, analysis, back }: { solve: SolveRecord; analysis: SolveAnalysis; back: string }) {
   const tokens = useMemo(() => displayTokens(solve, analysis), [solve, analysis]);
   const spans = useMemo(() => stageSpans(tokens, analysis.stages), [tokens, analysis]);
+  const starts = useMemo(() => stageStarts(solve, analysis), [solve, analysis]);
+  /** A slot's pair, named for his view as stage `index` began. */
+  const pairTag = useCallback((index: number, slot: Slot): PairTag => ({ slot, name: slotInView(tokens, spans[index]?.start ?? 0, slot) }), [spans, tokens]);
   const stages = useMemo<StageView[]>(
     () =>
-      analysis.stages.map((stage, index) => ({
-        index,
-        name: stageName(stage.label),
-        caseName: stage.caseName,
-        verdict: stageVerdict(stage),
-        moves: stage.moveCount,
-        best: bestPossibleMoves(stage),
-        ms: stage.totalMs,
-        pauseMs: index > 0 && stage.recognitionMs >= LONG_RECOGNITION_MS ? stage.recognitionMs : null,
-        span: spans[index] ?? { start: 0, end: 0 },
-      })),
-    [analysis, spans],
+      analysis.stages.map((stage, index) => {
+        const start = starts[index];
+        return {
+          index,
+          name: stageName(stage.label),
+          caseName: stage.caseName,
+          verdict: stageVerdict(stage),
+          moves: stage.moveCount,
+          best: bestPossibleMoves(stage),
+          ms: stage.totalMs,
+          pauseMs: index > 0 && stage.recognitionMs >= LONG_RECOGNITION_MS ? stage.recognitionMs : null,
+          span: spans[index] ?? { start: 0, end: 0 },
+          pairs: stage.kind === "pair" || stage.kind === "xcross" ? (stage.slots ?? []).map((slot) => pairTag(index, slot)) : [],
+          drill: stageDrill(stage, start ? stageCase(stage, start) : null, (id) => learnItem(id) !== undefined),
+        };
+      }),
+    [analysis, pairTag, spans, starts],
   );
-  const moments = useMemo(() => momentsInOrder(analysis), [analysis]);
+  const { moves: movesMoments, pauses } = useMemo(() => reportMoments(analysis), [analysis]);
   const counts = useMemo(() => verdictCounts(analysis), [analysis]);
 
-  // Every stage's best lines, in his view at the stage's start. The cross enumerates its optima from the cross table.
-  const bestByStage = useMemo<ViewLine[][]>(
-    () =>
-      analysis.stages.map((stage, index) => {
-        const start = spans[index]?.start ?? 0;
-        const crossStart = stage.kind === "cross" && stage.startMove === 0 ? scrambledState(solve.scramble) : undefined;
-        return bestLines(stage, crossStart).map((line) => ({
-          moves: inViewAfter(tokens, start, line.moves),
-          slot: line.slot ? slotInView(tokens, start, line.slot) : null,
-        }));
-      }),
-    [analysis, spans, solve.scramble, tokens],
+  /** A best line in his view at stage `index`'s start. */
+  const inView = useCallback(
+    (index: number, line: BestLine): ViewLine => ({
+      moves: inViewAfter(tokens, spans[index]?.start ?? 0, line.moves),
+      count: line.count,
+      group: line.group,
+      pairs: line.slots.map((slot) => pairTag(index, slot)),
+    }),
+    [pairTag, spans, tokens],
   );
-  const linesFor = useCallback((index: number): ViewLine[] => bestByStage[index] ?? [], [bestByStage]);
-
-  const drillAfterPause = useCallback(
-    (index: number) => {
-      const stage = analysis.stages[index];
-      return stage ? drillFor(stage, (id) => learnItem(id) !== undefined) : null;
-    },
-    [analysis],
+  // Every stage's best lines. The cross enumerates its optima from the cross table.
+  const bestByStage = useMemo<ViewLine[][]>(
+    () => analysis.stages.map((stage, index) => bestLines(stage, starts[index]).map((line) => inView(index, line))),
+    [analysis, inView, starts],
   );
 
   const cube = useRef<CubeHandle>(null);
@@ -118,6 +133,22 @@ function Review({ solve, analysis, back }: { solve: SolveRecord; analysis: Solve
 
   const focus = focusedStage(spans, played, pinned);
   const current = currentToken(spans, focus, played);
+
+  // The cross's lines get an xcross section, searched only while they're on screen (the solver caches repeats).
+  const crossIndex = analysis.stages.findIndex((stage) => stage.kind === "cross");
+  const crossOnShow = crossIndex >= 0 && (shown?.stage === crossIndex || (mode === "report" ? open === crossIndex : focus === crossIndex));
+  const crossStart = crossIndex >= 0 ? starts[crossIndex] : undefined;
+  const xcross = useMemo<ViewLine[]>(
+    () => (crossOnShow && crossStart ? xcrossLines(crossStart).map((line) => inView(crossIndex, line)) : []),
+    [crossIndex, crossOnShow, crossStart, inView],
+  );
+  const linesFor = useCallback(
+    (index: number): ViewLine[] => {
+      const best = bestByStage[index] ?? [];
+      return index === crossIndex ? [...best, ...xcross] : best;
+    },
+    [bestByStage, crossIndex, xcross],
+  );
 
   const stopLine = useCallback(() => {
     lineTimers.current.forEach((timer) => window.clearTimeout(timer));
@@ -387,18 +418,18 @@ function Review({ solve, analysis, back }: { solve: SolveRecord; analysis: Solve
             accuracy={accuracy(analysis)}
             flow={flow(solve.moves, solve.totalMs)}
             counts={counts}
-            moments={moments}
+            moves={movesMoments}
+            pauses={pauses}
             stages={stages}
             tokens={tokens}
             linesFor={linesFor}
-            drillFor={drillAfterPause}
             open={open}
             shown={shown}
             onToggle={toggleBest}
             onPlay={playLine}
             lineControls={lineControls}
             onOpenStage={openStepper}
-            onDrill={(id) => navigate(`/learn/${encodeURIComponent(id)}`)}
+            onDrill={navigate}
             onStepThrough={() => openStepper(open ?? 0)}
           />
         ) : (
@@ -418,6 +449,7 @@ function Review({ solve, analysis, back }: { solve: SolveRecord; analysis: Solve
             onPreviousMove={() => step(-1)}
             onNextMove={() => step(1)}
             onNextStage={nextStage}
+            onDrill={navigate}
             onClose={() => setMode("report")}
           />
         )}

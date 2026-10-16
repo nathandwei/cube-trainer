@@ -1,19 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { crossDistance, scrambledState } from "@/cube";
-import type { SolveAnalysis, Stage } from "@/cube/types";
+import { SOLVED, applyAlg, crossDistance, scrambledState, solveXCross } from "@/cube";
+import type { Stage } from "@/cube/types";
 import { slotInView, type TimedToken } from "@/app/lib/display";
-import { momentsInOrder } from "@/app/lib/review";
 import {
+  PAUSE_DRILL,
   bestLines,
   currentToken,
-  drillFor,
   focusedStage,
   nextStageTarget,
   previousStageTarget,
   sentenceCase,
+  slotsMadeBy,
+  stageDrill,
   stageName,
   stageOfToken,
   stageSpans,
+  xcrossLines,
   type Span,
 } from "./model";
 
@@ -39,6 +41,8 @@ function stage(overrides: Partial<Stage>): Stage {
     ...overrides,
   };
 }
+
+const SCRAMBLE = "R2 F L' U R2 D2 F B2 L B U2 F2 U' F2 D2 L2 F2 D2 L2 D";
 
 // Two stages of two turns each, with a rotation between them: R U | y R' U'.
 const TOKENS = [turn("R", 0), turn("U", 1), rotation("y", 2), turn("R'", 2), turn("U'", 3)];
@@ -104,19 +108,19 @@ describe("bestLines", () => {
       name: "an easier pair elsewhere comes first",
       stage: stage({ slots: ["FR"], optimalMoves: 7, optimalSolution: "R U R' U' R U R'", bestAlternative: { slot: "BL", moves: 3, solution: "L' U L" } }),
       expected: [
-        { moves: "L' U L", count: 3, slot: "BL" },
-        { moves: "R U R' U' R U R'", count: 7, slot: "FR" },
+        { moves: "L' U L", count: 3, slots: ["BL"], group: "best" },
+        { moves: "R U R' U' R U R'", count: 7, slots: ["FR"], group: "best" },
       ],
     },
     {
       name: "the same slot is not listed twice",
       stage: stage({ slots: ["FR"], optimalMoves: 3, optimalSolution: "R U R'", bestAlternative: { slot: "FR", moves: 3, solution: "R U R'" } }),
-      expected: [{ moves: "R U R'", count: 3, slot: "FR" }],
+      expected: [{ moves: "R U R'", count: 3, slots: ["FR"], group: "best" }],
     },
     {
-      name: "a two-pair stage has one joint line and no slot",
+      name: "a two-pair stage has one joint line making both pairs",
       stage: stage({ slots: ["FR", "FL"], optimalMoves: 9, optimalSolution: "R U R' L' U' L U2 R U' R'" }),
-      expected: [{ moves: "R U R' L' U' L U2 R U' R'", count: 9 }],
+      expected: [{ moves: "R U R' L' U' L U2 R U' R'", count: 9, slots: ["FR", "FL"], group: "best" }],
     },
     {
       name: "an ungraded step has none",
@@ -128,14 +132,49 @@ describe("bestLines", () => {
     expect(bestLines(input)).toEqual(expected);
   });
 
-  it("lists up to three optimal crosses from the cross's start", () => {
-    const start = scrambledState("R2 F L' U R2 D2 F B2 L B U2 F2 U' F2 D2 L2 F2 D2 L2 D");
+  it("lists up to two optimal crosses from the cross's start", () => {
+    const start = scrambledState(SCRAMBLE);
     const optimum = crossDistance(start);
     const lines = bestLines(stage({ kind: "cross", label: "cross", optimalMoves: optimum, optimalSolution: "x" }), start);
     expect(lines.length).toBeGreaterThan(0);
-    expect(lines.length).toBeLessThanOrEqual(3);
+    expect(lines.length).toBeLessThanOrEqual(2);
     expect(new Set(lines.map((line) => line.moves)).size).toBe(lines.length);
-    for (const line of lines) expect(line.count).toBe(optimum);
+    for (const line of lines) expect(line).toMatchObject({ count: optimum, slots: [], group: "best" });
+  });
+
+  it("names the pair an xcross's optimum makes", () => {
+    const start = scrambledState(SCRAMBLE);
+    const optimum = solveXCross(start);
+    if (!optimum) throw new Error("no xcross found");
+    const lines = bestLines(stage({ kind: "xcross", label: "xcross", slots: ["BL"], optimalMoves: optimum.moves, optimalSolution: optimum.solution }), start);
+    expect(lines).toEqual([{ moves: optimum.solution, count: optimum.moves, slots: [optimum.slot], group: "best" }]);
+  });
+});
+
+describe("xcrossLines", () => {
+  it("gives the best xcross first, each for its own slot, at most one move longer", () => {
+    const start = scrambledState(SCRAMBLE);
+    const optimum = solveXCross(start);
+    if (!optimum) throw new Error("no xcross found");
+    const lines = xcrossLines(start);
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.length).toBeLessThanOrEqual(2);
+    expect(lines[0]?.count).toBe(optimum.moves);
+    for (const line of lines) {
+      expect(line.group).toBe("xcross");
+      expect(line.count).toBeLessThanOrEqual(optimum.moves + 1);
+      expect(slotsMadeBy(start, line.moves)).toContain(line.slots[0]);
+    }
+    expect(new Set(lines.map((line) => line.slots[0])).size).toBe(lines.length);
+  });
+});
+
+describe("slotsMadeBy", () => {
+  it.each([
+    { name: "a pair put back", start: applyAlg(SOLVED, "R U R'"), moves: "R U' R'", expected: ["FR"] },
+    { name: "nothing new", start: SOLVED, moves: "U", expected: [] },
+  ] as const)("$name", ({ start, moves, expected }) => {
+    expect(slotsMadeBy(start, moves)).toEqual(expected);
   });
 });
 
@@ -150,33 +189,27 @@ describe("slotInView", () => {
   });
 });
 
-describe("drillFor", () => {
+describe("stageDrill", () => {
   const all = () => true;
-  const casesOnly = (id: string) => id !== "lookahead";
   it.each([
-    { kind: "pair", exists: all, expected: "lookahead" },
-    { kind: "pair", exists: casesOnly, expected: "F2L" },
-    { kind: "coll", exists: all, expected: "COLL" },
-    { kind: "epll", exists: all, expected: "EPLL" },
-    { kind: "ll", exists: all, expected: null },
-    { kind: "eo", exists: () => false, expected: null },
-  ] as const)("a pause before $kind drills $expected", ({ kind, exists, expected }) => {
-    expect(drillFor(stage({ kind }), exists)).toBe(expected);
+    { name: "the cross", stage: stage({ kind: "cross" }), caseId: null, expected: { path: "/learn/cross", label: "Drill cross" } },
+    { name: "an xcross", stage: stage({ kind: "xcross" }), caseId: null, expected: { path: "/learn/xcross", label: "Drill XCross" } },
+    { name: "a recognised pair", stage: stage({ kind: "pair" }), caseId: "F2L-12", expected: { path: "/learn/F2L?case=F2L-12", label: "Drill F2L 12" } },
+    { name: "an unrecognised pair", stage: stage({ kind: "pair" }), caseId: null, expected: { path: "/learn/F2L", label: "Drill F2L" } },
+    { name: "a COLL case", stage: stage({ kind: "coll" }), caseId: "COLL-T3", expected: { path: "/learn/COLL?case=COLL-T3", label: "Drill COLL T3" } },
+    { name: "an EPLL case", stage: stage({ kind: "epll" }), caseId: "EPLL-Ua", expected: { path: "/learn/EPLL?case=EPLL-Ua", label: "Drill Ua perm" } },
+    { name: "a case from another set", stage: stage({ kind: "oll" }), caseId: "COLL-T3", expected: { path: "/learn/OLL", label: "Drill OLL" } },
+    { name: "an unclassified last layer", stage: stage({ kind: "ll" }), caseId: null, expected: null },
+  ] as const)("$name", ({ stage: input, caseId, expected }) => {
+    expect(stageDrill(input, caseId, all)).toEqual(expected);
   });
-});
 
-describe("momentsInOrder", () => {
-  it("puts a pause before the extra moves of the stage it delays", () => {
-    const analysis: SolveAnalysis = {
-      totalMs: 6000,
-      moveCount: 30,
-      solved: true,
-      stages: [
-        stage({ kind: "cross", label: "cross", startMove: 0, endMove: 8, moveCount: 8, optimalMoves: 5 }),
-        stage({ label: "p1", startMove: 8, endMove: 18, moveCount: 10, optimalMoves: 6, slots: ["FR"], recognitionMs: 1500 }),
-      ],
-    };
-    expect(momentsInOrder(analysis).map((m) => `${m.kind} ${m.stageIndex}`)).toEqual(["moves 0", "pause 1", "moves 1"]);
+  it("has none when the learn item is missing", () => {
+    expect(stageDrill(stage({ kind: "eo" }), "EO-line", () => false)).toBeNull();
+  });
+
+  it("sends pauses to the lookahead drill", () => {
+    expect(PAUSE_DRILL.path).toBe("/learn/lookahead");
   });
 });
 

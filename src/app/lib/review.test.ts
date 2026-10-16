@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Stage } from "@/cube/types";
-import { bestPossibleMoves, flow, pauseMs, verdictForExtraMoves } from "./review";
+import type { SolveAnalysis, Stage } from "@/cube/types";
+import { bestPossibleMoves, flow, movesMoments, pauseMs, pauseSummary, reportMoments, verdictForExtraMoves } from "./review";
 
 function pair(overrides: Partial<Stage>): Stage {
   return {
@@ -68,5 +68,52 @@ describe("pauses and flow", () => {
 
   it("reports the turning share", () => {
     expect(flow(moves, 2000)).toBe(50);
+  });
+});
+
+function solve(stages: Stage[]): SolveAnalysis {
+  return { stages, totalMs: 10000, moveCount: 60, solved: true };
+}
+
+// Cross 2 over, P1 4 over after a 1.2 s pause, P2 3 over after 1.5 s, P3 fine after 0.6 s, EO after 1.0 s.
+const SOLVE = solve([
+  pair({ kind: "cross", label: "cross", moveCount: 7, optimalMoves: 5, recognitionMs: 2000 }),
+  pair({ label: "p1", moveCount: 11, optimalMoves: 7, recognitionMs: 1200 }),
+  pair({ label: "p2", moveCount: 10, optimalMoves: 7, recognitionMs: 1500 }),
+  pair({ label: "p3", moveCount: 7, optimalMoves: 7, recognitionMs: 600 }),
+  pair({ kind: "eo", label: "eo", moveCount: 6, recognitionMs: 1000 }),
+]);
+
+describe("movesMoments", () => {
+  it.each([
+    { limit: 3, expected: [0, 1, 2] },
+    { limit: 2, expected: [1, 2] },
+    { limit: 1, expected: [1] },
+    { limit: 0, expected: [] },
+  ])("keeps the costliest $limit in solve order", ({ limit, expected }) => {
+    expect(movesMoments(SOLVE, limit).map((moment) => moment.stageIndex)).toEqual(expected);
+  });
+});
+
+describe("pauseSummary", () => {
+  it("sums every long pause after the first stage and names the longest", () => {
+    expect(pauseSummary(SOLVE)).toEqual({ count: 3, totalMs: 3700, longest: { stageIndex: 2, ms: 1500 } });
+  });
+
+  it("has none without a long pause", () => {
+    expect(pauseSummary(solve([pair({ recognitionMs: 3000 }), pair({ recognitionMs: 500 })]))).toBeNull();
+  });
+});
+
+describe("reportMoments", () => {
+  it("gives the pauses one row and the extra moves the rest", () => {
+    const { moves, pauses } = reportMoments(SOLVE);
+    expect(moves.map((moment) => moment.stageIndex)).toEqual([1, 2]);
+    expect(pauses?.count).toBe(3);
+  });
+
+  it("gives every row to extra moves when nothing paused", () => {
+    const calm = solve(SOLVE.stages.map((stage) => ({ ...stage, recognitionMs: 300 })));
+    expect(reportMoments(calm)).toEqual({ moves: movesMoments(calm, 3), pauses: null });
   });
 });

@@ -1,9 +1,10 @@
 import { ArrowRight, FastForward, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { formatSeconds } from "@/app/lib/format";
 import { IconButton } from "@/app/components/IconButton";
 import { getCase, getCaseSet, type CaseSetId } from "@/cube";
 import { CaseDiagram } from "./CaseDiagram";
-import { biggestSavings, type Known } from "./calibrate/summary";
+import { biggestSavings, TOP_SAVINGS, type Known } from "./calibrate/summary";
 import { chooseAlg } from "./Session";
 import { RecordAlg, type TakeInfo } from "./RecordAlg";
 import "./calibrate.css";
@@ -29,7 +30,7 @@ type Props = {
  * Calibrating a set: every case in turn, like slides, and for each he shows how he solves it on the cube (the case
  * on screen follows his cube, see RecordAlg) or skips it (he doesn't know it). Each take becomes his alg for that
  * case the moment he moves on, so leaving midway keeps them. Test takes (no cube) show the flow but are never saved.
- * The end lists what he knows and where shorter algs save the most moves.
+ * The end lists what he knows and where another alg should save him the most time.
  */
 export function Calibrate({ set, onDone, onCancel }: Props) {
   const cases = getCaseSet(set).cases;
@@ -46,6 +47,9 @@ export function Calibrate({ set, onDone, onCancel }: Props) {
     }),
     [cases, known, set],
   );
+
+  // One object while nothing changes, so the summary's savings (a search over every option) are worked out once.
+  const summary = useMemo(() => result(), [result]);
 
   const next = useCallback(() => {
     if (index + 1 >= cases.length) setFinished(true);
@@ -74,7 +78,7 @@ export function Calibrate({ set, onDone, onCancel }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [finished, onCancel, onDone, result]);
 
-  if (finished || !caseDef) return <CalibrationSummary result={result()} onDone={() => onDone(result())} />;
+  if (finished || !caseDef) return <CalibrationSummary result={summary} onDone={() => onDone(summary)} />;
 
   return (
     <div className="calib">
@@ -98,14 +102,16 @@ export function Calibrate({ set, onDone, onCancel }: Props) {
 }
 
 /**
- * The end (round-8 12's layout): what he knows against the set, the cases where a shorter alg saves the most moves
- * (his take against it), and the whole set with what he knows filled in.
+ * The end (round-8 12's layout): what he knows against the set, the cases where another alg should save him the most
+ * time (his take against the fingertrick model's time at his pace), and the whole set with what he knows filled in.
  */
 function CalibrationSummary({ result, onDone }: { result: CalibrationResult; onDone: () => void }) {
   const total = result.known.length + result.unknown.length;
-  const savings = biggestSavings(result.known);
-  const shorterCount = biggestSavings(result.known, Infinity).length;
-  const [tab, setTab] = useState<"shorter" | "all">(savings.length > 0 ? "shorter" : "all");
+  // Worked out once per finished calibration: the model's search over every option is ~100 ms for a whole set.
+  const allSavings = useMemo(() => biggestSavings(result.known, Infinity), [result.known]);
+  const savings = allSavings.slice(0, TOP_SAVINGS);
+  const fasterCount = allSavings.length;
+  const [tab, setTab] = useState<"faster" | "all">(savings.length > 0 ? "faster" : "all");
   const tested = result.known.some((k) => k.test);
   const cases = getCaseSet(result.set).cases;
   const algOf = new Map(result.known.map((k) => [k.caseId, k.alg]));
@@ -123,21 +129,21 @@ function CalibrationSummary({ result, onDone }: { result: CalibrationResult; onD
           <span className="value">{result.unknown.length}</span>
         </span>
         <span className="stat">
-          <span className="label">Shorter</span>
-          <span className="value">{shorterCount}</span>
+          <span className="label">Faster</span>
+          <span className="value">{fasterCount}</span>
         </span>
         <IconButton icon={X} label="Close" className="summary-close" onClick={onDone} />
       </div>
       {savings.length > 0 && (
         <div className="tabs" role="tablist">
-          {(["shorter", "all"] as const).map((option) => (
+          {(["faster", "all"] as const).map((option) => (
             <button key={option} role="tab" aria-selected={tab === option} className={tab === option ? "on" : ""} onClick={() => setTab(option)}>
-              {option === "shorter" ? "Shorter" : "All"}
+              {option === "faster" ? "Faster" : "All"}
             </button>
           ))}
         </div>
       )}
-      {tab === "shorter" && savings.length > 0 ? (
+      {tab === "faster" && savings.length > 0 ? (
         <ol className="savings">
           {savings.map((saving) => {
             const caseDef = getCase(saving.caseId);
@@ -151,15 +157,15 @@ function CalibrationSummary({ result, onDone }: { result: CalibrationResult; onD
                 <span className="algs">
                   <span className="yours">
                     {saving.yours}
-                    <span className="n">{saving.yourMoves}</span>
+                    <span className="n">{formatSeconds(saving.yourMs)}</span>
                   </span>
                   <ArrowRight className="arrow" strokeWidth={1.75} aria-hidden="true" />
                   <span className="shorter">
-                    {saving.shorter}
-                    <span className="n">{saving.moves}</span>
+                    {saving.faster}
+                    <span className="n">≈{formatSeconds(saving.fasterMs)}</span>
                   </span>
                 </span>
-                <span className="tag">−{saving.saved} moves</span>
+                <span className="tag">−{formatSeconds(saving.savedMs)} s</span>
               </li>
             );
           })}

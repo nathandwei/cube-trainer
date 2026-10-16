@@ -2,19 +2,19 @@ import { Dumbbell, Footprints, Lightbulb } from "lucide-react";
 import { IconButton } from "@/app/components/IconButton";
 import type { TimedToken } from "@/app/lib/display";
 import { formatMs } from "@/app/lib/format";
-import { VERDICTS, type Moment, type Verdict } from "@/app/lib/review";
-import { sentenceCase } from "./model";
-import { StageLines, VerdictDot, type LineControls, type LineId, type Shown, type StageView, type ViewLine } from "./parts";
+import { VERDICTS, type MovesMoment, type PauseSummary, type Verdict } from "@/app/lib/review";
+import { PAUSE_DRILL, sentenceCase } from "./model";
+import { PairChips, StageLines, VerdictDot, type LineControls, type LineId, type Shown, type StageView, type ViewLine } from "./parts";
 
 type Props = {
   accuracy: number | null;
   flow: number | null;
   counts: Record<Verdict, number>;
-  moments: readonly Moment[];
+  moves: readonly MovesMoment[];
+  pauses: PauseSummary | null;
   stages: readonly StageView[];
   tokens: readonly TimedToken[];
   linesFor: (stage: number) => ViewLine[];
-  drillFor: (stage: number) => string | null;
   /** The stage whose best lines are open, if any. */
   open: number | null;
   shown: Shown;
@@ -22,13 +22,13 @@ type Props = {
   onPlay: (stage: number, line: LineId) => void;
   lineControls: LineControls;
   onOpenStage: (stage: number) => void;
-  onDrill: (id: string) => void;
+  onDrill: (path: string) => void;
   onStepThrough: () => void;
 };
 
 /** The right panel's default: the scores, the verdict counts, and the moments worth a second look. */
 export function ReportPanel(props: Props) {
-  const { accuracy, flow, counts, moments, onStepThrough } = props;
+  const { accuracy, flow, counts, moves, pauses, stages, onOpenStage, onDrill, onStepThrough } = props;
   return (
     <div className="rv-report">
       <div className="rv-scores">
@@ -47,11 +47,12 @@ export function ReportPanel(props: Props) {
         ))}
       </ul>
 
-      {moments.length > 0 && (
+      {(moves.length > 0 || pauses) && (
         <ul className="rv-moments">
-          {moments.map((moment) => (
-            <MomentRow key={`${moment.kind}-${moment.stageIndex}`} moment={moment} {...props} />
+          {moves.map((moment) => (
+            <MovesRow key={moment.stageIndex} moment={moment} {...props} />
           ))}
+          {pauses && <PausesRow pauses={pauses} stages={stages} onOpenStage={onOpenStage} onDrill={onDrill} />}
         </ul>
       )}
 
@@ -74,34 +75,18 @@ function Score({ label, value }: { label: string; value: number | null }) {
   );
 }
 
-function MomentRow({ moment, ...props }: Props & { moment: Moment }) {
-  const { stages, tokens, linesFor, drillFor, open, shown, onToggle, onPlay, lineControls, onOpenStage, onDrill } = props;
+function MovesRow({ moment, ...props }: Props & { moment: MovesMoment }) {
+  const { stages, tokens, linesFor, open, shown, onToggle, onPlay, lineControls, onOpenStage } = props;
   const stage = stages[moment.stageIndex];
   if (!stage) return null;
-
-  if (moment.kind === "pause") {
-    const before = stages[moment.stageIndex - 1];
-    const drill = drillFor(moment.stageIndex);
-    return (
-      <li className="rv-moment">
-        <button className="rv-moment-open" onClick={() => onOpenStage(moment.stageIndex)}>
-          <span className="rv-moment-label">Pause</span>
-          <span className="rv-moment-value">{formatMs(moment.ms)}</span>
-          <span className="rv-moment-detail">
-            {before ? `${before.name} → ` : "→ "}
-            {stage.name}
-          </span>
-        </button>
-        {drill && <IconButton icon={Dumbbell} label="Drill" variant="soft" onClick={() => onDrill(drill)} />}
-      </li>
-    );
-  }
-
   const isOpen = open === moment.stageIndex;
   return (
     <li className="rv-moment">
       <button className="rv-moment-open" onClick={() => onOpenStage(moment.stageIndex)}>
-        <span className="rv-moment-label">{stage.name}</span>
+        <span className="rv-moment-label">
+          {stage.name}
+          <PairChips pairs={stage.pairs} />
+        </span>
         <span className="rv-moment-value">
           {moment.moves} / {moment.best}
         </span>
@@ -112,6 +97,7 @@ function MomentRow({ moment, ...props }: Props & { moment: Moment }) {
         <div className="rv-moment-lines">
           <StageLines
             yours={tokens.slice(stage.span.start, stage.span.end).map((token, i) => ({ token, index: stage.span.start + i }))}
+            yoursPairs={stage.pairs}
             lines={linesFor(moment.stageIndex)}
             shown={shown?.stage === moment.stageIndex ? shown : null}
             onPlay={(line) => onPlay(moment.stageIndex, line)}
@@ -119,6 +105,38 @@ function MomentRow({ moment, ...props }: Props & { moment: Moment }) {
           />
         </div>
       )}
+    </li>
+  );
+}
+
+type PausesProps = Pick<Props, "stages" | "onOpenStage" | "onDrill"> & { pauses: PauseSummary };
+
+/**
+ * Every long pause in one row: how many and how long in all, then the longest by its transition. A single pause
+ * reads like the mockup's row (time, then where). Opening it goes to the stage after the longest pause.
+ */
+function PausesRow({ pauses, stages, onOpenStage, onDrill }: PausesProps) {
+  const { count, totalMs, longest } = pauses;
+  const after = stages[longest.stageIndex];
+  if (!after) return null;
+  const before = stages[longest.stageIndex - 1];
+  const transition = `${before ? `${before.name} → ` : "→ "}${after.name}`;
+  const single = count === 1;
+  return (
+    <li className="rv-moment">
+      <button
+        className="rv-moment-open"
+        aria-label={single ? `Pause ${formatMs(totalMs)}, ${transition}` : `${count} pauses, ${formatMs(totalMs)} in all, longest ${transition} ${formatMs(longest.ms)}`}
+        onClick={() => onOpenStage(longest.stageIndex)}
+      >
+        <span className="rv-moment-label">{single ? "Pause" : `${count} pauses`}</span>
+        <span className="rv-moment-value">{formatMs(totalMs)}</span>
+        <span className="rv-moment-detail">
+          {transition}
+          {!single && <span className="rv-moment-detail-ms">{formatMs(longest.ms)}</span>}
+        </span>
+      </button>
+      <IconButton icon={Dumbbell} label={PAUSE_DRILL.label} variant="soft" onClick={() => onDrill(PAUSE_DRILL.path)} />
     </li>
   );
 }

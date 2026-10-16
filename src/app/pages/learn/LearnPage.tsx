@@ -8,7 +8,7 @@ import { navigate } from "@/app/lib/router";
 import { median } from "@/app/lib/averages";
 import { ConnectSheet } from "@/app/smartcube/ConnectSheet";
 import { useSmartCube } from "@/app/smartcube/connection";
-import type { CaseDef } from "@/cube";
+import { getCase, type CaseDef } from "@/cube";
 import type { CaseRep } from "@/shared/learn";
 import { Calibrate } from "./Calibrate";
 import { clearCalibration, requestCalibration, usePendingCalibration } from "./calibrateRequest";
@@ -27,27 +27,38 @@ import { chooseAlg, Session, Summary, type DrillInput } from "./Session";
 type Running = { caseIds: string[]; startedAt: number; input: DrillInput };
 type Finished = { caseIds: string[]; reps: CaseRep[]; previousMedian: number | null };
 
-export function LearnPage({ set }: { set?: string }) {
+/** A case id from the URL, if it names a real case of the open set (old links and typos open the set instead). */
+function knownCase(caseId: string | undefined, setId: string | undefined): string | null {
+  if (!caseId) return null;
+  try {
+    const caseDef = getCase(caseId);
+    return caseDef.set === setId ? caseDef.id : null;
+  } catch (error) {
+    console.warn(`No case ${caseId}`, error);
+    return null;
+  }
+}
+
+export function LearnPage({ set, caseId }: { set?: string; caseId?: string }) {
   const settings = useLearnSettings();
   const allReps = useReps();
   const reps = useMemo(() => currentCaseReps(allReps, settings), [allReps, settings]);
   const [running, setRunning] = useState<Running | null>(null);
   const [finished, setFinished] = useState<Finished | null>(null);
   const [custom, setCustom] = useState(false);
-  /** A case opened from the grid: its algs, Choose / Record mine, and Drill. */
-  const [openCase, setOpenCase] = useState<string | null>(null);
+  /** A case page (from the grid, or a review's drill button): its algs, Choose / Record mine, and Drill. */
+  const openCase = knownCase(caseId, set);
   /** Recording his own alg for the open case (Record mine). */
   const [recording, setRecording] = useState(false);
   const pendingCalibration = usePendingCalibration();
   const [sheetOpen, setSheetOpen] = useState(false);
   // Picking another item in the sidebar leaves whatever was open here (a session, the alg picker, a summary).
-  const [shownSet, setShownSet] = useState(set);
-  if (set !== shownSet) {
-    setShownSet(set);
+  const [shownPlace, setShownPlace] = useState(`${set}|${caseId}`);
+  if (`${set}|${caseId}` !== shownPlace) {
+    setShownPlace(`${set}|${caseId}`);
     setRunning(null);
     setFinished(null);
     setCustom(false);
-    setOpenCase(null);
     setRecording(false);
   }
   const cubeLink = useSmartCube();
@@ -60,10 +71,12 @@ export function LearnPage({ set }: { set?: string }) {
 
   // With nothing ticked (and nothing picked) the first set still shows: the sidebar's checks are how he adds things.
   const open = learnItem(set ?? settings.items[0] ?? LEARN_ITEMS[0]?.id);
-  // A request only stands while its set is the one open: leaving it (another set, another tab) drops it.
+  // A request only stands while its set is the one open: leaving it for another set, or the learn tab altogether,
+  // drops it.
   useEffect(() => {
     if (pendingCalibration !== null && open?.id !== pendingCalibration) clearCalibration();
   }, [open?.id, pendingCalibration]);
+  useEffect(() => clearCalibration, []);
   const hasCases = casesOf(settings.items).length > 0;
 
   function start(caseIds: string[]) {
@@ -106,7 +119,8 @@ export function LearnPage({ set }: { set?: string }) {
   const learnedCount = openCases ? openCases.filter((c) => settings.algs[c.id] !== undefined).length : 0;
 
   // Calibration for the open set: when he ticks a set he has no algs for, or presses Calibrate on its page.
-  if (open?.kind === "cases" && pendingCalibration === open.id) {
+  // A case link (from the grid or a review's drill button) wins over a leftover calibration request.
+  if (open?.kind === "cases" && pendingCalibration === open.id && !openCase) {
     return <Calibrate key={open.id} set={open.id} onDone={clearCalibration} onCancel={clearCalibration} />;
   }
 
@@ -131,11 +145,12 @@ export function LearnPage({ set }: { set?: string }) {
     const alg = settings.algs[caseId];
     return (
       <CasePage
+        key={caseId}
         onRecord={() => setRecording(true)}
         caseId={caseId}
         current={alg}
         onChoose={(chosen) => chooseAlg(caseId, chosen)}
-        onBack={() => setOpenCase(null)}
+        onBack={() => navigate(`/learn/${encodeURIComponent(open?.id ?? "")}`, { replace: true })}
         action={
           alg && (
             <button className="pill primary" onClick={() => start([caseId, caseId, caseId, caseId, caseId])}>
@@ -173,7 +188,7 @@ export function LearnPage({ set }: { set?: string }) {
       </div>
       {sheetOpen && <ConnectSheet onClose={() => setSheetOpen(false)} />}
       {custom && hasCases && <CustomSession items={settings.items} onStart={(ids) => start(ids)} />}
-      {openCases && <CaseSetView cases={openCases} reps={reps} algs={settings.algs} onOpen={setOpenCase} />}
+      {openCases && <CaseSetView cases={openCases} reps={reps} algs={settings.algs} onOpen={(id) => navigate(`/learn/${encodeURIComponent(open?.id ?? "")}?case=${encodeURIComponent(id)}`)} />}
       {!open && settings.items[0] && (
         <button className="pill" onClick={() => navigate(`/learn/${settings.items[0]}`)}>
           {itemLabel(settings.items[0])}

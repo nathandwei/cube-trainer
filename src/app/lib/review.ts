@@ -30,13 +30,15 @@ export function verdictCounts(analysis: SolveAnalysis): Record<Verdict, number> 
   return counts;
 }
 
-/**
- * The costliest key moments in the order they happened: a pause comes before the moves of the stage it delays.
- * Three by default, which is what the review's report has room for.
- */
-export function momentsInOrder(analysis: SolveAnalysis, limit = 3): Moment[] {
-  const happened = (moment: Moment) => moment.stageIndex * 2 + (moment.kind === "pause" ? 0 : 1);
-  return keyMoments(analysis, limit).sort((a, b) => happened(a) - happened(b));
+/** How many key-moment rows the review's report has room for. */
+export const REPORT_ROWS = 3;
+
+/** The key moments as the report lists them: one row for all the long pauses, the costliest extra moves in the rest. */
+export type ReportMoments = { moves: MovesMoment[]; pauses: PauseSummary | null };
+
+export function reportMoments(analysis: SolveAnalysis, rows = REPORT_ROWS): ReportMoments {
+  const pauses = pauseSummary(analysis);
+  return { moves: movesMoments(analysis, rows - (pauses ? 1 : 0)), pauses };
 }
 
 /** A single-pair alternative only competes with a stage that made a single pair. */
@@ -89,28 +91,48 @@ export function flow(moves: readonly TimedMove[], totalMs: number): number | nul
   return Math.round(100 * (1 - pauseMs(moves) / totalMs));
 }
 
-/** Something worth a second look: a step that took extra moves, or a long pause before a step. */
-export type Moment =
-  | { kind: "moves"; stageIndex: number; costMs: number; moves: number; best: number }
-  | { kind: "pause"; stageIndex: number; costMs: number; ms: number };
+/** A step that took extra moves. `costMs` is a rough price used only for ranking. */
+export type MovesMoment = { stageIndex: number; costMs: number; moves: number; best: number };
 
 function msPerMove(stage: Stage): number {
   return stage.moveCount > 0 ? stage.executionMs / stage.moveCount : 130;
 }
 
-/** The costliest moments, `limit` at most. `costMs` is a rough price used only for this ranking. */
-export function keyMoments(analysis: SolveAnalysis, limit = 5): Moment[] {
-  const moments: Moment[] = [];
+/** The costliest steps that took two or more extra moves, `limit` at most, in the order they happened. */
+export function movesMoments(analysis: SolveAnalysis, limit = REPORT_ROWS): MovesMoment[] {
+  const moments: MovesMoment[] = [];
   analysis.stages.forEach((stage, stageIndex) => {
     const best = bestPossibleMoves(stage);
-    if (best !== null && stage.moveCount - best >= 2) {
-      moments.push({ kind: "moves", stageIndex, costMs: (stage.moveCount - best) * msPerMove(stage), moves: stage.moveCount, best });
-    }
-    if (stageIndex > 0 && stage.recognitionMs >= LONG_RECOGNITION_MS) {
-      moments.push({ kind: "pause", stageIndex, costMs: stage.recognitionMs - PAUSE_MS, ms: stage.recognitionMs });
-    }
+    if (best === null || stage.moveCount - best < 2) return;
+    moments.push({ stageIndex, costMs: (stage.moveCount - best) * msPerMove(stage), moves: stage.moveCount, best });
   });
-  return moments.sort((a, b) => b.costMs - a.costMs).slice(0, limit);
+  return moments
+    .sort((a, b) => b.costMs - a.costMs)
+    .slice(0, Math.max(0, limit))
+    .sort((a, b) => a.stageIndex - b.stageIndex);
+}
+
+/** A wait before a stage long enough to point out. */
+export type LongPause = { stageIndex: number; ms: number };
+
+/** Every long pause in a solve at once: how many, how long in all, and the longest. */
+export type PauseSummary = { count: number; totalMs: number; longest: LongPause };
+
+export function longPauses(analysis: SolveAnalysis): LongPause[] {
+  return analysis.stages.flatMap((stage, stageIndex) =>
+    stageIndex > 0 && stage.recognitionMs >= LONG_RECOGNITION_MS ? [{ stageIndex, ms: stage.recognitionMs }] : [],
+  );
+}
+
+export function pauseSummary(analysis: SolveAnalysis): PauseSummary | null {
+  const pauses = longPauses(analysis);
+  const [first] = pauses;
+  if (!first) return null;
+  return {
+    count: pauses.length,
+    totalMs: pauses.reduce((sum, pause) => sum + pause.ms, 0),
+    longest: pauses.reduce((longest, pause) => (pause.ms > longest.ms ? pause : longest), first),
+  };
 }
 
 /** Which stage owns move `index`; moves past the end belong to the last stage. */

@@ -1,4 +1,4 @@
-import { solveCross, type CubeState } from "@/cube";
+import { CASES_BY_ID, SLOTS, applyAlg, solveCross, solveSlots, solvedSlots, type CubeState } from "@/cube";
 import type { Slot, Stage, StageKind } from "@/cube/types";
 import { tokenCountBefore, type TimedToken } from "@/app/lib/display";
 import { bestPossibleMoves, singlePairAlternative } from "@/app/lib/review";
@@ -6,10 +6,16 @@ import { bestPossibleMoves, singlePairAlternative } from "@/app/lib/review";
 /** The display tokens a stage owns, [start, end). */
 export type Span = { start: number; end: number };
 
-/** One shortest way to do a step from where it began, in the centre frame. */
-export type BestLine = { moves: string; count: number; slot?: Slot };
+/** Best lines come in sections: the step's own best, and for the cross the best xcrosses from the same start. */
+export type LineGroup = "best" | "xcross";
+
+/** One shortest way to do a step from where it began, in the centre frame, with the slots of the pairs it solves. */
+export type BestLine = { moves: string; count: number; slots: readonly Slot[]; group: LineGroup };
 
 const MAX_BEST_LINES = 3;
+/** The cross keeps two of its optimal crosses, leaving room for the xcross section under them. */
+const MAX_CROSS_LINES = 2;
+const MAX_XCROSS_LINES = 2;
 
 /** Each stage's tokens; a rotation right before a stage's first turn opens that stage, like the turn after it. */
 export function stageSpans(tokens: readonly TimedToken[], stages: readonly Stage[]): Span[] {
@@ -60,27 +66,55 @@ function moveCount(line: string): number {
   return line.split(/\s+/).filter(Boolean).length;
 }
 
+/** The slots a line solves that were not solved at its start. */
+export function slotsMadeBy(start: CubeState, moves: string): Slot[] {
+  const before = solvedSlots(start);
+  return solvedSlots(applyAlg(start, moves)).filter((slot) => !before.includes(slot));
+}
+
 /**
- * Up to three shortest lines for a graded step, shortest first. The cross gets several optimal crosses (cheap to
+ * Up to three shortest lines for a graded step, shortest first. The cross gets two optimal crosses (cheap to
  * enumerate) when its start state is given; a pair gets its own optimum and the easier pair elsewhere, if any.
  */
-export function bestLines(stage: Stage, crossStart?: CubeState): BestLine[] {
+export function bestLines(stage: Stage, start?: CubeState): BestLine[] {
   if (bestPossibleMoves(stage) === null) return [];
-  if (stage.kind === "cross" && crossStart) {
-    return solveCross(crossStart, MAX_BEST_LINES)
+  if (stage.kind === "cross" && start) {
+    return solveCross(start, MAX_CROSS_LINES)
       .filter(Boolean)
-      .map((moves) => ({ moves, count: moveCount(moves) }));
+      .map((moves): BestLine => ({ moves, count: moveCount(moves), slots: [], group: "best" }));
   }
   const lines: BestLine[] = [];
   if (stage.optimalSolution && stage.optimalMoves !== undefined) {
-    const slot = stage.kind === "pair" && stage.slots?.length === 1 ? stage.slots[0] : undefined;
-    lines.push({ moves: stage.optimalSolution, count: stage.optimalMoves, ...(slot ? { slot } : {}) });
+    lines.push({ moves: stage.optimalSolution, count: stage.optimalMoves, slots: optimumSlots(stage, start), group: "best" });
   }
   const alternative = singlePairAlternative(stage);
-  if (alternative?.solution && !lines.some((line) => line.slot === alternative.slot)) {
-    lines.push({ moves: alternative.solution, count: alternative.moves, slot: alternative.slot });
+  if (alternative?.solution && !lines.some((line) => line.slots.length === 1 && line.slots[0] === alternative.slot)) {
+    lines.push({ moves: alternative.solution, count: alternative.moves, slots: [alternative.slot], group: "best" });
   }
   return lines.sort((a, b) => a.count - b.count).slice(0, MAX_BEST_LINES);
+}
+
+/** A pair stage's optimum makes the pairs he made; an xcross's optimum makes whichever pair was cheapest. */
+function optimumSlots(stage: Stage, start: CubeState | undefined): Slot[] {
+  if (stage.kind === "pair") return stage.slots ?? [];
+  if (stage.kind === "xcross" && start && stage.optimalSolution) return slotsMadeBy(start, stage.optimalSolution);
+  return [];
+}
+
+/**
+ * The best xcross from the cross's start: the cheapest cross plus one pair for each slot, shortest first, keeping
+ * those at most one move over the best. A few ms once the pruning tables are built (the first search builds them).
+ */
+export function xcrossLines(start: CubeState): BestLine[] {
+  const found = SLOTS.flatMap((slot) => {
+    const solution = solveSlots(start, [slot], []);
+    return solution && solution.moves > 0 ? [{ moves: solution.solution, count: solution.moves, slots: [slot], group: "xcross" as const }] : [];
+  });
+  const shortest = Math.min(...found.map((line) => line.count));
+  return found
+    .filter((line) => line.count <= shortest + 1)
+    .sort((a, b) => a.count - b.count)
+    .slice(0, MAX_XCROSS_LINES);
 }
 
 /** A word as shown on screen: sentence case ("inaccuracy" → "Inaccuracy"). */
@@ -95,17 +129,34 @@ export function stageName(label: string): string {
   return label.toUpperCase();
 }
 
-/** Learn items that drill what a long pause before each kind of stage points at, most specific first. */
-const DRILLS: Partial<Record<StageKind, readonly string[]>> = {
-  pair: ["lookahead", "F2L"],
-  eo: ["EO"],
-  coll: ["COLL"],
-  epll: ["EPLL"],
-  oll: ["OLL"],
-  pll: ["PLL"],
+/** Where a stage's drill button goes, and its label (the tooltip: several words are fine there). */
+export type Drill = { path: string; label: string };
+
+/** The learn set that drills each kind of stage's cases. */
+const CASE_SETS_BY_KIND: Partial<Record<StageKind, string>> = {
+  pair: "F2L",
+  eo: "EO",
+  coll: "COLL",
+  epll: "EPLL",
+  oll: "OLL",
+  pll: "PLL",
 };
 
-/** The learn item to drill after a long pause before `stage`, among those that exist. */
-export function drillFor(stage: Stage, exists: (id: string) => boolean): string | null {
-  return DRILLS[stage.kind]?.find(exists) ?? null;
+/**
+ * The drill for a stage: the cross and xcross trainers, or the case set of a pair or last-layer step, opened on the
+ * case he had when it was recognised (`caseId`). Null when there is nothing to drill (an unclassified last layer)
+ * or the learn item doesn't exist.
+ */
+export function stageDrill(stage: Stage, caseId: string | null, exists: (id: string) => boolean): Drill | null {
+  if (stage.kind === "cross" || stage.kind === "xcross") {
+    return exists(stage.kind) ? { path: `/learn/${stage.kind}`, label: `Drill ${stage.kind === "cross" ? "cross" : "XCross"}` } : null;
+  }
+  const set = CASE_SETS_BY_KIND[stage.kind];
+  if (!set || !exists(set)) return null;
+  const caseDef = caseId ? CASES_BY_ID.get(caseId) : undefined;
+  if (!caseDef || caseDef.set !== set) return { path: `/learn/${set}`, label: `Drill ${set}` };
+  return { path: `/learn/${set}?case=${encodeURIComponent(caseDef.id)}`, label: `Drill ${caseDef.label}` };
 }
+
+/** Where the report's one pause row sends him: reading ahead while turning is what shortens every pause. */
+export const PAUSE_DRILL: Drill = { path: "/learn/lookahead", label: "Lookahead drill" };

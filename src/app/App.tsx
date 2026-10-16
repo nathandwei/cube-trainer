@@ -55,7 +55,7 @@ function Shell() {
       case "review":
         return reviewPage(route.id);
       case "learn":
-        return <LearnPage set={route.set} />;
+        return <LearnPage set={route.set} caseId={route.caseId} />;
       case "stats":
         return <StatsPage />;
       case "settings":
