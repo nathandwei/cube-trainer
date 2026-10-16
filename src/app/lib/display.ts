@@ -48,11 +48,6 @@ export function tokenCountAtLeast(tokens: readonly TimedToken[], raw: number): n
   return index === -1 ? tokens.length : index + 1;
 }
 
-export function invertToken(text: string): string {
-  if (text.endsWith("2") || text.endsWith("2'")) return text.replace(/'$/, "");
-  return text.endsWith("'") ? text.slice(0, -1) : `${text}'`;
-}
-
 /** Centre-frame turns (as the solvers return them) renamed for the view the solver has after `count` tokens. */
 export function inViewAfter(tokens: readonly TimedToken[], count: number, line: string): string {
   const tracker = new FrameTracker();

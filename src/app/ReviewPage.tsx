@@ -4,7 +4,6 @@ import { ScrambleBand } from "@/app/components/ScrambleBand";
 import {
   displayTokens,
   inViewAfter,
-  invertToken,
   rawIndexAfter,
   tokenCountBefore,
   type TimedToken,
@@ -113,7 +112,7 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
     stopEverything();
     resync();
     cube.current?.setTempo(2);
-    cube.current?.turn(invertToken(tokens[played - 1]?.text ?? ""));
+    cube.current?.unturn(tokens[played - 1]?.text ?? "");
     setPlayed(played - 1);
   }, [played, tokens, resync, stopEverything]);
 

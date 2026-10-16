@@ -1,11 +1,14 @@
 import { TwistyPlayer } from "cubing/twisty";
 import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
+import { animatedTurn, reverseOf } from "@/app/lib/animation";
 
 export type CubeHandle = {
   /** Show a still state: the given setup alg, nothing queued. */
   show(setup: string): void;
   /** Animate one more turn on top of whatever is shown. */
   turn(move: string): void;
+  /** Animate the reverse of a turn, retracing exactly how `turn` spun it. */
+  unturn(move: string): void;
   setTempo(scale: number): void;
 };
 
@@ -45,7 +48,10 @@ export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
       twisty.alg = "";
     },
     turn(move) {
-      player.current?.experimentalAddMove(move, { cancel: false });
+      player.current?.experimentalAddMove(animatedTurn(move), { cancel: false });
+    },
+    unturn(move) {
+      player.current?.experimentalAddMove(reverseOf(animatedTurn(move)), { cancel: false });
     },
     setTempo(scale) {
       if (player.current) player.current.tempoScale = scale;
