@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
-import { beforeSignOut, currentAccount, sessionEnded } from "@/app/lib/account";
+import { beforeSignOut, currentAccount } from "@/app/lib/account";
+import { idOf, isRefusal, readList, request, responseJson, SaveFailure, updateList } from "@/app/lib/sync";
 import type { SolveRecord } from "@/cube/types";
 import { MAX_PAGE_SIZE, solvePageSchema, solveRecordSchema } from "@/shared/schema";
 
@@ -66,49 +67,8 @@ function parseSolve(entry: unknown, where: string): SolveRecord | null {
 
 // ---------- server ----------
 
-class SaveFailure extends Error {
-  constructor(
-    readonly reason: string,
-    readonly status: number | null,
-  ) {
-    super(reason);
-  }
-}
-
-function reasonFor(status: number): string {
-  if (status === 401) return "signed out";
-  if (status === 413) return "too large";
-  if (status === 507) return "account full";
-  if (status < 500) return `rejected (${status})`;
-  return `server error (${status})`;
-}
-
-/** Retrying cannot help: the server will refuse this exact body every time. */
-function isRefusal(failure: SaveFailure): boolean {
-  return failure.status === 400 || failure.status === 413 || failure.status === 415;
-}
-
-async function api(method: string, path: string, body?: string): Promise<Response> {
-  const headers: Record<string, string> = { accept: "application/json" };
-  if (body !== undefined) headers["content-type"] = "application/json";
-  if (accountId) headers["x-account-id"] = accountId;
-  let response: Response;
-  try {
-    response = await fetch(path, { method, headers, body });
-  } catch (error) {
-    console.error(`${method} ${path} could not reach the server`, error);
-    throw new SaveFailure("offline", null);
-  }
-  if (response.ok) return response;
-  let detail = "";
-  try {
-    detail = await response.text();
-  } catch (error) {
-    console.error(`${method} ${path}: could not read the error body`, error);
-  }
-  console.error(`${method} ${path} failed: HTTP ${response.status} ${detail}`);
-  if (response.status === 401) sessionEnded();
-  throw new SaveFailure(reasonFor(response.status), response.status);
+function api(method: string, path: string, body?: string): Promise<Response> {
+  return request(method, path, accountId, body);
 }
 
 type Page = { solves: SolveRecord[]; next: string | null };
@@ -117,14 +77,7 @@ async function fetchPage(cursor: string | null): Promise<Page> {
   const query = new URLSearchParams({ limit: String(MAX_PAGE_SIZE) });
   if (cursor) query.set("cursor", cursor);
   const response = await api("GET", `/api/solves?${query}`);
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch (error) {
-    console.error("The solve list is not valid JSON", error);
-    throw new SaveFailure("bad response", response.status);
-  }
-  const page = solvePageSchema.safeParse(body);
+  const page = solvePageSchema.safeParse(await responseJson(response, "The solve list"));
   if (!page.success) {
     console.error("The solve list has an unexpected shape", page.error.issues);
     throw new SaveFailure("bad response", response.status);
@@ -133,51 +86,6 @@ async function fetchPage(cursor: string | null): Promise<Page> {
 }
 
 // ---------- local lists (outbox, rejected, legacy) ----------
-
-function storageReason(error: unknown): string {
-  return error instanceof DOMException && error.name === "QuotaExceededError" ? "storage full" : "storage unavailable";
-}
-
-/** Raw entries, unparsed so that nothing unreadable is ever dropped. null when the key cannot be used at all. */
-function readList(key: string): unknown[] | null {
-  let raw: string | null;
-  try {
-    raw = localStorage.getItem(key);
-  } catch (error) {
-    console.error(`Could not read ${key}`, error);
-    return null;
-  }
-  if (!raw) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed;
-  } catch (error) {
-    console.error(`${key} is not valid JSON; leaving it in place`, error);
-    return null;
-  }
-  console.error(`${key} is not a list; leaving it in place`);
-  return null;
-}
-
-/** Returns why the change could not be written, or null once it is on disk. An emptied list removes its key. */
-function updateList(key: string, change: (entries: unknown[]) => unknown[]): string | null {
-  const entries = readList(key);
-  if (entries === null) return "storage unreadable";
-  const next = change(entries);
-  try {
-    if (next.length === 0) localStorage.removeItem(key);
-    else localStorage.setItem(key, JSON.stringify(next));
-    return null;
-  } catch (error) {
-    console.error(`Could not write ${key}`, error);
-    return storageReason(error);
-  }
-}
-
-function idOf(entry: unknown): string | undefined {
-  if (typeof entry !== "object" || entry === null || !("id" in entry)) return undefined;
-  return typeof entry.id === "string" ? entry.id : undefined;
-}
 
 function outboxKey(): string | null {
   return accountId ? OUTBOX_PREFIX + accountId : null;

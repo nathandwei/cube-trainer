@@ -41,9 +41,13 @@ Sign-in is Google OAuth (authorization code + PKCE); solves live in the D1 datab
 - Locally they come from `.dev.vars` (gitignored; copy `.dev.vars.example` or run `scripts/setup-accounts.sh`).
   `pnpm dev` first applies pending migrations to the local database in `.wrangler/state`; `pnpm db:migrate:local`
   does only that. Without the Google values, `/api/auth/login` answers 503.
-- Limits: a solve body is at most 32 KB (an analysed solve is about 4 KB); an account holds at most 20,000 solves
-  or 40 MB of them, whichever comes first (`src/shared/schema.ts`; the API answers 507 "account full"). About a
-  dozen full accounts would fill D1's 500 MB free-plan database. `GET /api/solves` pages newest first, 500 at a time.
+- Solve limits: a solve body is at most 32 KB (an analysed solve is about 4 KB); an account holds at most 20,000
+  solves or 40 MB of them, whichever comes first (`src/shared/schema.ts`; the API answers 507 "account full").
+  `GET /api/solves` pages newest first, 500 at a time.
+- Learn data (`src/shared/learn.ts`, `worker/learn.ts`): one settings document per account, saved last-writer-wins
+  by its `updatedAt`, and an append-only log of drill reps. A rep is at most 8 KB, a POST carries at most 200, and an
+  account holds at most 100,000 reps or 40 MB of them. `GET /api/learn/reps` pages newest first, 1,000 at a time.
+- A full account (solves plus reps) is 80 MB, so about six would fill D1's 500 MB free-plan database.
 - After changing bindings in `wrangler.jsonc`, run `pnpm cf-typegen` and commit `worker/worker-configuration.d.ts`.
 
 Schema changes: add `migrations/000N_name.sql` and run `pnpm exec wrangler d1 migrations apply DB --remote`

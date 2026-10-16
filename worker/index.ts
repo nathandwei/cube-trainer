@@ -1,6 +1,7 @@
 import { callback, login, logout, me } from "./auth";
 import type { AuthedHandler, Context, Handler } from "./context";
 import { errorResponse } from "./http";
+import { getSettings, listReps, postReps, putSettings } from "./learn";
 import { createRouter } from "./router";
 import { sessionUser } from "./session";
 import { deleteSolve, listSolves, patchSolve, upsertSolve } from "./solves";
@@ -26,6 +27,10 @@ const route = createRouter<Handler>([
   { method: "POST", pattern: "/api/solves", handler: authed(upsertSolve) },
   { method: "PATCH", pattern: "/api/solves/:id", handler: authed(patchSolve) },
   { method: "DELETE", pattern: "/api/solves/:id", handler: authed(deleteSolve) },
+  { method: "GET", pattern: "/api/learn/settings", handler: authed(getSettings) },
+  { method: "PUT", pattern: "/api/learn/settings", handler: authed(putSettings) },
+  { method: "GET", pattern: "/api/learn/reps", handler: authed(listReps) },
+  { method: "POST", pattern: "/api/learn/reps", handler: authed(postReps) },
 ]);
 
 /** The session cookie is SameSite=Lax; this also refuses writes from other nathanwei.org subdomains. */
