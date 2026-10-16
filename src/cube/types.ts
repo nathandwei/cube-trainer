@@ -51,6 +51,16 @@ export type SolveAnalysis = {
   solved: boolean;
 };
 
+export type Rotation = "x" | "x'" | "x2" | "y" | "y'" | "y2" | "z" | "z'" | "z2";
+
+/**
+ * How the cube body (and so its centres) turned relative to the solver: an explicit rotation like y, or
+ * the centre movement inside a wide move (r = L with x) or a slice (M = R L' with x'). A smart cube's gyro
+ * sees exactly this. It never changes the state relative to the centres, so analysis ignores it; display
+ * and animation use it to name turns the way the solver saw them. `after` = number of turns done before it.
+ */
+export type RotationEvent = { rotation: Rotation; after: number; t: number };
+
 export type SolveSource = "demo" | "keyboard" | "smartcube" | "virtual";
 
 export type SolveRecord = {
@@ -59,6 +69,8 @@ export type SolveRecord = {
   scramble: string;
   /** Solver-frame turns; empty for a keyboard-timed solve. */
   moves: TimedMove[];
+  /** Whole-cube rotations, when known (generator or gyro). */
+  rotations?: RotationEvent[];
   totalMs: number;
   penalty: "none" | "+2" | "dnf";
   createdAt: number;

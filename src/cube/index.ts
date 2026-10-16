@@ -2,6 +2,7 @@ export type * from "./types";
 
 export {
   SOLVED,
+  IDENTITY_FRAME,
   MOVE_NAMES,
   applyAlg,
   applyMove,
@@ -15,7 +16,11 @@ export {
   toFaceTurns,
   toFaceTurnsDetailed,
   type CubeState,
+  type Face,
+  type Frame,
 } from "./cubie";
+export { FrameTracker, parseRotation, splitMoves, type FrameStep } from "./frame";
+export { ROTATION_MERGE_MS, SLICE_PAIR_MS, countDisplayTurns, humanize, type DisplayToken } from "./notation";
 export { isCrossSolved, isSlotSolved, solvedSlots, SLOTS } from "./pieces";
 export {
   MAX_PAIR_DEPTH,
@@ -24,6 +29,7 @@ export {
   solvePair,
   solveSlots,
   solveXCross,
+  type SearchOptions,
   type StepSolution,
   type XCrossSolution,
 } from "./solvers";
@@ -48,5 +54,5 @@ export {
   type LLMatch,
 } from "./ll";
 export { analyzeSolve } from "./analyze";
-export { generateDemoPlan, generateDemoSolve, type DemoStage } from "./demo";
+export { generateDemoPlan, generateDemoSolve, type DemoSolve, type DemoStage } from "./demo";
 export { createRng, randomScramble } from "./random";

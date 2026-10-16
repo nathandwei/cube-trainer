@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { analyzeSolve } from "./analyze";
 import { applyAlg, invertAlg, parseAlg, scrambledState, toFaceTurns } from "./cubie";
+import { generateDemoSolve } from "./demo";
+import { FrameTracker, splitMoves } from "./frame";
 import { COLL_CASES, EPLL_CASES } from "./ll";
+import { humanize } from "./notation";
 import { isCrossSolved, isSlotSolved } from "./pieces";
 import { createRng, randomScramble } from "./random";
 import { solveCross, solveXCross } from "./solvers";
@@ -161,6 +164,41 @@ describe("F2L", () => {
       return;
     }
     throw new Error("No scramble whose optimal XCross finishes the cross on its last turn");
+  });
+});
+
+// Rotations, and the centre movement inside wide moves and slices, never change what the cube reports relative
+// to its centres, so the analysis (which reads only `moves`) is the same however the solver held the cube.
+describe("rotations", () => {
+  function typed(alg: string): string[] {
+    const tracker = new FrameTracker();
+    return splitMoves(alg).flatMap((move) => tracker.apply(move).turns);
+  }
+
+  it.each([
+    ["y U' R U R'", "U' B U B'"],
+    ["y' U R' U' R", "U F' U' F"],
+    ["y2 L' U' L", "R' U' R"],
+  ])("reads %s exactly like the fixed-grip %s", (rotated, fixed) => {
+    const moves = parseAlg(fixed);
+    expect(typed(rotated)).toEqual(moves);
+    const scramble = wcaScrambleFor(moves);
+    expect(analyzeSolve(scramble, timed(typed(rotated)))).toEqual(analyzeSolve(scramble, timed(moves)));
+  });
+
+  const rng = createRng(808);
+  const solves = Array.from({ length: 6 }, (_, i) => [i, randomScramble(rng)] as const);
+
+  // Retype a demo solve token by token as the solver saw it: the same turns come out, so the same analysis.
+  it.each(solves)("leave demo solve %i's analysis unchanged", (i, scramble) => {
+    const { moves, rotations } = generateDemoSolve(scramble, i);
+    expect(rotations.length).toBeGreaterThan(0);
+    const tracker = new FrameTracker();
+    const retyped = humanize(moves, rotations, () => false).flatMap((token) =>
+      tracker.apply(token.text).turns.map((move, k) => ({ move, t: moves[token.start + k]!.t })),
+    );
+    expect(retyped).toEqual(moves);
+    expect(analyzeSolve(scramble, retyped)).toEqual(analyzeSolve(scramble, moves));
   });
 });
 

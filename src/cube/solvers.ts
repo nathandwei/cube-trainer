@@ -1,7 +1,7 @@
 // Cross, F2L-pair and XCross solvers. All searches run on single-piece coordinates (see pieces.ts) and use
 // iterative deepening with admissible heuristics taken from the exact pruning tables in tables.ts.
 
-import { MOVE_NAMES, moveFace, stateKey, type CubeState } from "./cubie";
+import { FACES, MOVE_NAMES, moveFace, moveIndex, stateKey, type CubeState, type Face } from "./cubie";
 import {
   CORNER_MOVES,
   CROSS_EDGES,
@@ -15,7 +15,7 @@ import {
   edgeState,
 } from "./pieces";
 import { getCrossTable, getFarTable, getNearTable, tableIndex } from "./tables";
-import type { Slot } from "./types";
+import type { Move, Slot } from "./types";
 
 export type StepSolution = { readonly moves: number; readonly solution: string };
 export type XCrossSolution = StepSolution & { slot: Slot };
@@ -177,10 +177,34 @@ function buildLayout(state: CubeState, slots: readonly Slot[]): PieceLayout {
   return { kinds: Uint8Array.from(kinds), start: Uint8Array.from(start), crossTerm, slotTerms };
 }
 
-type SearchOptions = { maxDepth?: number; avoidFirstFace?: number };
+/**
+ * `faces` and `moves` restrict the turns (fixed-centre names), tried in the order given; pass one or neither.
+ * Among equally short solutions the search returns the first in that order, so listing what a person favours
+ * first biases it towards them.
+ */
+export type SearchOptions = {
+  maxDepth?: number;
+  avoidFirstFace?: number;
+  /** Turn only these faces (all three turns of each). */
+  faces?: readonly Face[];
+  /** Turn only these outer turns, e.g. ["U", "U2", "U'", "R", "R'"]. */
+  moves?: readonly Move[];
+};
+
+const ALL_MOVES: readonly number[] = Array.from({ length: MOVE_COUNT }, (_, m) => m);
+
+function allowedMoves({ faces, moves }: SearchOptions): readonly number[] {
+  if (faces && moves) throw new Error("Restrict the search by faces or by moves, not both");
+  const allowed =
+    moves?.map(moveIndex) ?? faces?.flatMap((face) => [0, 1, 2].map((variant) => FACES.indexOf(face) * 3 + variant));
+  if (!allowed) return ALL_MOVES;
+  if (new Set(allowed).size !== allowed.length) throw new Error(`Repeated move in ${allowed.join(",")}`);
+  return allowed;
+}
 
 function idaStar(layout: PieceLayout, spec: SearchSpec, options: SearchOptions): number[] | null {
   const maxDepth = options.maxDepth ?? MAX_PAIR_DEPTH;
+  const moves = allowedMoves(options);
   const width = layout.kinds.length;
   const states = new Uint8Array((maxDepth + 1) * width);
   states.set(layout.start);
@@ -189,7 +213,7 @@ function idaStar(layout: PieceLayout, spec: SearchSpec, options: SearchOptions):
   const dfs = (g: number, bound: number, prevFace: number): boolean => {
     const base = g * width;
     const childBase = base + width;
-    for (let m = 0; m < MOVE_COUNT; m++) {
+    for (const m of moves) {
       const face = moveFace(m);
       if (isRedundant(face, prevFace)) continue;
       if (g === 0 && face === options.avoidFirstFace) continue;
@@ -241,7 +265,8 @@ export function solveSlots(
 ): StepSolution | null {
   const slots = SLOTS.filter((slot) => targets.includes(slot) || keep.includes(slot));
   if (slots.length === 0) throw new Error("solveSlots needs at least one target slot");
-  const key = `${stateKey(state)}|${slots.join(",")}|${options.maxDepth ?? ""}|${options.avoidFirstFace ?? ""}`;
+  const { maxDepth = "", avoidFirstFace = "", faces = [], moves = [] } = options;
+  const key = `${stateKey(state)}|${slots.join(",")}|${maxDepth}|${avoidFirstFace}|${faces.join("")}|${moves.join(" ")}`;
   const cached = cache.get(key);
   if (cached !== undefined) return cached;
   const layout = buildLayout(state, slots);

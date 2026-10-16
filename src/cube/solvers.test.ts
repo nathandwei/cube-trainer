@@ -130,6 +130,36 @@ describe("solvePair", () => {
     expect(result!.solution.startsWith("R")).toBe(false);
   });
 
+  // B U2 B' moved the FR pieces in the U layer; undoing it through the back is shortest (6 turns).
+  const fromTheBack = applyAlg(SOLVED, "R U' R' B U2 B'");
+
+  it.each([
+    [["U", "R", "F", "L"] as const, /^[URFL]/],
+    [["U", "R"] as const, /^[UR]/],
+  ])("turns only the faces %j", (faces, pattern) => {
+    const free = solveSlots(fromTheBack, ["FR"], [])!;
+    expect(free.solution.startsWith("B")).toBe(true);
+    const restricted = solveSlots(fromTheBack, ["FR"], [], { faces })!;
+    expect(restricted.solution.split(" ").every((move) => pattern.test(move))).toBe(true);
+    expect(pairGoal("FR", [])(applyAlg(fromTheBack, restricted.solution))).toBe(true);
+    expect(restricted.moves).toBeGreaterThan(free.moves);
+  });
+
+  it("turns only the moves given", () => {
+    const state = applyAlg(SOLVED, "R2 U R2");
+    const result = solveSlots(state, ["FR"], [], { moves: ["U", "U2", "U'", "R", "R'"] })!;
+    expect(result.solution.split(" ").every((move) => ["U", "U2", "U'", "R", "R'"].includes(move))).toBe(true);
+    expect(pairGoal("FR", [])(applyAlg(state, result.solution))).toBe(true);
+  });
+
+  it("returns null when the allowed faces cannot solve the pair", () => {
+    expect(solveSlots(applyAlg(SOLVED, "R U R'"), ["FR"], [], { faces: ["U", "L"] })).toBeNull();
+  });
+
+  it("refuses faces and moves together", () => {
+    expect(() => solveSlots(SOLVED, ["FR"], [], { faces: ["U"], moves: ["U"] })).toThrow();
+  });
+
   it("is fast enough for the main thread", () => {
     let worst = 0;
     let total = 0;

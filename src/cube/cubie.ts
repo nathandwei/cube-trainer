@@ -5,7 +5,7 @@
 // edges likewise, with `eo[i]` = 1 when the edge is flipped relative to the F/B-axis convention.
 // Every state here is in the solver frame (white on D, green on F), see src/cube/types.ts.
 
-import type { Move } from "./types";
+import type { Move, Rotation } from "./types";
 
 export type CubeState = {
   readonly cp: readonly number[];
@@ -134,7 +134,8 @@ const SOLVED_KEY = stateKey(SOLVED);
 // ---------------------------------------------------------------------------------------------------------------
 // Notation
 
-type Token = { family: string; amount: number };
+/** One parsed move: its family ("R", "r", "Rw", "M", "x", ...) and amount in quarter turns, 1..3. */
+export type MoveToken = { family: string; amount: number };
 
 const TOKEN_RE = /^([URFDLB]w|[URFDLBMESxyzurfdlb])(\d*)('?)(\d*)('?)$/;
 
@@ -147,7 +148,8 @@ function amountOf(raw: string, digitsA: string, primeA: string, digitsB: string,
   return ((signed % 4) + 4) % 4;
 }
 
-function tokenize(alg: string): Token[] {
+/** Splits an alg into moves of any kind (brackets ignored, zero-amount moves such as R4 dropped). */
+export function tokenizeAlg(alg: string): MoveToken[] {
   const cleaned = alg.replace(/[()[\]]/g, " ").replace(/’/g, "'").trim();
   if (cleaned === "") return [];
   return cleaned.split(/\s+/).flatMap((raw) => {
@@ -159,7 +161,7 @@ function tokenize(alg: string): Token[] {
   });
 }
 
-function faceTurnName(face: Face, amount: number): Move {
+export function faceTurnName(face: Face, amount: number): Move {
   const normalized = ((amount % 4) + 4) % 4;
   if (normalized === 0) throw new Error("Zero-amount face turn has no name");
   return face + (normalized === 1 ? "" : normalized === 2 ? "2" : "'");
@@ -171,7 +173,7 @@ function isFace(family: string): family is Face {
 
 /** Parses outer face turns only (accepts R2', R'2, R3 and brackets) into canonical names like "R", "R2", "R'". */
 export function parseAlg(alg: string): Move[] {
-  return tokenize(alg).map(({ family, amount }) => {
+  return tokenizeAlg(alg).map(({ family, amount }) => {
     if (!isFace(family)) throw new Error(`"${family}" is not an outer face turn; convert with toFaceTurns first`);
     return faceTurnName(family, amount);
   });
@@ -206,31 +208,37 @@ export function simplifyMoves(moves: readonly Move[]): Move[] {
   return out.map(({ face, amount }) => faceTurnName(face, amount));
 }
 
-// Orientation tracking for toFaceTurns: `frame[d]` is the fixed-centre face that currently sits in direction d.
-type Frame = Record<Face, Face>;
+export type Axis = "x" | "y" | "z";
 
-const ROTATION_CYCLES: Record<"x" | "y" | "z", readonly Face[]> = {
+/** Orientation tracking: `frame[d]` is the fixed-centre face that currently sits in direction d of the solver's view. */
+export type Frame = Readonly<Record<Face, Face>>;
+
+export const IDENTITY_FRAME: Frame = { U: "U", R: "R", F: "F", D: "D", L: "L", B: "B" };
+
+const ROTATION_CYCLES: Record<Axis, readonly Face[]> = {
   // Each list is the order in which one quarter rotation carries a face's content: F → U → B → D for x.
   x: ["F", "U", "B", "D"],
   y: ["F", "L", "B", "R"],
   z: ["U", "R", "D", "L"],
 };
 
-function rotateFrame(frame: Frame, axis: "x" | "y" | "z", amount: number): Frame {
+/** The view after the whole cube turns `amount` quarter turns about `axis` (as seen by the solver). */
+export function rotateFrame(frame: Frame, axis: Axis, amount: number): Frame {
   const cycle = ROTATION_CYCLES[axis];
   let current = frame;
   for (let turn = 0; turn < ((amount % 4) + 4) % 4; turn++) {
-    const next = { ...current };
+    const next: Record<Face, Face> = { ...current };
     for (let i = 0; i < 4; i++) next[cycle[(i + 1) % 4]!] = current[cycle[i]!];
     current = next;
   }
   return current;
 }
 
-type Expansion = { turns: [Face, number][]; rotation?: ["x" | "y" | "z", number] };
+/** A move as outer turns in the current view (applied first) plus the whole-cube rotation it carries. */
+export type Expansion = { turns: [Face, number][]; rotation?: [Axis, number] };
 
 // Wide and slice moves as an outer turn (or two) plus a whole-cube rotation, e.g. r = L x and M = R L' x'.
-function expand(family: string, amount: number): Expansion {
+export function expandMove(family: string, amount: number): Expansion {
   const a = amount;
   switch (family) {
     case "r":
@@ -267,9 +275,13 @@ function expand(family: string, amount: number): Expansion {
   }
 }
 
-function rotationName(axis: "x" | "y" | "z", amount: number): string {
+const ROTATION_SUFFIXES = ["", "2", "'"] as const;
+
+export function rotationName(axis: Axis, amount: number): Rotation {
   const normalized = ((amount % 4) + 4) % 4;
-  return axis + (normalized === 1 ? "" : normalized === 2 ? "2" : "'");
+  const suffix = ROTATION_SUFFIXES[normalized - 1];
+  if (suffix === undefined) throw new Error("Zero-amount rotation has no name");
+  return `${axis}${suffix}` as const;
 }
 
 /**
@@ -278,11 +290,11 @@ function rotationName(axis: "x" | "y" | "z", amount: number): string {
  * alg ≡ moves followed by rotations (exactly, centres included).
  */
 export function toFaceTurnsDetailed(alg: string): { moves: Move[]; rotations: string[] } {
-  let frame: Frame = { U: "U", R: "R", F: "F", D: "D", L: "L", B: "B" };
+  let frame = IDENTITY_FRAME;
   const moves: Move[] = [];
   const rotations: string[] = [];
-  for (const { family, amount } of tokenize(alg)) {
-    const { turns, rotation } = expand(family, amount);
+  for (const { family, amount } of tokenizeAlg(alg)) {
+    const { turns, rotation } = expandMove(family, amount);
     for (const [face, turnAmount] of turns) moves.push(faceTurnName(frame[face], turnAmount));
     if (!rotation) continue;
     const [axis, rotationAmount] = rotation;

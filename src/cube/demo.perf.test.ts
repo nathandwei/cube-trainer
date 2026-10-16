@@ -6,7 +6,7 @@ import { generateDemoSolve } from "./demo";
 it("generates and analyses a demo solve in under 1.5 s from a cold start", () => {
   const scramble = "D2 F' L2 U2 B2 R2 F' D2 F2 U2 F2 L' B U' L D' F R' D2 B'";
   const started = performance.now();
-  const moves = generateDemoSolve(scramble, 1);
+  const { moves } = generateDemoSolve(scramble, 1);
   const generated = performance.now();
   const analysis = analyzeSolve(scramble, moves);
   const finished = performance.now();
