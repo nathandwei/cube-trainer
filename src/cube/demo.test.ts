@@ -16,9 +16,10 @@ function tokensIn(tokens: readonly DisplayToken[], stage: DemoStage): DisplayTok
 }
 
 describe("generateDemoSolve", () => {
-  it.each(scrambles.map((scramble, i) => [i, scramble]))("solve %i is analysed exactly as generated", (i, scramble) => {
-    const { moves, stages } = generateDemoPlan(scramble, i);
-    const analysis = analyzeSolve(scramble, moves);
+  const cases = scrambles.flatMap((scramble, i) => (["eo-coll", "oll-pll"] as const).map((method) => [i, method, scramble] as const));
+  it.each(cases)("solve %i (%s) is analysed exactly as generated", (i, method, scramble) => {
+    const { moves, stages } = generateDemoPlan(scramble, i, method);
+    const analysis = analyzeSolve(scramble, moves, { method });
     expect(analysis.solved).toBe(true);
     const reported = analysis.stages.map(({ kind, label, startMove, endMove, slots, caseName }) => ({
       kind,
@@ -106,7 +107,7 @@ describe("generateDemoSolve", () => {
     const algs = new Map([...EO_CASES, ...COLL_CASES, ...EPLL_CASES].map(({ name, alg }) => [name, alg]));
     let checked = 0;
     scrambles.forEach((scramble, i) => {
-      const { moves, rotations, stages } = generateDemoPlan(scramble, i);
+      const { moves, rotations, stages } = generateDemoPlan(scramble, i, "eo-coll");
       const tokens = humanize(moves, rotations, () => false);
       for (const stage of stages.filter((s) => ["eo", "coll", "epll"].includes(s.kind))) {
         const shown = ` ${tokensIn(tokens, stage).map((token) => token.text).join(" ")} `;
@@ -119,12 +120,15 @@ describe("generateDemoSolve", () => {
     expect(checked).toBeGreaterThan(30);
   });
 
-  it("follows the CFOP order and pauses between stages", () => {
-    const { stages } = generateDemoPlan(scrambles[1]!, 3);
-    const order = ["cross", "xcross", "pair", "eo", "ll", "coll", "epll"];
-    const ranks = stages.map((s) => order.indexOf(s.kind));
+  it.each([
+    ["oll-pll", ["cross", "xcross", "pair", "oll", "pll"]],
+    ["eo-coll", ["cross", "xcross", "pair", "eo", "ll", "coll", "epll"]],
+  ] as const)("follows the CFOP order (%s) and pauses between stages", (method, order) => {
+    const { stages } = generateDemoPlan(scrambles[1]!, 3, method);
+    const ranks = stages.map((s) => (order as readonly string[]).indexOf(s.kind));
+    expect(ranks).not.toContain(-1);
     expect([...ranks].sort((a, b) => a - b)).toEqual(ranks);
-    const analysis = analyzeSolve(scrambles[1]!, generateDemoSolve(scrambles[1]!, 3).moves);
+    const analysis = analyzeSolve(scrambles[1]!, generateDemoSolve(scrambles[1]!, 3, method).moves, { method });
     for (const stage of analysis.stages.slice(1)) expect(stage.recognitionMs).toBeGreaterThanOrEqual(300);
   });
 

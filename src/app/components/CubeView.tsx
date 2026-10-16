@@ -1,6 +1,7 @@
-import { TwistyPlayer } from "cubing/twisty";
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
+import type { CubeRenderer } from "@/app/cube3d/renderer";
 import { animatedTurn, reverseOf, TurnAnimator } from "@/app/lib/animation";
+import { useSettings } from "@/app/lib/settings";
 
 export type CubeHandle = {
   /** Show a still state: the given setup alg, nothing queued. */
@@ -14,119 +15,94 @@ export type CubeHandle = {
   setTempo(scale: number): void;
 };
 
-/** Queuing a whole alg at once makes cubing.js catch up within a few frames, so turns are fed one at a time. */
+/** Queuing a whole alg at once makes the cube catch up within a few frames, so play() feeds turns one at a time. */
 const PLAY_STEP_MS = 420;
 const PLAY_LEAD_MS = 350;
 const ROTATION = /^[xyz]/;
+/** The tempo a cube starts at (cubing.js's tempoScale, which every caller's setTempo was tuned against). */
+const DEFAULT_TEMPO = 2;
 /** A rotation's share of time in play(), in steps. */
 const ROTATION_STEPS = 1.8;
 
-/** Algs are written with grouping brackets ("(R U R' U')"); cubing.js throws on a bracket inside a move. */
+/** Algs are written with grouping brackets ("(R U R' U')"), which aren't moves. */
 function movesOf(text: string): string[] {
   return text.replace(/[()[\]]/g, " ").trim().split(/\s+/).filter(Boolean);
 }
 
-// cubing.js 0.63.8 has no option for sticker colours. Its Cube3D shares one three.js material per sticker colour
-// (indexed U L F R B D in its own frame, white on U) and one 30%-opaque black for every cubie body, which reads as
-// grey on the oat page. Recolouring those shared materials in place restyles every cube on the page at once.
-const STICKER_COLOURS: readonly number[] = [
-  0xf3eee5, // U white: the bottom in the solver's view
-  0xe07a36, // L orange
-  0x4a9461, // F green
-  0xc2493c, // R red
-  0x3a6fae, // B blue
-  0xe8c547, // D yellow: the top in the solver's view
-];
-const BODY_COLOUR = 0x2b2421;
-// cubing.js renders with linear output, so colours stored as linear values reach the screen as exactly these hexes.
-const LINEAR = "srgb-linear";
-
-type ColourMaterial = {
-  color: { setHex(hex: number, colorSpace?: string): unknown };
-  opacity: number;
-  transparent: boolean;
-  needsUpdate: boolean;
-};
-type Cube3DLike = {
-  kpuzzleFaceletInfo: Record<string, { faceIdx: number; facelet: { material: unknown } }[][]>;
-  experimentalFoundationMeshes: { material: unknown }[];
-  scheduleRenderCallback?: () => void;
-};
-
-function isColourMaterial(value: unknown): value is ColourMaterial {
-  if (typeof value !== "object" || value === null || !("color" in value)) return false;
-  const { color } = value;
-  return typeof color === "object" && color !== null && "setHex" in color && typeof color.setHex === "function";
-}
-
-function isCube3D(value: unknown): value is Cube3DLike {
-  if (typeof value !== "object" || value === null) return false;
-  if (!("kpuzzleFaceletInfo" in value) || !("experimentalFoundationMeshes" in value)) return false;
-  return typeof value.kpuzzleFaceletInfo === "object" && value.kpuzzleFaceletInfo !== null && Array.isArray(value.experimentalFoundationMeshes);
-}
-
-/** Muted matte stickers (the CaseDiagram palette) on a solid dark body. */
-async function applyMatteLook(twisty: TwistyPlayer): Promise<void> {
-  const puzzle: unknown = await twisty.experimentalCurrentThreeJSPuzzleObject();
-  if (!isCube3D(puzzle)) {
-    console.warn("CubeView: cubing.js's 3D cube has an unexpected shape, so it keeps its default colours");
-    return;
-  }
-  let skipped = 0;
-  for (const pieces of Object.values(puzzle.kpuzzleFaceletInfo)) {
-    for (const { faceIdx, facelet } of pieces.flat()) {
-      const colour = STICKER_COLOURS[faceIdx];
-      if (colour === undefined || !isColourMaterial(facelet.material)) skipped++;
-      else facelet.material.color.setHex(colour, LINEAR);
-    }
-  }
-  for (const { material } of puzzle.experimentalFoundationMeshes) {
-    if (!isColourMaterial(material)) {
-      skipped++;
-      continue;
-    }
-    material.color.setHex(BODY_COLOUR, LINEAR);
-    material.opacity = 1;
-    material.transparent = false;
-    material.needsUpdate = true;
-  }
-  if (skipped > 0) console.warn(`CubeView: ${skipped} cube materials could not be recoloured`);
-  puzzle.scheduleRenderCallback?.();
-}
-
 type Props = { ref?: Ref<CubeHandle>; setup?: string; className?: string };
+
+// three.js is most of the cube's weight, so it loads after the page shows; one load serves every cube.
+let rendererModule: Promise<typeof import("@/app/cube3d/renderer")> | undefined;
+
+function loadRenderer(): Promise<typeof import("@/app/cube3d/renderer")> {
+  rendererModule ??= import("@/app/cube3d/renderer").catch((error: unknown) => {
+    // Not remembered: the next cube tries again (the chunk can fail once, e.g. offline or mid-deploy).
+    rendererModule = undefined;
+    throw error;
+  });
+  return rendererModule;
+}
+
+/**
+ * What the cube should show once it has loaded: a state, and the tempo it plays at. `dead` once it never will (no
+ * WebGL), so turns stop piling up.
+ */
+type Waiting = { moves: string[]; tempo: number; dead: boolean };
 
 export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
   const host = useRef<HTMLDivElement>(null);
-  const player = useRef<TwistyPlayer | null>(null);
+  const player = useRef<CubeRenderer | null>(null);
   const timers = useRef<number[]>([]);
+  const waiting = useRef<Waiting>({ moves: movesOf(setup), tempo: DEFAULT_TEMPO, dead: false });
+  const { cubeLook } = useSettings();
+  const look = useRef(cubeLook);
   // Which way each hand last turned since the last show(), so R2 / L2 spin the way fingers would.
   const [animator] = useState(() => new TurnAnimator());
 
   useEffect(() => {
-    const twisty = new TwistyPlayer({
-      puzzle: "3x3x3",
-      visualization: "3D",
-      background: "none",
-      controlPanel: "none",
-      hintFacelets: "none",
-      experimentalSetupAlg: setup,
-      cameraLatitude: 30,
-      cameraLongitude: 32,
-      tempoScale: 2,
-    });
-    host.current?.append(twisty);
-    player.current = twisty;
-    applyMatteLook(twisty).catch((error: unknown) => console.error("CubeView: could not recolour the cube", error));
+    let cube: CubeRenderer | null = null;
+    let gone = false;
+    loadRenderer()
+      .then(({ CubeRenderer }) => {
+        const element = host.current;
+        if (gone || !element) return;
+        try {
+          cube = new CubeRenderer(element, look.current);
+        } catch (error) {
+          // No WebGL (switched off, or too many cubes open at once): the page works without its cube.
+          console.error("CubeView: could not start the 3D cube", error);
+          waiting.current = { moves: [], tempo: waiting.current.tempo, dead: true };
+          return;
+        }
+        cube.setTempo(waiting.current.tempo);
+        cube.show(waiting.current.moves);
+        player.current = cube;
+      })
+      .catch((error: unknown) => console.error("CubeView: could not load the 3D cube", error));
     const pending = timers;
     return () => {
+      gone = true;
       pending.current.forEach((timer) => window.clearTimeout(timer));
-      twisty.remove();
+      cube?.dispose();
       player.current = null;
     };
-    // The player is created once; later states go through the handle.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    look.current = cubeLook;
+    player.current?.setLook(cubeLook);
+  }, [cubeLook]);
+
+  // Until the cube has loaded, what it's asked to do is kept as the state it should open on.
+  function showMoves(moves: string[]) {
+    if (player.current) player.current.show(moves);
+    else if (!waiting.current.dead) waiting.current.moves = moves;
+  }
+
+  function turnOne(move: string) {
+    if (player.current) player.current.turn(move);
+    else if (!waiting.current.dead) waiting.current.moves.push(move);
+  }
 
   function stopPlaying() {
     timers.current.forEach((timer) => window.clearTimeout(timer));
@@ -135,10 +111,7 @@ export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
 
   function showStill(nextSetup: string) {
     stopPlaying();
-    const twisty = player.current;
-    if (!twisty) return;
-    twisty.experimentalSetupAlg = nextSetup;
-    twisty.alg = "";
+    showMoves(movesOf(nextSetup));
     animator.reset();
   }
 
@@ -150,20 +123,21 @@ export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
       // the next move, so the cube visibly comes round instead of snapping.
       let at = PLAY_LEAD_MS;
       timers.current = movesOf(alg).map((move) => {
-        const timer = window.setTimeout(() => player.current?.experimentalAddMove(animator.play(move), { cancel: false }), at);
+        const timer = window.setTimeout(() => turnOne(animator.play(move)), at);
         at += ROTATION.test(move) ? stepMs * ROTATION_STEPS : stepMs;
         return timer;
       });
     },
     turn(move) {
-      for (const one of movesOf(move)) player.current?.experimentalAddMove(animator.play(one), { cancel: false });
+      for (const one of movesOf(move)) turnOne(animator.play(one));
     },
     unturn(move) {
       // Retrace what turn() played; after a show() there's no history, so fall back to the plain reverse.
-      for (const one of movesOf(move).reverse()) player.current?.experimentalAddMove(animator.undo() ?? reverseOf(animatedTurn(one)), { cancel: false });
+      for (const one of movesOf(move).reverse()) turnOne(animator.undo() ?? reverseOf(animatedTurn(one)));
     },
     setTempo(scale) {
-      if (player.current) player.current.tempoScale = scale;
+      waiting.current.tempo = scale;
+      player.current?.setTempo(scale);
     },
   }));
 

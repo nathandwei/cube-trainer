@@ -9,7 +9,7 @@
   --v-inaccuracy: #e2a184;
   --v-mistake: #d0704f;
   --v-blunder: #a6402e;
-  /* The matte sticker colours of the cube views (CubeView, CaseDiagram), for the pair chips. */
+  /* The pair chips' colours: the matte look's, until ReviewPage sets the cube look's own (solverPalette). */
   --s-green: #4a9461;
   --s-orange: #e07a36;
   --s-red: #c2493c;

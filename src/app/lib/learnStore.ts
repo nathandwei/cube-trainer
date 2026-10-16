@@ -428,11 +428,18 @@ export function newRepId(): string {
   return time + random;
 }
 
-// The first subscriber is the learn tab, so nothing is fetched until it opens.
+// Nothing is fetched until something needs it: the learn tab, a review or the method setting (both name the last
+// layer his way), or the end of a smart-cube solve.
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   void ensureLoad();
   return () => listeners.delete(listener);
+}
+
+/** The learn settings as they are now, for code outside React; the defaults until they load. */
+export function currentLearnSettings(): LearnSettings {
+  void ensureLoad();
+  return state.settings;
 }
 
 /** The learn settings; the defaults until they load. */

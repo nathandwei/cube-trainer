@@ -1,26 +1,22 @@
 import { useMemo } from "react";
+import { solverPalette } from "@/app/cube3d/looks";
 import { facelets, type Face } from "@/app/lib/facelets";
+import { useSettings } from "@/app/lib/settings";
 import { caseArrows, caseState, viewState, type CaseArrow, type CaseDef, type CubeState } from "@/cube";
 
-/** Muted sticker colours for the solver frame (yellow on top, green in front), matching the oat palette. */
-const COLOR: Record<Face, string> = {
-  U: "#e8c547",
-  D: "#f3eee5",
-  F: "#4a9461",
-  B: "#3a6fae",
-  R: "#e07a36",
-  L: "#c2493c",
-};
+/** Sticker colours by solver-frame face (yellow on top, green in front): the cube look's, so diagrams match the 3D cube. */
+type Palette = Readonly<Record<Face, string>>;
+
 const MUTED = "#d3cabd";
 const EDGE_INDEX = new Set([1, 3, 5, 7]);
 
 type Stickers = Record<Face, Face[]>;
 
 /** What a set asks you to recognise: OLL and EO only care which stickers are yellow, EO only on edges. */
-function colourFor(set: CaseDef["set"], color: Face, isEdge: boolean): string {
-  if (set === "OLL") return color === "U" ? COLOR.U : MUTED;
-  if (set === "EO") return isEdge && color === "U" ? COLOR.U : MUTED;
-  return COLOR[color];
+function colourFor(palette: Palette, set: CaseDef["set"], color: Face, isEdge: boolean): string {
+  if (set === "OLL") return color === "U" ? palette.U : MUTED;
+  if (set === "EO") return isEdge && color === "U" ? palette.U : MUTED;
+  return palette[color];
 }
 
 type Props = {
@@ -63,11 +59,17 @@ function stateFor(caseDef: CaseDef, alg: string | undefined): CubeState {
 export function CaseDiagram({ caseDef, size = 64, view = "auto", ghost = false, alg, arrows = false }: Props) {
   const stickers = useMemo(() => facelets(stateFor(caseDef, alg)), [caseDef, alg]);
   const trips = useMemo(() => (arrows ? arrowsFor(caseDef, alg) : []), [arrows, caseDef, alg]);
+  const { cubeLook } = useSettings();
+  const palette = useMemo(() => solverPalette(cubeLook), [cubeLook]);
   const iso = view === "iso" || (view === "auto" && caseDef.set === "F2L");
-  return iso ? <Iso stickers={stickers} set={caseDef.set} size={size} ghost={ghost} /> : <TopView stickers={stickers} set={caseDef.set} size={size} arrows={trips} />;
+  return iso ? (
+    <Iso stickers={stickers} set={caseDef.set} size={size} ghost={ghost} palette={palette} />
+  ) : (
+    <TopView stickers={stickers} set={caseDef.set} size={size} palette={palette} arrows={trips} />
+  );
 }
 
-function TopView({ stickers, set, size, arrows = [] }: { stickers: Stickers; set: CaseDef["set"]; size: number; arrows?: readonly CaseArrow[] }) {
+function TopView({ stickers, set, size, palette, arrows = [] }: { stickers: Stickers; set: CaseDef["set"]; size: number; palette: Palette; arrows?: readonly CaseArrow[] }) {
   const cell = 10;
   const strip = 3;
   const gap = 1.2;
@@ -78,16 +80,16 @@ function TopView({ stickers, set, size, arrows = [] }: { stickers: Stickers; set
   for (let row = 0; row < 3; row++) {
     for (let col = 0; col < 3; col++) {
       const index = row * 3 + col;
-      rects.push({ x: o + col * cell, y: o + row * cell, w: cell, h: cell, fill: colourFor(set, top(row, col), EDGE_INDEX.has(index)) });
+      rects.push({ x: o + col * cell, y: o + row * cell, w: cell, h: cell, fill: colourFor(palette, set, top(row, col), EDGE_INDEX.has(index)) });
     }
   }
   // Side stickers of the top layer, laid around the top face as seen from above.
   for (let i = 0; i < 3; i++) {
     const isEdge = i === 1;
-    rects.push({ x: o + i * cell, y: o + cell * 3 + gap, w: cell, h: strip, fill: colourFor(set, stickers.F[i] ?? "F", isEdge) });
-    rects.push({ x: o + cell * 3 + gap, y: o + (2 - i) * cell, w: strip, h: cell, fill: colourFor(set, stickers.R[i] ?? "R", isEdge) });
-    rects.push({ x: o + (2 - i) * cell, y: 0, w: cell, h: strip, fill: colourFor(set, stickers.B[i] ?? "B", isEdge) });
-    rects.push({ x: 0, y: o + i * cell, w: strip, h: cell, fill: colourFor(set, stickers.L[i] ?? "L", isEdge) });
+    rects.push({ x: o + i * cell, y: o + cell * 3 + gap, w: cell, h: strip, fill: colourFor(palette, set, stickers.F[i] ?? "F", isEdge) });
+    rects.push({ x: o + cell * 3 + gap, y: o + (2 - i) * cell, w: strip, h: cell, fill: colourFor(palette, set, stickers.R[i] ?? "R", isEdge) });
+    rects.push({ x: o + (2 - i) * cell, y: 0, w: cell, h: strip, fill: colourFor(palette, set, stickers.B[i] ?? "B", isEdge) });
+    rects.push({ x: 0, y: o + i * cell, w: strip, h: cell, fill: colourFor(palette, set, stickers.L[i] ?? "L", isEdge) });
   }
   // Arrows join sticker centres; a swap (A to B and B to A) is one line with a head at each end.
   const centre = (index: number) => ({ x: o + (index % 3) * cell + cell / 2, y: o + Math.floor(index / 3) * cell + cell / 2 });
@@ -145,16 +147,16 @@ function quad(points: readonly [number, number, number][]): string {
 }
 
 /** Top, front and right faces in isometric view; x runs right, y up, z towards the viewer. */
-function Iso({ stickers, set, size, ghost }: { stickers: Stickers; set: CaseDef["set"]; size: number; ghost: boolean }) {
+function Iso({ stickers, set, size, ghost, palette }: { stickers: Stickers; set: CaseDef["set"]; size: number; ghost: boolean; palette: Palette }) {
   const polys: { points: string; fill: string }[] = [];
   // Only the top layer's side stickers matter for OLL and EO; the layers below are F2L, already solved.
   const side = (face: "F" | "R", r: number, c: number) => {
     const color = stickers[face][r * 3 + c] ?? face;
-    return r === 0 ? colourFor(set, color, c === 1) : set === "OLL" || set === "EO" ? MUTED : COLOR[color];
+    return r === 0 ? colourFor(palette, set, color, c === 1) : set === "OLL" || set === "EO" ? MUTED : palette[color];
   };
   for (let r = 0; r < 3; r++) {
     for (let c = 0; c < 3; c++) {
-      polys.push({ points: quad([[c, 3, r], [c + 1, 3, r], [c + 1, 3, r + 1], [c, 3, r + 1]]), fill: colourFor(set, stickers.U[r * 3 + c] ?? "U", EDGE_INDEX.has(r * 3 + c)) });
+      polys.push({ points: quad([[c, 3, r], [c + 1, 3, r], [c + 1, 3, r + 1], [c, 3, r + 1]]), fill: colourFor(palette, set, stickers.U[r * 3 + c] ?? "U", EDGE_INDEX.has(r * 3 + c)) });
       polys.push({ points: quad([[c, 3 - r, 3], [c + 1, 3 - r, 3], [c + 1, 2 - r, 3], [c, 2 - r, 3]]), fill: side("F", r, c) });
       polys.push({ points: quad([[3, 3 - r, 3 - c], [3, 3 - r, 2 - c], [3, 2 - r, 2 - c], [3, 2 - r, 3 - c]]), fill: side("R", r, c) });
     }

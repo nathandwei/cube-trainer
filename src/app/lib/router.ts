@@ -3,13 +3,14 @@ import { useSyncExternalStore } from "react";
 /**
  * `selected` is a solve picked from the sidebar, shown on the timer page in place of the latest one.
  * `set` is the learn item open in the main area (e.g. "COLL", "cross"); `caseId` a case page open in it (?case=).
+ * `section` is the settings section on show (/settings/timer); the first one when absent.
  */
 export type Route =
   | { page: "timer"; selected?: string }
   | { page: "review"; id: string }
   | { page: "learn"; set?: string; caseId?: string }
   | { page: "stats" }
-  | { page: "settings" };
+  | { page: "settings"; section?: string };
 
 export type Tab = "timer" | "learn" | "stats";
 
@@ -21,7 +22,8 @@ function parse(location: string): Route {
   const learn = /^\/learn(?:\/([\w-]+))?$/.exec(path);
   if (learn) return { page: "learn", set: learn[1] ? decodeURIComponent(learn[1]) : undefined, caseId: url.searchParams.get("case") ?? undefined };
   if (path === "/stats") return { page: "stats" };
-  if (path === "/settings") return { page: "settings" };
+  const settings = /^\/settings(?:\/([\w-]+))?$/.exec(path);
+  if (settings) return { page: "settings", section: settings[1] };
   return { page: "timer", selected: url.searchParams.get("s") ?? undefined };
 }
 

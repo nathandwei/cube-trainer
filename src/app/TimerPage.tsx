@@ -23,6 +23,7 @@ import type { FinishedSolve, SessionView } from "@/app/smartcube/session";
 import { useCubeSession } from "@/app/smartcube/useCubeSession";
 import "@/app/smartcube/smartcube.css";
 import { analyzeSolve, generateDemoSolve } from "@/cube";
+import { analysisOptions } from "@/app/lib/method";
 import type { SolveRecord } from "@/cube/types";
 
 const SCRAMBLE_STEP_MS = 110;
@@ -181,8 +182,9 @@ export function TimerPage({ solves, testSolve, selectedId, onFocusChange }: Prop
     setShowCube(true);
     setElapsed(0);
     await sleep(30);
-    const { moves, rotations } = generateDemoSolve(scramble, Date.now() % 100000);
-    const analysis = analyzeSolve(scramble, moves);
+    const options = analysisOptions();
+    const { moves, rotations } = generateDemoSolve(scramble, Date.now() % 100000, options.method);
+    const analysis = analyzeSolve(scramble, moves, options);
     const totalMs = moves.at(-1)?.t ?? 0;
 
     setPhase("scrambling");

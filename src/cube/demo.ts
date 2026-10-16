@@ -1,4 +1,5 @@
-// Generates a plausible ~14–19 s human CFOP solve (cross, four pairs, EO, COLL, EPLL) for demos and tests.
+// Generates a plausible ~14–19 s human CFOP solve (cross, four pairs, then OLL, PLL or EO, COLL, EPLL) for demos
+// and tests.
 //
 // The simulated solver works in their own view: before each pair they rotate the cube (y, y', y2) to bring the
 // slot to the front, solve the pair mostly with R, U, F and L, and run last-layer algs as written, wide moves and
@@ -19,6 +20,8 @@ import {
   type Face,
   type Frame,
 } from "./cubie";
+import { DEFAULT_LAST_LAYER, type LastLayerMethod } from "./analyze";
+import { getCase, recognizeCase } from "./cases";
 import { FrameTracker, splitMoves, type FrameStep } from "./frame";
 import { recognizeCOLL, recognizeEO, recognizeEPLL } from "./ll";
 import { AUFS, aufToSolve, isSolvedUpToAuf } from "./milestones";
@@ -64,6 +67,8 @@ const PAUSE_MS: Partial<Record<StageKind, [number, number]>> = {
   eo: [300, 600],
   coll: [600, 1200],
   epll: [400, 800],
+  oll: [500, 1100],
+  pll: [500, 1000],
   ll: [400, 900],
 };
 
@@ -296,8 +301,37 @@ function planPairs(p: Planner): void {
 // ---------------------------------------------------------------------------------------------------------------
 // Last layer: recognised in the solver's view and executed as written.
 
-function planLastLayer(p: Planner): void {
+function planLastLayer(p: Planner, method: LastLayerMethod): void {
   requireUpright(p.view.frame, "at the last layer");
+  if (method === "oll-pll") planOllPll(p);
+  else planEoColl(p);
+  const auf = aufToSolve(p.state);
+  if (auf < 0) throw new Error("Demo generator did not reach a solved last layer");
+  if (auf === 0) return;
+  const steps = playCentreTurns(p, [AUFS[auf]!]);
+  const last = p.segments.at(-1);
+  if (last) last.steps.push(...steps);
+  else p.segments.push({ kind: "epll", label: "epll", steps });
+}
+
+function planOllPll(p: Planner): void {
+  const oll = recognizeCase("OLL", viewState(p));
+  if (oll) {
+    const alg = getCase(oll.caseId).algs[0]!;
+    const steps = playInView(p, `${oll.preAuf} ${alg}`);
+    p.segments.push({ kind: "oll", label: "oll", steps, caseName: getCase(oll.caseId).name });
+    requireUpright(p.view.frame, `after ${alg}`);
+  }
+  const pll = recognizeCase("PLL", viewState(p));
+  if (pll) {
+    const alg = getCase(pll.caseId).algs[0]!;
+    const steps = playInView(p, `${pll.preAuf} ${alg} ${pll.postAuf}`);
+    p.segments.push({ kind: "pll", label: "pll", steps, caseName: getCase(pll.caseId).name });
+    requireUpright(p.view.frame, `after ${alg}`);
+  }
+}
+
+function planEoColl(p: Planner): void {
   const eo = recognizeEO(viewState(p));
   if (eo) {
     const steps = playInView(p, `${eo.preAuf} ${eo.alg}`);
@@ -317,13 +351,6 @@ function planLastLayer(p: Planner): void {
     p.segments.push({ kind: "epll", label: "epll", steps, caseName: epll.caseName });
     requireUpright(p.view.frame, `after ${epll.alg}`);
   }
-  const auf = aufToSolve(p.state);
-  if (auf < 0) throw new Error("Demo generator did not reach a solved last layer");
-  if (auf === 0) return;
-  const steps = playCentreTurns(p, [AUFS[auf]!]);
-  const last = p.segments.at(-1);
-  if (last) last.steps.push(...steps);
-  else p.segments.push({ kind: "epll", label: "epll", steps });
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -404,13 +431,13 @@ function timeSegments(segments: readonly Segment[], rng: Rng): DemoSolve {
 }
 
 /** The solve plus the stages the generator intended (the analysis should report exactly these). */
-export function generateDemoPlan(scramble: string, seed?: number): DemoSolve & { stages: DemoStage[] } {
+export function generateDemoPlan(scramble: string, seed?: number, method: LastLayerMethod = DEFAULT_LAST_LAYER): DemoSolve & { stages: DemoStage[] } {
   const rng = createRng(seed ?? hashString(scramble));
   const history = scrambleToSolverFrame(scramble);
   const p: Planner = { state: applyAlg(SOLVED, history), view: new FrameTracker(), history, segments: [], rng };
   planCross(p);
   planPairs(p);
-  planLastLayer(p);
+  planLastLayer(p, method);
   if (!isSolved(p.state)) throw new Error(`Demo generator failed to solve "${scramble}"`);
   const segments = tidySegments(p.segments);
   const { moves, rotations } = timeSegments(segments, rng);
@@ -429,7 +456,7 @@ export function generateDemoPlan(scramble: string, seed?: number): DemoSolve & {
  * A plausible human CFOP solve of `scramble`: centre-frame outer turns plus the solver's rotations, timed from the
  * start (t = 0 at the first turn, or at the first rotation when the solve opens with one).
  */
-export function generateDemoSolve(scramble: string, seed?: number): DemoSolve {
-  const { moves, rotations } = generateDemoPlan(scramble, seed);
+export function generateDemoSolve(scramble: string, seed?: number, method: LastLayerMethod = DEFAULT_LAST_LAYER): DemoSolve {
+  const { moves, rotations } = generateDemoPlan(scramble, seed, method);
   return { moves, rotations };
 }

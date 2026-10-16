@@ -1,15 +1,8 @@
 import { ArrowLeft } from "lucide-react";
 import { IconButton } from "@/app/components/IconButton";
 import { navigate } from "@/app/lib/router";
+import { SETTINGS_SECTIONS, sectionOf } from "./sections";
 import "./settings.css";
-
-const SECTIONS = [
-  { id: "cube", label: "Cube" },
-  { id: "timer", label: "Timer" },
-  { id: "learn", label: "Learn" },
-  { id: "data", label: "Data" },
-  { id: "account", label: "Account" },
-] as const;
 
 /** In place of the tabs: settings isn't one of them, so the way back sits where they would be. */
 export function SettingsHeader() {
@@ -21,15 +14,20 @@ export function SettingsHeader() {
   );
 }
 
-/** The sections of the one-scroll settings page (round-8 18). */
-export function SettingsSidebar() {
+/** The sections, one open at a time; switching replaces the history entry, so Back still leaves settings. */
+export function SettingsSidebar({ section }: { section?: string }) {
+  const open = sectionOf(section);
   return (
-    <nav className="settings-anchors" aria-label="Settings">
-      {SECTIONS.map(({ id, label }) => (
-        <button key={id} onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
-          {label}
-        </button>
-      ))}
+    <nav aria-label="Settings">
+      <ul className="settings-sections">
+        {SETTINGS_SECTIONS.map(({ id, label }) => (
+          <li key={id} className={id === open ? "selected" : ""}>
+            <button aria-current={id === open ? "page" : undefined} onClick={() => navigate(`/settings/${id}`, { replace: true })}>
+              {label}
+            </button>
+          </li>
+        ))}
+      </ul>
     </nav>
   );
 }

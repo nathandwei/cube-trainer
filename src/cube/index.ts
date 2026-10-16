@@ -57,7 +57,7 @@ export {
   type LLCase,
   type LLMatch,
 } from "./ll";
-export { analyzeSolve } from "./analyze";
+export { DEFAULT_LAST_LAYER, LAST_LAYER_METHODS, analyzeSolve, relabelLastLayer, type AnalyzeOptions, type LastLayerMethod } from "./analyze";
 export { generateDemoPlan, generateDemoSolve, type DemoSolve, type DemoStage } from "./demo";
 export { createRng, randomScramble, type Rng } from "./random";
 export { algMoveCount, isSameAlg } from "./algs";

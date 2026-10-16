@@ -17,6 +17,7 @@ import { ScrambleProgress } from "@/app/smartcube/ScrambleProgress";
 import type { FinishedSolve } from "@/app/smartcube/session";
 import "@/app/smartcube/smartcube.css";
 import { analyzeSolve, applyAlg, createRng, isSolved, scrambledState, splitMoves, type CubeState } from "@/cube";
+import { analysisOptions } from "@/app/lib/method";
 import type { Move, RotationEvent, SolveAnalysis, SolveRecord, TimedMove } from "@/cube/types";
 import type { LookaheadRep } from "@/shared/learn";
 import { countTurns } from "./cross/attempt";
@@ -63,7 +64,7 @@ const MAX_REP_JSON = 7000;
 
 function analysisOf(scramble: string, moves: readonly TimedMove[]): SolveAnalysis | undefined {
   try {
-    return analyzeSolve(scramble, [...moves]);
+    return analyzeSolve(scramble, [...moves], analysisOptions());
   } catch (error) {
     // The solve still counts for the drill; only its review is missing.
     console.error("Could not analyse the lookahead solve", error);

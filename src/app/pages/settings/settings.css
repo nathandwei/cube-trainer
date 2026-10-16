@@ -11,23 +11,48 @@
   font-weight: 500;
 }
 
-.settings-anchors {
+/* The sections: one open at a time, marked like the learn tab's open item. */
+.settings-sections {
+  list-style: none;
+  margin: 0 calc(-2 * var(--u));
+  padding: 0;
   display: flex;
   flex-direction: column;
+  gap: calc(4 * var(--u));
+  font-size: calc(22 * var(--ut));
 }
 
-.settings-anchors button {
+.settings-sections li {
+  border-radius: 999px;
+}
+
+.settings-sections li:not(.selected):hover {
+  background: color-mix(in srgb, var(--page) 60%, var(--sidebar));
+}
+
+.settings-sections li.selected {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.settings-sections button {
+  width: 100%;
+  height: calc(52 * var(--u));
   display: flex;
   align-items: center;
-  height: calc(56 * var(--u));
-  font-size: calc(22 * var(--ut));
-  color: var(--muted);
+  padding: 0 calc(16 * var(--u));
   text-align: left;
+  color: var(--muted);
   transition: color 150ms;
 }
 
-.settings-anchors button:hover {
+.settings-sections li:not(.selected) button:hover {
   color: var(--ink);
+}
+
+.settings-sections li.selected button {
+  padding-left: calc(20 * var(--u));
+  color: inherit;
 }
 
 .prefs {
@@ -36,8 +61,12 @@
   flex-direction: column;
 }
 
-.prefs section {
-  scroll-margin-top: calc(40 * var(--u));
+/* The appearance section's preview: the cube as every page will show it. */
+.prefs .prefs-cube {
+  align-self: center;
+  width: calc(420 * var(--u));
+  height: calc(400 * var(--u));
+  margin-top: calc(48 * var(--u));
 }
 
 .prefs-row {

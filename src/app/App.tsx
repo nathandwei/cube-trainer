@@ -36,7 +36,7 @@ function Shell() {
       case "stats":
         return <StatsSidebar />;
       case "settings":
-        return <SettingsSidebar />;
+        return <SettingsSidebar section={route.section} />;
       default:
         return <SolvesSidebar solves={solves} selectedId={selectedId} />;
     }
@@ -59,7 +59,7 @@ function Shell() {
       case "stats":
         return <StatsPage />;
       case "settings":
-        return <SettingsPage />;
+        return <SettingsPage section={route.section} />;
       default:
         return <TimerPage solves={solves} testSolve={testSolve} selectedId={route.selected} onFocusChange={setFocused} />;
     }

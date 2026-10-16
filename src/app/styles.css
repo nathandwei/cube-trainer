@@ -773,7 +773,9 @@ a:focus-visible {
   height: calc(320 * var(--u));
 }
 
-.cube twisty-player {
+/* The 3D cube's canvas fills whatever box its page gives the cube. */
+.cube canvas {
+  display: block;
   width: 100%;
   height: 100%;
 }
@@ -1210,10 +1212,6 @@ a:focus-visible {
   color: var(--accent);
 }
 
-.case-diagram twisty-player {
-  display: block;
-}
-
 /* The drill itself: like solving, the whole page and nothing else (round-9 09). */
 .learn-session {
   position: fixed;
@@ -1240,11 +1238,6 @@ a:focus-visible {
 .learn-session .cube.big {
   width: calc(430 * var(--u));
   height: calc(400 * var(--u));
-}
-
-.learn-session .cube.big twisty-player {
-  width: 100%;
-  height: 100%;
 }
 
 .session-time {
@@ -1360,11 +1353,6 @@ a:focus-visible {
 .learn-pick .pick-cube {
   width: calc(300 * var(--u));
   height: calc(270 * var(--u));
-}
-
-.learn-pick .pick-cube twisty-player {
-  width: 100%;
-  height: 100%;
 }
 
 .case-head {

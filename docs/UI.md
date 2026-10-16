@@ -75,4 +75,4 @@ Approved references per screen (concepts/):
 | Cross trainer | round-9 10, round-8 14, 15 |
 | Sign in | round-8 01 |
 | Connect | round-8 16, 17 |
-| Settings | round-8 18 |
+| Settings | round-8 18 (one section at a time: the sidebar lists Cube, Timer, Method, Learn, Appearance, Account) |

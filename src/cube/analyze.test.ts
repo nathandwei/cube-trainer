@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { analyzeSolve } from "./analyze";
+import { analyzeSolve, relabelLastLayer } from "./analyze";
+import { getCaseSet } from "./cases";
 import { applyAlg, invertAlg, parseAlg, scrambledState, toFaceTurns } from "./cubie";
 import { generateDemoSolve } from "./demo";
 import { FrameTracker, splitMoves } from "./frame";
 import { COLL_CASES, EPLL_CASES } from "./ll";
+import { algIndex, recognizeAlgs } from "./llAlgs";
 import { humanize } from "./notation";
 import { isCrossSolved, isSlotSolved } from "./pieces";
 import { createRng, randomScramble } from "./random";
@@ -37,12 +39,12 @@ function summary(analysis: ReturnType<typeof analyzeSolve>): [string, number, nu
   return analysis.stages.map((s) => [s.label, s.startMove, s.endMove]);
 }
 
-describe("last layer", () => {
+describe("last layer (EO → COLL → EPLL)", () => {
   const eo = faceTurns("F R U R' U' F'");
   const coll = ["U", ...faceTurns(COLL_CASES.find((c) => c.name === "S1")!.alg)];
   const epll = ["U2", ...faceTurns(EPLL_CASES.find((c) => c.name === "Ua")!.alg), "U'"];
   const moves = [...eo, ...coll, ...epll];
-  const analysis = analyzeSolve(wcaScrambleFor(moves), timed(moves, { [eo.length]: 700, [eo.length + coll.length]: 400 }));
+  const analysis = analyzeSolve(wcaScrambleFor(moves), timed(moves, { [eo.length]: 700, [eo.length + coll.length]: 400 }), { method: "eo-coll" });
 
   it("splits EO, COLL and EPLL, with the final AUF in the last stage", () => {
     const a = eo.length;
@@ -73,10 +75,10 @@ describe("last layer", () => {
     const sune = faceTurns("R U R' U R U2 R'");
     const tPerm = faceTurns(COLL_CASES.find((c) => c.name === "O-adj")!.alg);
     const twoLook = [...eo, ...sune, ...tPerm, ...epll];
-    const result = analyzeSolve(wcaScrambleFor(twoLook), timed(twoLook));
+    const result = analyzeSolve(wcaScrambleFor(twoLook), timed(twoLook), { method: "eo-coll" });
     expect(result.stages.map((s) => [s.label, s.caseName])).toEqual([
       ["eo", "line"],
-      ["ocll", undefined],
+      ["ocll", "Sune"],
       ["coll", "O-adj"],
       ["epll", "Ua"],
     ]);
@@ -86,13 +88,92 @@ describe("last layer", () => {
     const sune = faceTurns("R U R' U R U2 R'");
     const tPerm = faceTurns("R U R' U' R' F R2 U' R' U' R U R' F'");
     const moves = [...eo, ...sune, ...tPerm];
-    const result = analyzeSolve(wcaScrambleFor(moves), timed(moves));
+    const result = analyzeSolve(wcaScrambleFor(moves), timed(moves), { method: "eo-coll" });
     expect(result.stages.map((s) => s.label)).toEqual(["eo", "ocll", "pll"]);
   });
 
   it("uses the catch-all when one alg does the whole last layer", () => {
-    const result = analyzeSolve(wcaScrambleFor(eo), timed(eo));
+    const result = analyzeSolve(wcaScrambleFor(eo), timed(eo), { method: "eo-coll" });
     expect(summary(result)).toEqual([["ll", 0, eo.length]]);
+  });
+});
+
+describe("last-layer method", () => {
+  const eo = faceTurns("F R U R' U' F'");
+  const sune = faceTurns("R U R' U R U2 R'");
+  const tPerm = faceTurns("R U R' U' R' F R2 U' R' U' R U R' F'");
+  const ua = faceTurns(EPLL_CASES.find((c) => c.name === "Ua")!.alg);
+
+  function stages(moves: readonly string[], method: "eo-coll" | "oll-pll" = "eo-coll"): [string, string | undefined][] {
+    return analyzeSolve(wcaScrambleFor(moves), timed(moves), { method }).stages.map((s) => [s.label, s.caseName]);
+  }
+
+  it("names his OCLL that happened to solve the corners an OCLL, with EPLL after it", () => {
+    // Every catalog OCLL alg is also some COLL case's alg, so only an OCLL of his own that no COLL alg matches can
+    // tell luck from a COLL. His T: an H perm, then the catalog's OLL 24 alg.
+    const own = `M2 U M2 U2 M2 U M2 ${getCaseSet("OLL").cases.find((c) => c.name === "24")!.algs[0]}`;
+    const algs = { "OLL-24": own };
+    expect([...(recognizeAlgs(faceTurns(own), algIndex(algs))?.[0] ?? [])]).toEqual(["OLL"]);
+    const moves = [...eo, ...faceTurns(own), ...ua];
+    const labels = (options: { algs?: Record<string, string> }) =>
+      analyzeSolve(wcaScrambleFor(moves), timed(moves), { method: "eo-coll", ...options }).stages.map((s) => [s.label, s.caseName]);
+    expect(labels({ algs })).toEqual([
+      ["eo", "line"],
+      ["ocll", "T"],
+      ["epll", "Ua"],
+    ]);
+    // Not knowing his alg, the corners solved with the edges oriented read as a COLL.
+    expect(labels({}).map(([label]) => label)).toEqual(["eo", "coll", "epll"]);
+  });
+
+  it("names a full OLL an OLL rather than an EO with an OCLL skip", () => {
+    const oll1 = faceTurns("R U2 R2 F R F' U2 R' F R F'");
+    expect(stages([...oll1, ...ua])).toEqual([
+      ["oll", "1"],
+      ["epll", "Ua"],
+    ]);
+  });
+
+  it("keeps a dot done as two EO algs an EO, even when the two add up to an OLL alg", () => {
+    // EO's L case, U', then its line: together that's OLL 3, but he did two EO algs with a look in between.
+    const first = faceTurns("f R U R' U' f'");
+    const second = faceTurns("U' F R U R' U' F'");
+    expect([...(recognizeAlgs([...first, ...second], algIndex())?.[0] ?? [])]).toEqual(["OLL"]);
+    const moves = [...first, ...second, ...ua];
+    const result = analyzeSolve(wcaScrambleFor(moves), timed(moves, { [first.length]: 600 }), { method: "eo-coll" });
+    expect(result.stages.map((s) => s.label)).toEqual(["eo", "epll"]);
+  });
+
+  it.each([
+    ["one look each", [...eo, ...sune, ...tPerm], ["oll", "pll"]],
+    ["two-look OLL and PLL", [...eo, ...sune, ...faceTurns(COLL_CASES.find((c) => c.name === "O-adj")!.alg), ...ua], ["oll", "pll"]],
+    ["a PLL skip", eo, ["oll"]],
+  ])("splits OLL → PLL only at OLL and solved (%s)", (_, moves, labels) => {
+    expect(stages(moves, "oll-pll").map(([label]) => label)).toEqual(labels);
+  });
+
+  it("names the OLL and PLL cases", () => {
+    const [oll, pll] = stages([...eo, ...sune, ...tPerm], "oll-pll");
+    expect(oll?.[1]).toMatch(/^\d+$/);
+    expect(pll).toEqual(["pll", "T"]);
+  });
+
+  it("is cross, F2L, OLL, PLL unless told otherwise", () => {
+    const moves = [...eo, ...sune, ...tPerm];
+    const scramble = wcaScrambleFor(moves);
+    expect(analyzeSolve(scramble, timed(moves))).toEqual(analyzeSolve(scramble, timed(moves), { method: "oll-pll" }));
+  });
+
+  it("relabels a saved analysis for another method and keeps its F2L stages", () => {
+    const scramble = randomScramble(createRng(31));
+    const { moves } = generateDemoSolve(scramble, 3, "eo-coll");
+    const saved = analyzeSolve(scramble, moves, { method: "eo-coll" });
+    const relabelled = relabelLastLayer(saved, scramble, moves, { method: "oll-pll" });
+    expect(relabelled).toEqual(analyzeSolve(scramble, moves, { method: "oll-pll" }));
+    const f2l = saved.stages.filter((s) => ["cross", "xcross", "pair"].includes(s.kind));
+    expect(relabelled.stages.slice(0, f2l.length)).toEqual(f2l);
+    expect(relabelled.stages[0]).toBe(saved.stages[0]);
+    expect(relabelled.stages.slice(f2l.length).map((s) => s.kind)).not.toContain("coll");
   });
 });
 

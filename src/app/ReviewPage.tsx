@@ -1,10 +1,13 @@
 import { ArrowLeft, Pause, Play } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CubeView, type CubeHandle } from "@/app/components/CubeView";
 import { IconButton } from "@/app/components/IconButton";
+import { solverPalette } from "@/app/cube3d/looks";
 import { displayTokens, inViewAfter, slotInView, type TimedToken } from "@/app/lib/display";
 import { formatMs } from "@/app/lib/format";
+import { useAnalysisOptions } from "@/app/lib/method";
 import { navigate } from "@/app/lib/router";
+import { useSettings } from "@/app/lib/settings";
 import { accuracy, bestPossibleMoves, flow, LONG_RECOGNITION_MS, reportMoments, stageVerdict, verdictCounts } from "@/app/lib/review";
 import { learnItem } from "@/app/pages/learn/items";
 import { stageCase } from "@/app/review/cases";
@@ -24,7 +27,7 @@ import {
 import type { LineId, PairTag, Shown, StageView, ViewLine } from "@/app/review/parts";
 import { ReportPanel } from "@/app/review/ReportPanel";
 import { StepperPanel } from "@/app/review/StepperPanel";
-import { applyAlg, scrambledState, type CubeState } from "@/cube";
+import { applyAlg, relabelLastLayer, scrambledState, type CubeState } from "@/cube";
 import type { Slot, SolveAnalysis, SolveRecord } from "@/cube/types";
 import "@/app/review/review.css";
 
@@ -37,7 +40,19 @@ const LINE_TEMPO = 1.4;
 type Props = { solve: SolveRecord | undefined; back?: string };
 
 export function ReviewPage({ solve, back = "/" }: Props) {
-  if (!solve?.analysis || solve.moves.length === 0) {
+  const options = useAnalysisOptions();
+  // Named for his method and algs as they are now, which may have changed since the solve was saved.
+  const relabelled = useMemo(() => {
+    if (!solve?.analysis || solve.moves.length === 0) return null;
+    try {
+      return relabelLastLayer(solve.analysis, solve.scramble, solve.moves, options);
+    } catch (error) {
+      console.error("Could not relabel the last layer; showing the saved analysis", error);
+      return solve.analysis;
+    }
+  }, [options, solve]);
+  const analysis = useStableAnalysis(relabelled);
+  if (!solve || !analysis) {
     return (
       <div className="timer">
         <p className="empty">–</p>
@@ -47,7 +62,21 @@ export function ReviewPage({ solve, back = "/" }: Props) {
       </div>
     );
   }
-  return <Review key={solve.id} solve={solve} analysis={solve.analysis} back={back} />;
+  // Labels can change once his settings load; the stepper's place belongs to the old stages, so it starts over.
+  return <Review key={`${solve.id}:${analysis.stages.map((stage) => stage.label).join()}`} solve={solve} analysis={analysis} back={back} />;
+}
+
+/**
+ * The same object while the stages are the same: his settings arriving after the page opened would otherwise make a
+ * fresh but identical analysis, and the cube would jump back to the end of the solve under the stepper.
+ */
+function useStableAnalysis(analysis: SolveAnalysis | null): SolveAnalysis | null {
+  const [kept, setKept] = useState(analysis);
+  if (kept !== analysis && JSON.stringify(kept) !== JSON.stringify(analysis)) {
+    setKept(analysis);
+    return analysis;
+  }
+  return kept;
 }
 
 function setupAfter(solve: SolveRecord, tokens: readonly TimedToken[], count: number): string {
@@ -109,6 +138,13 @@ function Review({ solve, analysis, back }: { solve: SolveRecord; analysis: Solve
     () => analysis.stages.map((stage, index) => bestLines(stage, starts[index]).map((line) => inView(index, line))),
     [analysis, inView, starts],
   );
+
+  const { cubeLook } = useSettings();
+  // The pair chips take the cube's own colours, so a pair's chip matches its pieces on the cube.
+  const pairColours = useMemo(() => {
+    const palette = solverPalette(cubeLook);
+    return { "--s-green": palette.F, "--s-orange": palette.R, "--s-red": palette.L, "--s-blue": palette.B } as CSSProperties;
+  }, [cubeLook]);
 
   const cube = useRef<CubeHandle>(null);
   const [mode, setMode] = useState<"report" | "stepper">("report");
@@ -393,7 +429,7 @@ function Review({ solve, analysis, back }: { solve: SolveRecord; analysis: Solve
   }
 
   return (
-    <div className="rv">
+    <div className="rv" style={pairColours}>
       <section className="rv-replay">
         <div className="rv-back">
           <IconButton icon={ArrowLeft} label="Back" size="lg" onClick={() => navigate(back)} />

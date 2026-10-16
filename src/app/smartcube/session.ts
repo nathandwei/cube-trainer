@@ -26,6 +26,7 @@ import {
 } from "@/cube";
 import type { GyroSample, Move, Rotation, RotationEvent, SolveAnalysis, TimedMove } from "@/cube/types";
 import { toSolverFrame } from "@/app/lib/frame";
+import { analysisOptions } from "@/app/lib/method";
 import { MAX_GYRO_SAMPLES } from "@/shared/schema";
 import { RotationDetector, startOrientation, wideMoveEnd, type Quaternion } from "./gyro";
 import { inspectionPenalty, type Penalty } from "./inspection";
@@ -147,7 +148,7 @@ const q4 = (v: number) => Math.round(v * 10_000);
 
 function analysisOf(scramble: string, moves: TimedMove[]): { analysis?: SolveAnalysis } {
   try {
-    return { analysis: analyzeSolve(scramble, moves) };
+    return { analysis: analyzeSolve(scramble, moves, analysisOptions()) };
   } catch (error) {
     // The time still counts; only the breakdown is lost.
     console.error("Could not analyse the smart-cube solve", error);

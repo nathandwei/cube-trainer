@@ -1,8 +1,8 @@
 # cube.nathanwei.org
 
 Nathan Wei's Rubik's cube trainers. A Vite + React single-page app (TypeScript) served as static assets by a
-Cloudflare Worker. cubing.js draws and animates the cube; `src/cube/` is our own engine (cubie model, cross and
-pair solvers, last-layer case data, solve analysis). Background research lives in [docs/research/](docs/research/);
+Cloudflare Worker. `src/app/cube3d/` draws and animates the cube (three.js; looks in `looks.ts`), cubing.js makes
+scrambles; `src/cube/` is our own engine (cubie model, cross and pair solvers, last-layer case data, solve analysis). Background research lives in [docs/research/](docs/research/);
 design mockups are generated locally into `concepts/` (gitignored) with `uv run tools/concepts.py round-N`.
 
 ## Everyday

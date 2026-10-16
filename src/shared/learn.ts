@@ -94,6 +94,8 @@ export const learnSettingsSchema = z
     /** When each case's alg was last chosen (ms); reps before it belong to the previous alg. */
     algChosenAt: z.record(itemId, createdAt).default({}),
     newPerSession: z.number().int().min(0).max(1000).optional(),
+    /** How he solves the last layer, which names the review's last-layer steps (src/cube/analyze.ts); unset is OLL → PLL. */
+    lastLayer: z.enum(["oll-pll", "eo-coll"]).optional(),
   })
   .loose();
 

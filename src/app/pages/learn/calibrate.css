@@ -84,11 +84,6 @@
   margin: calc(-34 * var(--u)) 0 calc(-44 * var(--u));
 }
 
-.record-cube twisty-player {
-  width: 100%;
-  height: 100%;
-}
-
 .record-name {
   margin: calc(6 * var(--u)) 0 0;
   font-size: calc(44 * var(--ut));
