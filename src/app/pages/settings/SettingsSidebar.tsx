@@ -1,4 +1,14 @@
-/** Placeholder: the settings tab's sidebar content is being built. */
+const SECTIONS = ["timer", "data", "account"] as const;
+
+/** Anchors down the one-scroll settings page. */
 export function SettingsSidebar() {
-  return null;
+  return (
+    <nav className="anchors">
+      {SECTIONS.map((section) => (
+        <a key={section} href={`#${section}`}>
+          {section}
+        </a>
+      ))}
+    </nav>
+  );
 }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { signOut, useAccount } from "@/app/lib/account";
+import { navigate } from "@/app/lib/router";
 
 /** Bottom-left account row: who is signed in, and sign out. */
 export function AccountRow() {
@@ -30,6 +31,9 @@ export function AccountRow() {
       <span className="name" title={account.email}>
         {account.name}
       </span>
+      <button className="signout" onClick={() => navigate("/settings")}>
+        settings
+      </button>
       <button className="signout" onClick={leave} title={failed ? "sign out failed, try again" : "sign out"}>
         {failed ? "retry" : "sign out"}
       </button>
