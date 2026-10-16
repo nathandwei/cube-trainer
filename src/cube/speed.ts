@@ -6,18 +6,22 @@
 // from where the hand has to come back. R, r, L, l and x turn wrists. Every other turn is a finger trick that only
 // works with the acting hand's wrist in certain positions: U with the right index from home or after R (or pushed
 // by the left index), U' its mirror, U2 a double flick, D and D' with a ring finger, F with the right index from
-// thumb down (else a thumb push), F' its mirror, B with an index from the R/L' position, M slices with the left
-// ring finger (M' is the quick one), S and E slowly. When nothing fits, a hand regrips to any position, which is
-// cheaper while the other hand is turning; y and z rotations are a full regrip. A shortest-path search over (wrist
-// positions, last finger used) picks the cheapest way through the whole alg, so R2 goes up or down as suits what
-// follows (R2 then R2 is R R then R' R'), U goes to whichever index finger is free, and the starting grip is chosen
-// too. Smaller costs: the same finger twice in a row, two finger tricks in a row on one hand, a wrist stretched to
-// +2, left-wrist turns (a right-handed solver), and switching a hand between its R and r grips. U' with D on the
-// left hand (or U with D' on the right) is one motion, as in the G perms' "D U'".
+// thumb down (else an index pull or a thumb push), F' its mirror, B with an index from the R/L' position, M slices
+// with the left ring finger (M' is the quick one), S and E slowly. When nothing fits, a hand regrips to any
+// position, which is cheaper while the other hand is turning. Rotations are expensive: x rolls the cube in both
+// hands (cheaper before the first turn, when it overlaps recognition) unless it pairs with the next R or L into the
+// other hand's wide turn (x R' is exactly l'), and y and z are a full regrip. A shortest-path search over (wrist
+// positions, last finger used, ...) picks the cheapest way through the whole alg, so R2 goes up or down as suits
+// what follows (R2 then R2 is R R then R' R'), U goes to whichever index finger is free, and the starting grip is
+// chosen too. Smaller costs: the same finger twice in a row, two finger tricks in a row on one hand, a wrist
+// stretched to +2, switching a hand between its R and r grips, and switching which wrist turns (R to L). Left-wrist
+// turns cost double: the solver is right-handed and the community almost never prefers an alg's left-handed
+// mirror. U' with D on the left hand (or U with D' on the right) is one motion, as in "D U'".
 //
-// Calibration: an RU trigger (R U R' U') runs at about 9 TPS and T perm takes about 1.3 s; constants were then
-// tuned so that the model's fastest alg for each PLL, OLL and COLL case matches the community's most-voted one as
-// often as possible (see speed-votes.ts and speed.test.ts for the data and the hit rates).
+// Calibration: an RU trigger (R U R' U') takes about 420 ms (9.6 TPS) and T perm about 1.25 s, start included; the
+// constants were then fitted so that the model's fastest alg per PLL, OLL and COLL case is the community's most
+// voted one as often as possible without unphysical orderings (a push never beats a flick, and so on). See
+// speed-votes.ts for the data and speed.test.ts for the hit rates.
 //
 // Sources (ideas only; no code was copied):
 // - Trangium, "Movecount Coefficient Calculator" (https://trangium.github.io/MovecountCoefficient, source MIT at
@@ -39,65 +43,75 @@ import { isSameAlg } from "./algs";
 /** Every cost in the model, in ms. */
 export const SPEED_COSTS = {
   /** Getting the first turn going: the start of an alg overlaps with nothing. */
-  start: 100,
+  start: 130,
   /** Starting with a hand away from home grip, per hand (set up while recognising). */
-  startOffHome: 25,
+  startOffHome: 35,
   /** R, R', L, L', r, ... quarter wrist turn. */
-  wrist: 72,
+  wrist: 62,
   /** R2, L2: a double wrist turn. */
-  wristHalf: 120,
+  wristHalf: 155,
   /** Multiplies left-wrist turns: a right-handed solver's left wrist is slower. */
-  leftWrist: 1.15,
+  leftWrist: 2.0,
   /** Switching a hand between its R grip and its r grip (or L and l). */
-  wideSwitch: 50,
+  wideSwitch: 60,
+  /** A wrist turn by the other hand than the last wrist turn (R then L): the holding hand changes. */
+  wristSwap: 60,
   /** U with the right index, U' with the left, F from thumb down: the basic flick. */
-  flick: 90,
-  /** U2 (or F2 from thumb down): a double flick. */
-  flickHalf: 150,
+  flick: 82,
+  /** U2: a double flick. */
+  flickHalf: 145,
+  /** F2 from thumb down (or its mirror): a double flick on the front, harder to keep stable than U2. */
+  frontHalf: 215,
   /** U pushed by the left index (U' by the right). */
-  push: 120,
+  push: 90,
   /** D with the left ring finger, D' with the right. */
-  ring: 125,
+  ring: 105,
   /** D pushed by the right ring finger (D' by the left). */
   ringPush: 165,
   /** D2: a double ring flick. */
-  ringHalf: 200,
+  ringHalf: 175,
+  /** F pulled by the right index from home grip (F' by the left index). */
+  frontPull: 100,
   /** F pushed by the left thumb, F' by the right. */
-  thumb: 135,
+  thumb: 175,
   /** B with the right index from the R position (B' with the left from L'). */
-  back: 150,
+  back: 180,
   /** B2. */
-  backHalf: 230,
+  backHalf: 280,
   /** M' with the left ring finger. */
-  sliceFlick: 105,
+  sliceFlick: 100,
   /** M pushed back. */
-  slicePush: 135,
+  slicePush: 185,
   /** M2. */
-  sliceHalf: 170,
+  sliceHalf: 190,
   /** S, S', E, E'. */
-  sliceSE: 140,
+  sliceSE: 210,
   /** S2, E2. */
-  sliceSEHalf: 220,
-  /** Multiplies u, d, f, b (wide turns other than r and l): two layers by finger. */
-  wideFace: 1.35,
-  /** x mid-alg: both wrists roll the cube (a leading or trailing x is part of the grip). */
-  xRotation: 70,
+  sliceSEHalf: 300,
+  /** Multiplies f and b: two layers by finger. */
+  wideFace: 1.7,
+  /** Multiplies u and d: two layers by finger, from a grip that suits neither U nor D flicks. */
+  wideUpDown: 2.5,
+  /** x mid-alg: both wrists roll the cube. */
+  xRotation: 260,
+  /** x before the first turn: rolled into the grip while recognising (a trailing x is never done). */
+  xStart: 220,
   /** y or z mid-alg: let go and re-grab the cube. */
-  rotation: 300,
+  rotation: 380,
   /** y2 or z2 mid-alg. */
-  rotationHalf: 420,
+  rotationHalf: 520,
   /** One hand lets go and re-grabs at another wrist position. */
   regrip: 190,
   /** The same, done while the other hand is turning. */
-  regripOverlapped: 100,
+  regripOverlapped: 150,
   /** The same finger for two turns in a row: it has to reset first. */
-  sameFinger: 90,
+  sameFinger: 80,
   /** Two finger tricks in a row on one hand (different fingers). */
-  sameHand: 35,
+  sameHand: 30,
   /** U' with D on the left hand (U with D' on the right): the second turn of the pair. */
-  pairedTurn: 30,
+  pairedTurn: 25,
   /** A finger trick while a wrist is stretched to +2. */
-  stretch: 40,
+  stretch: 45,
 } as const;
 
 export type AlgSpeed = {
@@ -137,6 +151,8 @@ type Grip = {
   leftWide: boolean;
   /** The previous turn when it was a U or D turn ("U'", "D", ...), for pairing U' with D; "" otherwise. */
   last: string;
+  /** The hand of the last wrist turn, null before any. */
+  wristHand: Hand | null;
 };
 
 type Event =
@@ -183,7 +199,8 @@ function wristTurns(hand: Hand, amount: number, wide: boolean): Action[] {
 }
 
 function finger(hand: Hand, which: Finger, from: readonly number[], ms: number, note?: string): Action {
-  return note === undefined ? { kind: "finger", hand, finger: which, from, ms } : { kind: "finger", hand, finger: which, from, ms, note };
+  const action: Action = { kind: "finger", hand, finger: which, from, ms };
+  return note === undefined ? action : { ...action, note };
 }
 
 // U-like turns (U, u): amount 1 = clockwise from above, 3 = counter-clockwise, 2 = half.
@@ -191,23 +208,44 @@ function upTurns(amount: number, factor: number, note?: string): Action[] {
   const near = [0, 1] as const;
   switch (amount) {
     case 1:
-      return [finger("right", "rIndex", near, C.flick * factor, note), finger("left", "lIndex", near, C.push * factor, note)];
+      return [
+        finger("right", "rIndex", near, C.flick * factor, note),
+        finger("left", "lIndex", near, C.push * factor, note),
+      ];
     case 3:
-      return [finger("left", "lIndex", near, C.flick * factor, note), finger("right", "rIndex", near, C.push * factor, note)];
+      return [
+        finger("left", "lIndex", near, C.flick * factor, note),
+        finger("right", "rIndex", near, C.push * factor, note),
+      ];
     default:
-      return [finger("right", "rIndex", near, C.flickHalf * factor, note), finger("left", "lIndex", near, C.flickHalf * factor, note)];
+      return [
+        finger("right", "rIndex", near, C.flickHalf * factor, note),
+        finger("left", "lIndex", near, C.flickHalf * factor, note),
+      ];
   }
 }
 
+// A ring finger reaches the bottom layer from home grip or with its wrist turned up (after R, the right ring finger
+// sits under the cube).
 function downTurns(amount: number, factor: number, note?: string): Action[] {
+  const reach = [0, 1] as const;
   const home = [0] as const;
   switch (amount) {
     case 1:
-      return [finger("left", "lRing", home, C.ring * factor, note), finger("right", "rRing", home, C.ringPush * factor, note)];
+      return [
+        finger("left", "lRing", reach, C.ring * factor, note),
+        finger("right", "rRing", home, C.ringPush * factor, note),
+      ];
     case 3:
-      return [finger("right", "rRing", home, C.ring * factor, note), finger("left", "lRing", home, C.ringPush * factor, note)];
+      return [
+        finger("right", "rRing", reach, C.ring * factor, note),
+        finger("left", "lRing", home, C.ringPush * factor, note),
+      ];
     default:
-      return [finger("right", "rRing", home, C.ringHalf * factor, note), finger("left", "lRing", home, C.ringHalf * factor, note)];
+      return [
+        finger("right", "rRing", reach, C.ringHalf * factor, note),
+        finger("left", "lRing", reach, C.ringHalf * factor, note),
+      ];
   }
 }
 
@@ -218,17 +256,19 @@ function frontTurns(amount: number, factor: number, note?: string): Action[] {
     case 1:
       return [
         finger("right", "rIndex", thumbDown, C.flick * factor, note),
+        finger("right", "rIndex", [0], C.frontPull * factor, note),
         finger("left", "lThumb", thumbFront, C.thumb * factor, note),
       ];
     case 3:
       return [
         finger("left", "lIndex", thumbDown, C.flick * factor, note),
+        finger("left", "lIndex", [0], C.frontPull * factor, note),
         finger("right", "rThumb", thumbFront, C.thumb * factor, note),
       ];
     default:
       return [
-        finger("right", "rIndex", thumbDown, C.flickHalf * factor, note),
-        finger("left", "lIndex", thumbDown, C.flickHalf * factor, note),
+        finger("right", "rIndex", thumbDown, C.frontHalf * factor, note),
+        finger("left", "lIndex", thumbDown, C.frontHalf * factor, note),
       ];
   }
 }
@@ -241,7 +281,10 @@ function backTurns(amount: number, factor: number, note: string): Action[] {
     case 3:
       return [finger("left", "lIndex", up, C.back * factor, note)];
     default:
-      return [finger("right", "rIndex", up, C.backHalf * factor, note), finger("left", "lIndex", up, C.backHalf * factor, note)];
+      return [
+        finger("right", "rIndex", up, C.backHalf * factor, note),
+        finger("left", "lIndex", up, C.backHalf * factor, note),
+      ];
   }
 }
 
@@ -255,17 +298,19 @@ function standingTurns(amount: number, note: string): Action[] {
   if (amount === 2) {
     return [finger("right", "rIndex", [0], C.sliceSEHalf, note), finger("left", "lIndex", [0], C.sliceSEHalf, note)];
   }
-  return amount === 1 ? [finger("right", "rIndex", [0], C.sliceSE, note)] : [finger("left", "lIndex", [0], C.sliceSE, note)];
+  if (amount === 1) return [finger("right", "rIndex", [0], C.sliceSE, note)];
+  return [finger("left", "lIndex", [0], C.sliceSE, note)];
 }
 
 function equatorTurns(amount: number, note: string): Action[] {
   if (amount === 2) {
     return [finger("right", "rRing", [0], C.sliceSEHalf, note), finger("left", "lRing", [0], C.sliceSEHalf, note)];
   }
-  return amount === 1 ? [finger("left", "lRing", [0], C.sliceSE, note)] : [finger("right", "rRing", [0], C.sliceSE, note)];
+  if (amount === 1) return [finger("left", "lRing", [0], C.sliceSE, note)];
+  return [finger("right", "rRing", [0], C.sliceSE, note)];
 }
 
-function actionsFor(token: MoveToken): Action[] {
+function actionsFor(token: MoveToken, first: boolean): Action[] {
   const { family, amount } = token;
   const name = label(token);
   switch (family) {
@@ -283,12 +328,12 @@ function actionsFor(token: MoveToken): Action[] {
       return upTurns(amount, 1);
     case "u":
     case "Uw":
-      return upTurns(amount, C.wideFace, name);
+      return upTurns(amount, C.wideUpDown, name);
     case "D":
       return downTurns(amount, 1);
     case "d":
     case "Dw":
-      return downTurns(amount, C.wideFace, name);
+      return downTurns(amount, C.wideUpDown, name);
     case "F":
       return frontTurns(amount, 1);
     case "f":
@@ -305,8 +350,10 @@ function actionsFor(token: MoveToken): Action[] {
       return standingTurns(amount, name);
     case "E":
       return equatorTurns(amount, name);
-    case "x":
-      return wristDeltas(amount, 1).map((delta) => ({ kind: "x", delta, ms: amount === 2 ? 2 * C.xRotation : C.xRotation }));
+    case "x": {
+      const quarter = first ? C.xStart : C.xRotation;
+      return wristDeltas(amount, 1).map((delta) => ({ kind: "x", delta, ms: amount === 2 ? 2 * quarter : quarter }));
+    }
     case "y":
     case "z":
       return [{ kind: "rotation", ms: amount === 2 ? C.rotationHalf : C.rotation }];
@@ -319,7 +366,7 @@ function actionsFor(token: MoveToken): Action[] {
 // The search
 
 function gripKey(g: Grip): string {
-  return `${g.right},${g.left},${g.finger},${g.rightWide ? 1 : 0}${g.leftWide ? 1 : 0},${g.last}`;
+  return `${g.right},${g.left},${g.finger},${g.rightWide ? 1 : 0}${g.leftWide ? 1 : 0},${g.last},${g.wristHand ?? ""}`;
 }
 
 function relax(layer: Map<string, Node>, node: Node): void {
@@ -335,7 +382,7 @@ function startLayer(): Map<string, Node> {
       for (const rightWide of [false, true]) {
         for (const leftWide of [false, true]) {
           const offHome = (right === 0 ? 0 : 1) + (left === 0 ? 0 : 1);
-          const grip: Grip = { right, left, finger: "none", rightWide, leftWide, last: "" };
+          const grip: Grip = { right, left, finger: "none", rightWide, leftWide, last: "", wristHand: null };
           relax(layer, { grip, ms: offHome * C.startOffHome, prev: null, event: null });
         }
       }
@@ -350,7 +397,8 @@ function regripped(node: Node, hand: Hand, position: number): Node {
     hand === "right"
       ? { ...node.grip, right: position, rightWide: false, finger: "none", last: "" }
       : { ...node.grip, left: position, leftWide: false, finger: "none", last: "" };
-  return { grip, ms: node.ms + (overlapped ? C.regripOverlapped : C.regrip), prev: node, event: { kind: "regrip", hand } };
+  const ms = node.ms + (overlapped ? C.regripOverlapped : C.regrip);
+  return { grip, ms, prev: node, event: { kind: "regrip", hand } };
 }
 
 // Adds every way of regripping one hand, then the other, before the next turn.
@@ -371,14 +419,18 @@ function inRange(position: number): boolean {
   return position >= WRIST_MIN && position <= WRIST_MAX;
 }
 
+// "<finger> <turn>" → the finger and turn just before that make one motion with it.
+const PAIRED_TURNS: Readonly<Record<string, readonly [Finger, string]>> = {
+  "lRing D": ["lIndex", "U'"],
+  "lIndex U'": ["lRing", "D"],
+  "rRing D'": ["rIndex", "U"],
+  "rIndex U": ["rRing", "D'"],
+};
+
+const PAIRABLE = new Set(["U", "U'", "D", "D'"]);
+
 function isPairedTurn(prev: Grip, action: Action & { kind: "finger" }, name: string): boolean {
-  const pairs: Record<string, [Finger, string]> = {
-    "lRing D": ["lIndex", "U'"],
-    "lIndex U'": ["lRing", "D"],
-    "rRing D'": ["rIndex", "U"],
-    "rIndex U": ["rRing", "D'"],
-  };
-  const pair = pairs[`${action.finger} ${name}`];
+  const pair = PAIRED_TURNS[`${action.finger} ${name}`];
   return pair !== undefined && prev.finger === pair[0] && prev.last === pair[1];
 }
 
@@ -397,9 +449,8 @@ function fingerTurn(node: Node, action: Action & { kind: "finger" }, name: strin
     ms += C.sameHand;
   }
   if (g.right === WRIST_MAX || g.left === WRIST_MAX) ms += C.stretch;
-  const last = /^[UD]/.test(name) && name.length <= 2 ? name : "";
   return {
-    grip: { ...g, finger: action.finger, last },
+    grip: { ...g, finger: action.finger, last: PAIRABLE.has(name) ? name : "" },
     ms: node.ms + ms,
     prev: node,
     event: { kind: "turn", label: name, action, extra },
@@ -412,10 +463,11 @@ function wristTurn(node: Node, action: Action & { kind: "wrist" }, name: string)
   const position = (right ? g.right : g.left) + action.delta;
   if (!inRange(position)) return null;
   const wasWide = right ? g.rightWide : g.leftWide;
-  const ms = action.ms + (wasWide === action.wide ? 0 : C.wideSwitch);
+  const swapped = g.wristHand !== null && g.wristHand !== action.hand;
+  const ms = action.ms + (wasWide === action.wide ? 0 : C.wideSwitch) + (swapped ? C.wristSwap : 0);
   const grip: Grip = right
-    ? { ...g, right: position, rightWide: action.wide, finger: "rWrist", last: "" }
-    : { ...g, left: position, leftWide: action.wide, finger: "lWrist", last: "" };
+    ? { ...g, right: position, rightWide: action.wide, finger: "rWrist", last: "", wristHand: "right" }
+    : { ...g, left: position, leftWide: action.wide, finger: "lWrist", last: "", wristHand: "left" };
   return { grip, ms: node.ms + ms, prev: node, event: { kind: "turn", label: name, action, extra: null } };
 }
 
@@ -440,7 +492,7 @@ function turn(node: Node, action: Action, name: string): Node[] {
     case "rotation":
       return GRIP_POSITIONS.flatMap((right) =>
         GRIP_POSITIONS.map((left) => ({
-          grip: { right, left, finger: "none" as const, rightWide: false, leftWide: false, last: "" },
+          grip: { right, left, finger: "none" as const, rightWide: false, leftWide: false, last: "", wristHand: null },
           ms: node.ms + action.ms,
           prev: node,
           event,
@@ -449,12 +501,14 @@ function turn(node: Node, action: Action, name: string): Node[] {
   }
 }
 
-function step(layer: Map<string, Node>, token: MoveToken): Map<string, Node> {
-  const actions = actionsFor(token);
+function step(layer: Map<string, Node>, token: MoveToken, first: boolean): Map<string, Node> {
+  const actions = actionsFor(token, first);
   const name = label(token);
   const from = actions.some((action) => action.kind === "rotation") ? layer : withRegrips(layer);
   const next = new Map<string, Node>();
-  for (const node of from.values()) for (const action of actions) for (const after of turn(node, action, name)) relax(next, after);
+  for (const node of from.values()) {
+    for (const action of actions) for (const after of turn(node, action, name)) relax(next, after);
+  }
   if (next.size === 0) throw new Error(`No way to finger "${name}"`);
   return next;
 }
@@ -462,17 +516,38 @@ function step(layer: Map<string, Node>, token: MoveToken): Map<string, Node> {
 // ---------------------------------------------------------------------------------------------------------------
 // What gets executed, and the report
 
-// Rotations before the first turn set up the grip and rotations after the last turn are never done, so neither
-// costs anything (with ignoreAuf, a leading y is part of the AUF and is dropped along with it).
+// x with R' is exactly l' (x' with R is l, x with L is r, x2 with R2 is l2, ...): the other hand's wide turn, which
+// is how solvers do "x R'", so such an x costs a wrist turn rather than a rotation.
+function wideTurnFor(rotation: MoveToken, turn: MoveToken): MoveToken | null {
+  if (rotation.family !== "x") return null;
+  if (turn.family === "R" && turn.amount === (4 - rotation.amount) % 4) return { family: "l", amount: turn.amount };
+  if (turn.family === "L" && turn.amount === rotation.amount) return { family: "r", amount: turn.amount };
+  return null;
+}
+
+function mergeRotations(tokens: readonly MoveToken[]): MoveToken[] {
+  const merged: MoveToken[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    const next = tokens[i + 1];
+    const wide = next === undefined ? null : (wideTurnFor(token, next) ?? wideTurnFor(next, token));
+    merged.push(wide ?? token);
+    if (wide) i++;
+  }
+  return merged;
+}
+
+// Rotations after the last turn are never done. With ignoreAuf, leading U turns and y rotations are the pre-AUF (a y
+// in front of a last-layer alg only picks the angle) and trailing U turns the post-AUF, so they are dropped too.
 function executedTokens(alg: string, ignoreAuf: boolean): MoveToken[] {
   const tokens = tokenizeAlg(alg);
-  const skipsAtStart = ({ family }: MoveToken): boolean => family === "x" || (ignoreAuf && (family === "U" || family === "y"));
+  const skipsAtStart = ({ family }: MoveToken): boolean => ignoreAuf && (family === "U" || family === "y");
   const skipsAtEnd = ({ family }: MoveToken): boolean => ROTATIONS.has(family) || (ignoreAuf && family === "U");
   let first = 0;
   let end = tokens.length;
   while (first < end && skipsAtStart(tokens[first]!)) first++;
   while (end > first && skipsAtEnd(tokens[end - 1]!)) end--;
-  return tokens.slice(first, end);
+  return mergeRotations(tokens.slice(first, end));
 }
 
 function eventsOf(node: Node): Event[] {
@@ -510,16 +585,18 @@ function report(events: readonly Event[]): { regrips: number; notes: string[] } 
 /**
  * Estimated execution time of `alg` for a competent CFOP solver, from the cheapest fingering a two-hand simulation
  * finds (see the top of this file), with the turns executed, the regrips and rotations on that fingering, and notes
- * on its costly bits. Leading rotations are part of the grip and trailing ones are never done, so neither counts;
- * a leading y or z mid-solve (F2L) does unless ignoreAuf. An empty alg takes 0 ms. Throws on anything that is not
- * a move.
+ * on its costly bits. Trailing rotations are free (never done); a leading x costs SPEED_COSTS.xStart and a leading y
+ * or z a full rotation, unless ignoreAuf drops a leading y as part of the AUF. An empty alg takes 0 ms. Throws on
+ * anything that is not a move.
  */
 export function algSpeed(alg: string, options: AlgSpeedOptions = {}): AlgSpeed {
   const tokens = executedTokens(alg, options.ignoreAuf ?? false);
   const moves = tokens.filter(({ family }) => !ROTATIONS.has(family)).length;
   if (tokens.length === 0) return { ms: 0, moves: 0, regrips: 0, notes: [] };
   let layer = startLayer();
-  for (const token of tokens) layer = step(layer, token);
+  tokens.forEach((token, index) => {
+    layer = step(layer, token, index === 0);
+  });
   let best: Node | null = null;
   for (const node of layer.values()) if (!best || node.ms < best.ms) best = node;
   if (!best) throw new Error(`No fingering for "${alg}"`);
@@ -567,9 +644,12 @@ function personalFactor(caseId: string, personal: readonly (readonly [string, nu
 /**
  * "Best overall" alg for a case: the option (algOptions) with the lowest execution time, where an alg's time is the
  * solver's measured median when personalMs has one, and otherwise the model's estimate (caseAlgSpeed) scaled by his
- * speed relative to the model (median measured / estimated over the algs he has timed; 1 when none). Ties go to
- * fewer moves, then to algOptions' order. Throws on an unknown case or a measured time that is not a positive
- * number; null only when the case has no options.
+ * speed relative to the model: the median of measured / estimated over every alg in personalMs (1 when empty). The
+ * scaling keeps measured and estimated times comparable for a solver slower or faster than the model; pass medians
+ * from other cases too for a steadier factor (with only one alg timed, the factor makes that alg's estimate equal
+ * its time and the model's order stands). Ties go to fewer moves, then algOptions' order. Throws on an unknown case,
+ * a personalMs key that is not an alg, or a time that is not a positive number; null only when the case has no
+ * options.
  */
 export function recommendAlg(caseId: string, options: RecommendOptions = {}): Recommendation | null {
   const personal = Object.entries(options.personalMs ?? {});

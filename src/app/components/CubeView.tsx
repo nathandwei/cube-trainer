@@ -17,6 +17,9 @@ export type CubeHandle = {
 /** Queuing a whole alg at once makes cubing.js catch up within a few frames, so turns are fed one at a time. */
 const PLAY_STEP_MS = 420;
 const PLAY_LEAD_MS = 350;
+const ROTATION = /^[xyz]/;
+/** A rotation's share of time in play(), in steps. */
+const ROTATION_STEPS = 1.8;
 
 /** Algs are written with grouping brackets ("(R U R' U')"); cubing.js throws on a bracket inside a move. */
 function movesOf(text: string): string[] {
@@ -143,9 +146,14 @@ export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
     show: showStill,
     play(nextSetup, alg, stepMs = PLAY_STEP_MS) {
       showStill(nextSetup);
-      timers.current = movesOf(alg).map((move, i) =>
-        window.setTimeout(() => player.current?.experimentalAddMove(animator.play(move), { cancel: false }), PLAY_LEAD_MS + i * stepMs),
-      );
+      // A whole-cube rotation (the x that opens an alg learnt from another grip) gets room to turn and settle before
+      // the next move, so the cube visibly comes round instead of snapping.
+      let at = PLAY_LEAD_MS;
+      timers.current = movesOf(alg).map((move) => {
+        const timer = window.setTimeout(() => player.current?.experimentalAddMove(animator.play(move), { cancel: false }), at);
+        at += ROTATION.test(move) ? stepMs * ROTATION_STEPS : stepMs;
+        return timer;
+      });
     },
     turn(move) {
       for (const one of movesOf(move)) player.current?.experimentalAddMove(animator.play(one), { cancel: false });

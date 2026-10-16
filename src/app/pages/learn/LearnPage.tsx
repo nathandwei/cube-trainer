@@ -1,4 +1,4 @@
-import { SlidersHorizontal } from "lucide-react";
+import { ListChecks, SlidersHorizontal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { IconButton } from "@/app/components/IconButton";
 import { CubeStatus } from "@/app/components/CubeStatus";
@@ -10,9 +10,12 @@ import { ConnectSheet } from "@/app/smartcube/ConnectSheet";
 import { useSmartCube } from "@/app/smartcube/connection";
 import type { CaseDef } from "@/cube";
 import type { CaseRep } from "@/shared/learn";
+import { Calibrate } from "./Calibrate";
+import { clearCalibration, requestCalibration, usePendingCalibration } from "./calibrateRequest";
 import { CaseDiagram } from "./CaseDiagram";
 import { CasePage } from "./CasePage";
 import { CrossDrill } from "./CrossDrill";
+import { RecordAlg } from "./RecordAlg";
 import { LookaheadDrill } from "./LookaheadDrill";
 import { LearnChart } from "./LearnChart";
 import { casesOf, itemLabel, LEARN_ITEMS, learnItem } from "./items";
@@ -33,6 +36,9 @@ export function LearnPage({ set }: { set?: string }) {
   const [custom, setCustom] = useState(false);
   /** A case opened from the grid: its algs, Choose / Record mine, and Drill. */
   const [openCase, setOpenCase] = useState<string | null>(null);
+  /** Recording his own alg for the open case (Record mine). */
+  const [recording, setRecording] = useState(false);
+  const pendingCalibration = usePendingCalibration();
   const [sheetOpen, setSheetOpen] = useState(false);
   // Picking another item in the sidebar leaves whatever was open here (a session, the alg picker, a summary).
   const [shownSet, setShownSet] = useState(set);
@@ -42,6 +48,7 @@ export function LearnPage({ set }: { set?: string }) {
     setFinished(null);
     setCustom(false);
     setOpenCase(null);
+    setRecording(false);
   }
   const cubeLink = useSmartCube();
   // Without a cube the drill still runs, on screen, for trying it out (nothing is saved).
@@ -53,6 +60,10 @@ export function LearnPage({ set }: { set?: string }) {
 
   // With nothing ticked (and nothing picked) the first set still shows: the sidebar's checks are how he adds things.
   const open = learnItem(set ?? settings.items[0] ?? LEARN_ITEMS[0]?.id);
+  // A request only stands while its set is the one open: leaving it (another set, another tab) drops it.
+  useEffect(() => {
+    if (pendingCalibration !== null && open?.id !== pendingCalibration) clearCalibration();
+  }, [open?.id, pendingCalibration]);
   const hasCases = casesOf(settings.items).length > 0;
 
   function start(caseIds: string[]) {
@@ -94,11 +105,33 @@ export function LearnPage({ set }: { set?: string }) {
   const openCases = open?.kind === "cases" ? open.cases : null;
   const learnedCount = openCases ? openCases.filter((c) => settings.algs[c.id] !== undefined).length : 0;
 
+  // Calibration for the open set: when he ticks a set he has no algs for, or presses Calibrate on its page.
+  if (open?.kind === "cases" && pendingCalibration === open.id) {
+    return <Calibrate key={open.id} set={open.id} onDone={clearCalibration} onCancel={clearCalibration} />;
+  }
+
+  if (openCase && recording) {
+    const caseId = openCase;
+    return (
+      <RecordAlg
+        key={caseId}
+        caseId={caseId}
+        onRecorded={(alg, take) => {
+          // A test take shows how recording works; only his own turns become his alg.
+          if (!take.test) chooseAlg(caseId, alg);
+          setRecording(false);
+        }}
+        onSkip={() => setRecording(false)}
+      />
+    );
+  }
+
   if (openCase) {
     const caseId = openCase;
     const alg = settings.algs[caseId];
     return (
       <CasePage
+        onRecord={() => setRecording(true)}
         caseId={caseId}
         current={alg}
         onChoose={(chosen) => chooseAlg(caseId, chosen)}
@@ -133,6 +166,7 @@ export function LearnPage({ set }: { set?: string }) {
             </button>
           </>
         )}
+        {openCases && <IconButton icon={ListChecks} label="Calibrate" variant="soft" onClick={() => requestCalibration(open?.id ?? "")} />}
         {hasCases && <IconButton icon={SlidersHorizontal} label="Custom session" variant="soft" aria-pressed={custom} onClick={() => setCustom(!custom)} />}
         <span className="head-spacer" />
         <CubeStatus onClick={() => setSheetOpen(true)} />

@@ -2,11 +2,12 @@ import { LogOut, Settings } from "lucide-react";
 import { useState } from "react";
 import { IconButton } from "@/app/components/IconButton";
 import { signOut, useAccount } from "@/app/lib/account";
-import { navigate } from "@/app/lib/router";
+import { navigate, useRoute } from "@/app/lib/router";
 
 /** Bottom-left account row: who is signed in, and sign out. */
 export function AccountRow() {
   const state = useAccount();
+  const route = useRoute();
   const [failed, setFailed] = useState(false);
   if (state.status !== "signed-in") return null;
   const { account } = state;
@@ -34,7 +35,7 @@ export function AccountRow() {
         {account.name}
       </span>
       <span className="account-actions">
-        <IconButton icon={Settings} label="Settings" className="tip-up" onClick={() => navigate("/settings")} />
+        {route.page !== "settings" && <IconButton icon={Settings} label="Settings" className="tip-up" onClick={() => navigate("/settings")} />}
         <IconButton icon={LogOut} label={failed ? "Sign out failed: try again" : "Sign out"} className={`tip-up ${failed ? "failed" : ""}`} onClick={() => void leave()} />
       </span>
     </div>

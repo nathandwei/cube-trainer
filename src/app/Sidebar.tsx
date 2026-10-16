@@ -8,10 +8,14 @@ const TABS: readonly { tab: Tab; path: string; label: string }[] = [
   { tab: "stats", path: "/stats", label: "Stats" },
 ];
 
-/** The shell's left column: tabs, then whatever the current tab puts there, then the account. */
-export function Sidebar({ active, children }: { active: Tab | null; children: ReactNode }) {
+/**
+ * The shell's left column: tabs, then whatever the current tab puts there, then the account. A page outside the tabs
+ * (settings) passes its own `header` in place of the tabs.
+ */
+export function Sidebar({ active, header, children }: { active: Tab | null; header?: ReactNode; children: ReactNode }) {
   return (
     <aside className="sidebar">
+      {header ?? (
       <nav className="nav">
         {TABS.map(({ tab, path, label }) => (
           <a
@@ -27,6 +31,7 @@ export function Sidebar({ active, children }: { active: Tab | null; children: Re
           </a>
         ))}
       </nav>
+      )}
       <div className="sidebar-body">{children}</div>
       <AccountRow />
     </aside>

@@ -162,7 +162,9 @@ export class RotationDetector {
   }
 
   sample(q: Quaternion, t: number): Detection | null {
-    const { orientation, degrees } = snap(multiply(rotationSince(this.#reference, q), this.#initial));
+    // The regrip is measured about the cube's axes at the start, which sit `initial` away from the solver's grip, so
+    // it applies after `initial`: initial · since (the other order misreads e.g. an x from a y start as z').
+    const { orientation, degrees } = snap(multiply(this.#initial, rotationSince(this.#reference, q)));
     if (orientation === this.#current || degrees > GYRO_TUNING.enterDegrees) {
       this.#candidate = null;
       return null;
@@ -230,6 +232,26 @@ export function wideMoveEnd(
     const [a, b] = [named(i - 1), named(i)];
     if (a === b && !a.endsWith("2") && gap <= GYRO_TUNING.halfTurnMs && matches([`${a.charAt(0)}2`])) return i;
     if (gap <= GYRO_TUNING.slicePairMs && matches([a, b])) return i;
+    if (i - 3 >= from && isQuarteredSliceHalf(turns, i, named) && matches(quarteredSliceHalf(i, named))) return i;
   }
   return null;
+}
+
+/** The two half turns a slice half turn reported as four interleaved quarters (M2 = R L' R L') stands for. */
+function quarteredSliceHalf(i: number, named: (i: number) => Move): Move[] {
+  return [`${named(i - 3).charAt(0)}2`, `${named(i - 2).charAt(0)}2`];
+}
+
+/**
+ * Four quarters ending at `i` that are two opposite faces turned twice each, the same way each time, close enough
+ * to be one slice half turn: some cubes report M2 that way rather than as two pairs.
+ */
+function isQuarteredSliceHalf(turns: readonly Turn[], i: number, named: (i: number) => Move): boolean {
+  const names = [named(i - 3), named(i - 2), named(i - 1), named(i)];
+  if (names.some((name) => name.endsWith("2"))) return false;
+  const [first, second] = names;
+  if (!first || !second || first.charAt(0) === second.charAt(0)) return false;
+  const pairs = names.filter((name) => name === first).length === 2 && names.filter((name) => name === second).length === 2;
+  const span = turns[i]!.hostT - turns[i - 3]!.hostT;
+  return pairs && span <= GYRO_TUNING.halfTurnMs + GYRO_TUNING.slicePairMs;
 }

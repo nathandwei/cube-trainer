@@ -5,10 +5,14 @@ import { IconButton } from "@/app/components/IconButton";
 import { median } from "@/app/lib/averages";
 import { formatSeconds } from "@/app/lib/format";
 import { useReps } from "@/app/lib/learnStore";
-import { algMoveCount, algOptions, getCase, isSameAlg, playback, viewAuf, type AlgSource } from "@/cube";
+import { algMoveCount, algOptions, caseAlgSpeed, getCase, isSameAlg, playback, recommendAlg, viewAuf, type AlgSource } from "@/cube";
 import type { CaseRep } from "@/shared/learn";
 import { CaseDiagram } from "./CaseDiagram";
 import { totalMs } from "./progress";
+
+/** Algs play at half the cube's usual pace (his call): slow enough to follow every turn. */
+const ALG_STEP_MS = 840;
+const ALG_TEMPO = 0.8;
 
 /** Cards shown before "More": his own alg and the two best others, as in round-8 13. */
 const FIRST_CARDS = 3;
@@ -38,10 +42,30 @@ function angleOf(caseId: string, alg: string | undefined): string {
   }
 }
 
-/** Best overall: the fewest moves for now, the first such option (the speed model will replace this). */
-function recommended(options: readonly Card[]): Card | undefined {
+/**
+ * Best overall: the option the fingertrick model expects to run fastest (moves and how they sit in the hands), with
+ * his own measured times standing in for the estimate where he has them. Fewest moves if the model can't say.
+ */
+function recommended(caseId: string, options: readonly Card[], personalMs: Record<string, number>): Card | undefined {
+  try {
+    const pick = recommendAlg(caseId, { personalMs });
+    const card = pick && options.find((option) => sameAlg(option.alg, pick.alg));
+    if (card) return card;
+  } catch (error) {
+    console.warn(`No recommendation for ${caseId}`, error);
+  }
   const fewest = Math.min(...options.map((option) => option.moves));
   return options.find((option) => option.moves === fewest);
+}
+
+/** The model's execution time for an alg, or null when it can't read it. */
+function estimateMs(caseId: string, alg: string): number | null {
+  try {
+    return caseAlgSpeed(caseId, alg).ms;
+  } catch (error) {
+    console.warn(`No estimate for ${alg}`, error);
+    return null;
+  }
 }
 
 /** isSameAlg that treats text it can't read (stored or recorded data) as a different alg instead of crashing the page. */
@@ -52,6 +76,11 @@ function sameAlg(a: string, b: string): boolean {
     console.warn(`Can't compare ${a} and ${b}`, error);
     return false;
   }
+}
+
+/** "≈1.17 s": what the model thinks the alg takes once recognised; blank when it can't say. */
+function formatEstimate(ms: number | null): string {
+  return ms === null ? "" : `≈${formatSeconds(ms)} s`;
 }
 
 function movesOf(alg: string): number {
@@ -75,15 +104,30 @@ export function CasePage({ caseId, current, onChoose, onBack, action, onRecord }
   const [more, setMore] = useState(false);
   const setup = `z2 ${caseDef.setup} ${angleOf(caseId, current)}`.trim();
 
+  // His median per alg he has drilled on this case: his real speed beats the model's estimate.
+  const personalMs = useMemo(() => {
+    const byAlg = new Map<string, number[]>();
+    for (const rep of reps) {
+      if (rep.kind !== "case" || rep.item !== caseId || !rep.correct || !rep.alg) continue;
+      byAlg.set(rep.alg, [...(byAlg.get(rep.alg) ?? []), totalMs(rep)]);
+    }
+    const medians: Record<string, number> = {};
+    for (const [alg, times] of byAlg) {
+      const middle = median(times);
+      if (middle !== null && middle > 0) medians[alg] = middle;
+    }
+    return medians;
+  }, [caseId, reps]);
+
   // His alg, then the recommended one, then the rest (his ask), each option once.
   const { cards, recommendedAlg } = useMemo(() => {
     const options = algOptions(caseId).map((option): Card => ({ alg: option.alg, moves: option.moves, source: option.source }));
-    const best = recommended(options);
+    const best = recommended(caseId, options, personalMs);
     const mine: Card[] = current ? [{ alg: current, moves: movesOf(current), source: "yours" }] : [];
     const rest = options.filter((option) => option !== best && !(current && sameAlg(option.alg, current)));
     const bestIsMine = best !== undefined && current !== undefined && sameAlg(best.alg, current);
     return { cards: [...mine, ...(best && !bestIsMine ? [best] : []), ...rest], recommendedAlg: bestIsMine ? current : best?.alg };
-  }, [caseId, current]);
+  }, [caseId, current, personalMs]);
   const shown = more ? cards : cards.slice(0, FIRST_CARDS);
 
   useEffect(() => {
@@ -102,8 +146,8 @@ export function CasePage({ caseId, current, onChoose, onBack, action, onRecord }
   function play(alg: string) {
     try {
       const { preAuf, moves } = playback(caseId, alg);
-      preview.current?.setTempo(1.6);
-      preview.current?.play(`z2 ${caseDef.setup} ${preAuf}`.trim(), moves);
+      preview.current?.setTempo(ALG_TEMPO);
+      preview.current?.play(`z2 ${caseDef.setup} ${preAuf}`.trim(), moves, ALG_STEP_MS);
     } catch (error) {
       console.error(`Can't play ${alg} on ${caseId}`, error);
     }
@@ -139,6 +183,7 @@ export function CasePage({ caseId, current, onChoose, onBack, action, onRecord }
             <div key={card.alg} className={`alg-option ${isCurrent || (!current && isRecommended) ? "best" : ""}`}>
               <code>{card.alg}</code>
               <span className="moves">{card.moves}</span>
+              <span className="estimate">{formatEstimate(estimateMs(caseId, card.alg))}</span>
               <span className="note">
                 {isCurrent && <span className="tag neutral">{mine !== null ? `Yours ${formatSeconds(mine)}` : "Yours"}</span>}
                 {isRecommended && <span className="tag">Recommended</span>}

@@ -106,6 +106,23 @@ describe("RotationDetector", () => {
     expect(detect(regrip(axis, degrees)).flatMap((d) => d.rotations)).toEqual(expected);
   });
 
+  it.each([
+    { start: "y", axis: "x", degrees: 90, expected: ["x"] },
+    { start: "y", axis: "y", degrees: 90, expected: ["y"] },
+    { start: "x", axis: "y", degrees: 90, expected: ["y"] },
+    { start: "y'", axis: "z", degrees: -90, expected: ["z'"] },
+  ] as const)("reads a $axis regrip from a solve that started $start away from the saved grip", ({ start, axis, degrees, expected }) => {
+    const initial = GRID.find((g) => g.rotations.length === 1 && g.rotations[0] === start)!;
+    const at = (t: number) => {
+      const progress = Math.min(1, Math.max(0, (t - 300) / 250));
+      return reportAfter(RESTING, multiply(solverTurn(axis, degrees * progress), initial.q));
+    };
+    const samples: Sample[] = Array.from({ length: 14 }, (_, i) => ({ t: i * 90, q: at(i * 90) }));
+    const detector = new RotationDetector(samples[0]!.q, initial);
+    const found = samples.flatMap(({ t, q }) => detector.sample(q, t)?.rotations ?? []);
+    expect(found).toEqual(expected);
+  });
+
   it("dates a regrip to when the cube first got close, not when it was confirmed", () => {
     const [found] = detect(regrip("y", 90, 250));
     // The turn runs from 300 to 550 ms; the report at 540 is the first within 25° of 90°.
@@ -157,6 +174,8 @@ describe("wideMoveEnd", () => {
     { name: "u (D then y)", rotation: "y", spec: "D@400", since: 450, expected: 0 },
     { name: "M (R and L' together, then x')", rotation: "x'", spec: "R@400 L'@420", since: 470, expected: 1 },
     { name: "r2 still as L L", rotation: "x2", spec: "L@400 L@460", since: 520, expected: 1 },
+    { name: "M2 as four interleaved quarters", rotation: "x2", spec: "R@400 L'@415 R@430 L'@445", since: 470, expected: 3 },
+    { name: "M2 as two pairs", rotation: "x2", spec: "R@400 R@415 L'@430 L'@445", since: 470, expected: 3 },
     { name: "r with later turns already in", rotation: "x", spec: "L@400 U@520 R'@600", since: 470, expected: 0 },
     { name: "a y regrip after R", rotation: "y", spec: "R@400", since: 600, expected: null },
     { name: "an L too long before", rotation: "x", spec: "L@0", since: 900, expected: null },

@@ -162,6 +162,11 @@ export class SmartCubeLink {
     return this.#reference;
   }
 
+  /** The latest gyro report, if the cube has sent one since connecting. */
+  get lastGyro(): Quaternion | null {
+    return this.#lastGyro;
+  }
+
   // ---------- events ----------
 
   /** Every turn, in the solver frame: host arrival time and the cube's own timestamp (null if recovered). */

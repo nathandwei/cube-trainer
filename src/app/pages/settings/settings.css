@@ -1,21 +1,32 @@
 /* Settings: sizes in --u, measured on the approved mockup (concepts/round-8/18-settings.png). */
 
+.settings-head {
+  display: flex;
+  align-items: center;
+  gap: calc(10 * var(--u));
+  margin-left: calc(-12 * var(--u));
+  padding-bottom: calc(14 * var(--u));
+  border-bottom: 1px solid var(--rule);
+  font-size: calc(21 * var(--ut));
+  font-weight: 500;
+}
+
 .settings-anchors {
   display: flex;
   flex-direction: column;
 }
 
-.settings-anchors a {
+.settings-anchors button {
   display: flex;
   align-items: center;
-  height: calc(48 * var(--u));
+  height: calc(56 * var(--u));
   font-size: calc(22 * var(--ut));
   color: var(--muted);
-  text-decoration: none;
+  text-align: left;
   transition: color 150ms;
 }
 
-.settings-anchors a:hover {
+.settings-anchors button:hover {
   color: var(--ink);
 }
 
@@ -50,4 +61,32 @@
 .prefs .switch button {
   min-width: calc(104 * var(--u));
   justify-content: center;
+}
+
+.prefs-label {
+  display: flex;
+  align-items: baseline;
+  gap: calc(14 * var(--u));
+  min-width: 0;
+}
+
+.prefs-detail {
+  font-size: calc(20 * var(--ut));
+  color: var(--muted);
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: calc(6 * var(--u));
+  padding: calc(3 * var(--u));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sidebar) 80%, var(--page));
+}
+
+.stepper-value {
+  min-width: calc(48 * var(--u));
+  text-align: center;
+  font-size: calc(24 * var(--ut));
+  font-weight: 500;
 }

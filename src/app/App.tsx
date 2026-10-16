@@ -9,7 +9,7 @@ import { tabOf, useRoute } from "@/app/lib/router";
 import { LearnPage } from "@/app/pages/learn/LearnPage";
 import { LearnSidebar } from "@/app/pages/learn/LearnSidebar";
 import { SettingsPage } from "@/app/pages/settings/SettingsPage";
-import { SettingsSidebar } from "@/app/pages/settings/SettingsSidebar";
+import { SettingsHeader, SettingsSidebar } from "@/app/pages/settings/SettingsSidebar";
 import { StatsPage } from "@/app/pages/stats/StatsPage";
 import { StatsSidebar } from "@/app/pages/stats/StatsSidebar";
 import { reviewOnlySolve, TEST_SOLVE_ID, useSaveError, useSolves, useTestSolve } from "@/app/lib/store";
@@ -67,7 +67,9 @@ function Shell() {
 
   return (
     <div className={`shell ${focused ? "focus" : ""}`}>
-      <Sidebar active={tabOf(route)}>{sidebarContent()}</Sidebar>
+      <Sidebar active={tabOf(route)} header={route.page === "settings" ? <SettingsHeader /> : undefined}>
+        {sidebarContent()}
+      </Sidebar>
       <main className="main">
         {saveError && (
           <p className="save-error" role="alert">

@@ -108,3 +108,13 @@ export {
   normalizeTurns,
   type ReportedMove,
 } from "./normalize";
+export {
+  SPEED_COSTS,
+  algSpeed,
+  caseAlgSpeed,
+  recommendAlg,
+  type AlgSpeed,
+  type AlgSpeedOptions,
+  type Recommendation,
+  type RecommendOptions,
+} from "./speed";
