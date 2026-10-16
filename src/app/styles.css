@@ -892,16 +892,20 @@ kbd {
   white-space: nowrap;
 }
 
+/* Settings and sign out appear on hover, so the name gets the whole row the rest of the time. */
 .account .signout {
+  display: none;
   color: var(--muted);
   font-size: 12px;
-  opacity: 0;
-  transition: opacity 150ms;
 }
 
 .account:hover .signout,
-.account .signout:focus-visible {
-  opacity: 1;
+.account:focus-within .signout {
+  display: inline;
+}
+
+.account .signout:hover {
+  color: var(--ink);
 }
 
 .penalties {
@@ -1196,4 +1200,361 @@ kbd {
 
 .page-empty {
   min-height: 60vh;
+}
+
+/* ---------- learn ---------- */
+
+.learn-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  font-size: 13px;
+}
+
+.learn-items,
+.add-more ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.learn-items button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 999px;
+  text-align: left;
+}
+
+.learn-items button:hover {
+  background: var(--page);
+}
+
+.learn-items li.selected button {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.learn-items .count {
+  color: inherit;
+  opacity: 0.7;
+}
+
+.add-more .label {
+  font-size: 12px;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 6px;
+}
+
+.add-more button {
+  color: var(--muted);
+  padding: 4px 10px;
+}
+
+.add-more button:hover {
+  color: var(--accent);
+}
+
+.learn {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.learn-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.learn-top .actions {
+  display: flex;
+  gap: 10px;
+}
+
+.custom-session {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.custom-session .choices {
+  display: flex;
+  gap: 6px;
+}
+
+.chip-toggle {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+.chip-toggle.on {
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.learn-set {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.set-head {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.set-head h1,
+.learn-set h1 {
+  margin: 0;
+  font-size: 44px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.set-head .count {
+  font-size: 22px;
+  color: var(--muted);
+}
+
+.learn-chart {
+  width: 100%;
+  max-width: 820px;
+  height: auto;
+}
+
+.learn-chart .tick {
+  font-size: 11px;
+  fill: var(--muted);
+}
+
+.learn-chart .last {
+  font-size: 12px;
+  fill: var(--accent);
+}
+
+.case-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: 14px 10px;
+}
+
+.case-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 2px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.case-cell:hover {
+  background: var(--sidebar);
+}
+
+.case-cell .time {
+  color: var(--muted);
+  font-size: 11px;
+  min-height: 14px;
+}
+
+.case-cell.new {
+  opacity: 0.62;
+}
+
+.case-cell.fluent .name {
+  color: var(--accent);
+}
+
+.case-diagram twisty-player {
+  display: block;
+}
+
+.learn-empty {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 20vh;
+  justify-content: center;
+}
+
+/* The drill itself: like solving, the whole page and nothing else. */
+.learn-session {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: var(--page);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  container-type: inline-size;
+}
+
+.learn-session .session-count {
+  position: absolute;
+  bottom: 24px;
+  color: var(--faint);
+  font-size: 13px;
+}
+
+.learn-session .scramble.small {
+  align-self: center;
+  max-width: 760px;
+}
+
+.session-time {
+  font-size: clamp(64px, 9vw, 120px);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  min-height: 1em;
+}
+
+.session-time.good {
+  color: var(--good);
+}
+
+.session-time.bad {
+  color: var(--bad);
+}
+
+.session-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.session-result code,
+.alg-option code {
+  font-family: var(--mono);
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.session-result .case-name {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.session-result .suggest code {
+  color: var(--accent);
+}
+
+.muted {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.learn-session.pick {
+  gap: 14px;
+}
+
+.case-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+}
+
+.alg-options {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 920px;
+}
+
+.alg-option {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  min-width: 220px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+.alg-option .moves {
+  font-size: 22px;
+  font-weight: 600;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.alg-option .tag {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--good);
+  background: var(--good-tint);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.alg-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.learn-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 26px;
+  padding-top: 6vh;
+}
+
+.summary-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.summary-head .hero {
+  font-size: 88px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 12px;
+  width: min(760px, 100%);
+}
+
+.summary-case {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 6px;
+  border-radius: 12px;
+}
+
+.summary-case.slow {
+  box-shadow: inset 0 0 0 1.5px var(--bad-tint);
+}
+
+.summary-actions {
+  display: flex;
+  gap: 10px;
 }
