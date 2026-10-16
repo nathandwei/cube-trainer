@@ -2,9 +2,16 @@ import { useState } from "react";
 import { ReviewPage } from "@/app/ReviewPage";
 import { Sidebar } from "@/app/Sidebar";
 import { SignInPage } from "@/app/SignInPage";
+import { SolvesSidebar } from "@/app/SolvesSidebar";
 import { TimerPage } from "@/app/TimerPage";
 import { useAccount } from "@/app/lib/account";
-import { useRoute } from "@/app/lib/router";
+import { tabOf, useRoute } from "@/app/lib/router";
+import { LearnPage } from "@/app/pages/learn/LearnPage";
+import { LearnSidebar } from "@/app/pages/learn/LearnSidebar";
+import { SettingsPage } from "@/app/pages/settings/SettingsPage";
+import { SettingsSidebar } from "@/app/pages/settings/SettingsSidebar";
+import { StatsPage } from "@/app/pages/stats/StatsPage";
+import { StatsSidebar } from "@/app/pages/stats/StatsSidebar";
 import { TEST_SOLVE_ID, useSaveError, useSolves, useTestSolve } from "@/app/lib/store";
 
 export function App() {
@@ -20,22 +27,46 @@ function Shell() {
   const saveError = useSaveError();
   const testSolve = useTestSolve();
   const [focused, setFocused] = useState(false);
-  const selectedId = route.page === "review" ? route.id : route.selected;
+  const selectedId = route.page === "review" ? route.id : route.page === "timer" ? route.selected : undefined;
+
+  function sidebarContent() {
+    switch (route.page) {
+      case "learn":
+        return <LearnSidebar set={route.set} />;
+      case "stats":
+        return <StatsSidebar />;
+      case "settings":
+        return <SettingsSidebar />;
+      default:
+        return <SolvesSidebar solves={solves} selectedId={selectedId} />;
+    }
+  }
+
+  function page() {
+    switch (route.page) {
+      case "review":
+        return <ReviewPage solve={route.id === TEST_SOLVE_ID ? (testSolve ?? undefined) : solves.find((s) => s.id === route.id)} />;
+      case "learn":
+        return <LearnPage set={route.set} />;
+      case "stats":
+        return <StatsPage />;
+      case "settings":
+        return <SettingsPage />;
+      default:
+        return <TimerPage solves={solves} testSolve={testSolve} selectedId={route.selected} onFocusChange={setFocused} />;
+    }
+  }
 
   return (
     <div className={`shell ${focused ? "focus" : ""}`}>
-      <Sidebar solves={solves} selectedId={selectedId} />
+      <Sidebar active={tabOf(route)}>{sidebarContent()}</Sidebar>
       <main className="main">
         {saveError && (
           <p className="save-error" role="alert">
             {saveError}
           </p>
         )}
-        {route.page === "review" ? (
-          <ReviewPage solve={route.id === TEST_SOLVE_ID ? (testSolve ?? undefined) : solves.find((s) => s.id === route.id)} />
-        ) : (
-          <TimerPage solves={solves} testSolve={testSolve} selectedId={route.selected} onFocusChange={setFocused} />
-        )}
+        {page()}
       </main>
     </div>
   );
