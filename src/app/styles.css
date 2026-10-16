@@ -826,9 +826,9 @@ kbd {
 
 .keymap {
   display: grid;
-  grid-template-columns: repeat(7, auto);
-  gap: 8px 16px;
-  font-size: 13px;
+  grid-template-columns: repeat(9, auto);
+  gap: 6px 14px;
+  font-size: 12px;
   color: var(--muted);
 }
 
