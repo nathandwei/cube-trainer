@@ -1,3 +1,4 @@
+import { AccountRow } from "@/app/components/AccountRow";
 import { averageOf, resultMs } from "@/app/lib/averages";
 import { formatMs } from "@/app/lib/format";
 import { navigate } from "@/app/lib/router";
@@ -32,8 +33,7 @@ export function Sidebar({ solves, selectedId }: Props) {
         >
           timer
         </a>
-        <span aria-disabled="true">drills</span>
-        <span aria-disabled="true">cross</span>
+        <span aria-disabled="true">learn</span>
         <span aria-disabled="true">stats</span>
       </nav>
       <ul className="solves">
@@ -42,7 +42,7 @@ export function Sidebar({ solves, selectedId }: Props) {
             key={solve.id}
             className={[solve.analysis ? "reviewable" : "", solve.source === "demo" ? "demo" : "", solve.id === selectedId ? "selected" : ""].join(" ")}
           >
-            <button className="time" onClick={() => solve.analysis && navigate(`/solve/${solve.id}`)} disabled={!solve.analysis}>
+            <button className="time" onClick={() => navigate(`/?s=${encodeURIComponent(solve.id)}`)}>
               <span className="dot" />
               {label(solve)}
             </button>
@@ -60,6 +60,7 @@ export function Sidebar({ solves, selectedId }: Props) {
         <dt>ao100</dt>
         <dd>{show(averageOf(results, 100))}</dd>
       </dl>
+      <AccountRow />
     </aside>
   );
 }

@@ -24,7 +24,7 @@ describe("verdictForExtraMoves", () => {
     [2, "good"],
     [3, "inaccuracy"],
     [5, "mistake"],
-    [9, "blunder"],
+    [9, "mistake"],
   ] as const)("%i extra moves is %s", (extra, verdict) => {
     expect(verdictForExtraMoves(extra)).toBe(verdict);
   });

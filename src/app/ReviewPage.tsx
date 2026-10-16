@@ -1,21 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CubeView, type CubeHandle } from "@/app/components/CubeView";
-import { PaceChart } from "@/app/components/PaceChart";
-import { PauseBar } from "@/app/components/PauseBar";
 import { ScrambleBand } from "@/app/components/ScrambleBand";
-import { formatMs, formatSeconds } from "@/app/lib/format";
+import {
+  displayTokens,
+  inViewAfter,
+  invertToken,
+  rawIndexAfter,
+  tokenCountBefore,
+  type TimedToken,
+} from "@/app/lib/display";
+import { formatMs } from "@/app/lib/format";
 import { splitAlg } from "@/app/lib/frame";
-import { humanize, type DisplayMove } from "@/app/lib/notation";
 import { navigate } from "@/app/lib/router";
 import {
-  bestPossibleMoves,
-  efficiency,
+  accuracy,
   flow,
-  keyMoments,
-  PAUSE_MS,
+  momentsInOrder,
   stageAt,
-  stageVerdict,
+  verdictCounts,
   VERDICT_MARK,
+  VERDICTS,
   type Moment,
 } from "@/app/lib/review";
 import type { SolveAnalysis, SolveRecord, Stage } from "@/cube/types";
@@ -39,26 +43,30 @@ export function ReviewPage({ solve }: Props) {
   return <Review key={solve.id} solve={solve} analysis={solve.analysis} />;
 }
 
-function setupAfter(solve: SolveRecord, index: number): string {
-  const done = solve.moves.slice(0, index).map((m) => m.move);
-  return [solve.scramble, "z2", ...done].join(" ");
+function setupAfter(solve: SolveRecord, tokens: readonly TimedToken[], count: number): string {
+  return [solve.scramble, "z2", ...tokens.slice(0, count).map((t) => t.text)].join(" ");
 }
 
 function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalysis }) {
-  const { moves } = solve;
+  const tokens = useMemo(() => displayTokens(solve, analysis), [solve, analysis]);
+  const moments = useMemo(() => momentsInOrder(analysis), [analysis]);
+  const counts = useMemo(() => verdictCounts(analysis), [analysis]);
   const cube = useRef<CubeHandle>(null);
-  const [index, setIndex] = useState(moves.length);
+  // `played` counts display tokens (a slice, wide move or rotation is one); the raw index follows from it.
+  const [played, setPlayed] = useState(tokens.length);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [preview, setPreview] = useState<string | null>(null);
+  // Index into `moments` while stepping through the key moments; null when browsing freely.
+  const [tour, setTour] = useState<number | null>(null);
   const frame = useRef<number | undefined>(undefined);
   const timers = useRef<number[]>([]);
   const speedRef = useRef(speed);
-  // True while the cube shows something other than the solve after `index` moves (a "show" line).
+  // True while the cube shows something other than the solve after `played` tokens (a "show best" line).
   const offTrack = useRef(false);
 
-  const moments = useMemo(() => keyMoments(analysis), [analysis]);
-  const currentStage = stageAt(analysis, Math.max(0, index - 1));
+  const raw = rawIndexAfter(tokens, played);
+  const currentStage = stageAt(analysis, Math.max(0, raw - 1));
 
   const stopEverything = useCallback(() => {
     if (frame.current) cancelAnimationFrame(frame.current);
@@ -68,130 +76,160 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
     setPreview(null);
   }, []);
 
-  const seek = useCallback(
-    (target: number) => {
+  const jump = useCallback(
+    (count: number) => {
       stopEverything();
-      const clamped = Math.max(0, Math.min(moves.length, target));
-      setIndex(clamped);
+      const clamped = Math.max(0, Math.min(tokens.length, count));
+      setPlayed(clamped);
       offTrack.current = false;
       cube.current?.setTempo(2);
-      cube.current?.show(setupAfter(solve, clamped));
+      cube.current?.show(setupAfter(solve, tokens, clamped));
     },
-    [moves.length, solve, stopEverything],
+    [solve, tokens, stopEverything],
   );
 
   useEffect(() => {
-    cube.current?.show(setupAfter(solve, moves.length));
+    cube.current?.show(setupAfter(solve, tokens, tokens.length));
     return stopEverything;
-  }, [solve, moves.length, stopEverything]);
+  }, [solve, tokens, stopEverything]);
+
+  const resync = useCallback(() => {
+    if (!offTrack.current) return;
+    cube.current?.show(setupAfter(solve, tokens, played));
+    offTrack.current = false;
+  }, [played, solve, tokens]);
 
   const stepForward = useCallback(() => {
-    if (index >= moves.length) return;
+    if (played >= tokens.length) return;
     stopEverything();
+    resync();
     cube.current?.setTempo(2);
-    if (offTrack.current) {
-      cube.current?.show(setupAfter(solve, index));
-      offTrack.current = false;
-    }
-    cube.current?.turn(moves[index]?.move ?? "");
-    setIndex(index + 1);
-  }, [index, moves, solve, stopEverything]);
+    cube.current?.turn(tokens[played]?.text ?? "");
+    setPlayed(played + 1);
+  }, [played, tokens, resync, stopEverything]);
+
+  const stepBack = useCallback(() => {
+    if (played <= 0) return;
+    stopEverything();
+    resync();
+    cube.current?.setTempo(2);
+    cube.current?.turn(invertToken(tokens[played - 1]?.text ?? ""));
+    setPlayed(played - 1);
+  }, [played, tokens, resync, stopEverything]);
 
   const play = useCallback(() => {
     stopEverything();
-    let at = index >= moves.length ? 0 : index;
-    cube.current?.show(setupAfter(solve, at));
+    let at = played >= tokens.length ? 0 : played;
+    cube.current?.show(setupAfter(solve, tokens, at));
     offTrack.current = false;
     cube.current?.setTempo(3 * speedRef.current);
     // Advance a virtual clock frame by frame so a speed change applies mid-playback.
-    let clock = at === 0 ? 0 : (moves[at - 1]?.t ?? 0);
+    let clock = at === 0 ? 0 : (tokens[at - 1]?.t ?? 0);
     let lastFrame = performance.now();
     setPlaying(true);
     const step = () => {
       const now = performance.now();
       clock += (now - lastFrame) * speedRef.current;
       lastFrame = now;
-      while (at < moves.length && (moves[at]?.t ?? Infinity) <= clock) {
-        cube.current?.turn(moves[at]?.move ?? "");
+      while (at < tokens.length && (tokens[at]?.t ?? Infinity) <= clock) {
+        cube.current?.turn(tokens[at]?.text ?? "");
         at++;
       }
-      setIndex(at);
-      if (at >= moves.length) {
+      setPlayed(at);
+      if (at >= tokens.length) {
         setPlaying(false);
         return;
       }
       frame.current = requestAnimationFrame(step);
     };
     frame.current = requestAnimationFrame(step);
-  }, [index, moves, solve, stopEverything]);
+  }, [played, solve, tokens, stopEverything]);
 
-  const showLine = useCallback(
+  const showBest = useCallback(
     (stage: Stage, line: string) => {
-      seek(stage.startMove);
+      const start = tokenCountBefore(tokens, stage.startMove);
+      jump(start);
       offTrack.current = true;
-      setPreview(line);
-      splitAlg(line).forEach((move, i) => {
+      const inView = inViewAfter(tokens, start, line);
+      setPreview(inView);
+      splitAlg(inView).forEach((move, i) => {
         timers.current.push(window.setTimeout(() => cube.current?.turn(move), 450 + i * LINE_STEP_MS));
       });
     },
-    [seek],
+    [jump, tokens],
+  );
+
+  /** Go to a key moment: the cube waits at the start of that stage and plays the better line if there is one. */
+  const visit = useCallback(
+    (index: number) => {
+      const moment = moments[index];
+      const stage = moment ? analysis.stages[moment.stageIndex] : undefined;
+      if (!moment || !stage) return;
+      setTour(index);
+      if (moment.line) showBest(stage, moment.line);
+      else jump(tokenCountBefore(tokens, stage.startMove));
+    },
+    [analysis, jump, moments, showBest, tokens],
   );
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key === "ArrowRight") stepForward();
-      else if (event.key === "ArrowLeft") seek(index - 1);
-      else if (event.key === "Home") seek(0);
-      else if (event.key === "End") seek(moves.length);
+      if (tour !== null && event.key === "ArrowDown") visit(Math.min(moments.length - 1, tour + 1));
+      else if (tour !== null && event.key === "ArrowUp") visit(Math.max(0, tour - 1));
+      else if (event.key === "ArrowRight") stepForward();
+      else if (event.key === "ArrowLeft") stepBack();
+      else if (event.key === "Home") jump(0);
+      else if (event.key === "End") jump(tokens.length);
       else if (event.code === "Space") {
         if (playing) stopEverything();
         else play();
-      } else if (event.key === "Escape") navigate("/");
-      else return;
+      } else if (event.key === "Escape") {
+        if (tour !== null) setTour(null);
+        else navigate("/");
+      } else return;
       event.preventDefault();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [index, moves.length, play, playing, seek, stepForward, stopEverything]);
+  }, [jump, moments.length, play, playing, stepBack, stepForward, stopEverything, tokens.length, tour, visit]);
 
-  const totalMoves = moves.length;
-  const tps = totalMoves / (solve.totalMs / 1000);
-  const efficient = efficiency(analysis);
-  const flowing = flow(moves, solve.totalMs);
+  const turns = tokens.filter((t) => t.kind === "turn").length;
+  const tps = turns / (solve.totalMs / 1000);
+  const accurate = accuracy(analysis);
+  const flowing = flow(solve.moves, solve.totalMs);
+  const stage = analysis.stages[currentStage];
+  const stageTokens = stage
+    ? tokens.map((t, i) => ({ t, i })).filter(({ t }) => t.start >= stage.startMove && t.start < stage.endMove)
+    : [];
 
   return (
-    <div className="review">
-      <div className="review-head">
-        <button className="back" aria-label="back to timer" onClick={() => navigate("/")}>
-          ←
-        </button>
-        <span className="total">{formatMs(solve.totalMs)}</span>
-        <ScrambleBand scramble={solve.scramble} />
-      </div>
-
-      <div className="stagecard">
-        <CubeView ref={cube} setup={setupAfter(solve, moves.length)} className="cube" />
-        <div className="now">
-          <span>{preview ? `best: ${preview}` : (analysis.stages[currentStage]?.label ?? "")}</span>
-          <span>
-            {index} / {totalMoves}
+    <div className="review-report">
+      <section className="replay">
+        <div className="replay-head">
+          <button className="back" aria-label="back to timer" onClick={() => navigate("/")}>
+            ←
+          </button>
+          <span className="total">{formatMs(solve.totalMs)}</span>
+          <span className="meta">
+            {turns} moves · {tps.toFixed(2)} tps
           </span>
         </div>
-        <PauseBar moves={moves} totalMs={solve.totalMs} analysis={analysis} index={index} onSeek={seek} height={12} />
+        <ScrambleBand scramble={solve.scramble} className="small" />
+        <CubeView ref={cube} setup={setupAfter(solve, tokens, tokens.length)} className="cube big" />
         <div className="controls">
-          <button aria-label="start" onClick={() => seek(0)}>
+          <button aria-label="start" onClick={() => jump(0)}>
             ⏮
           </button>
-          <button aria-label="previous move" onClick={() => seek(index - 1)}>
+          <button aria-label="previous move" onClick={stepBack}>
             ◀
           </button>
-          <button aria-label={playing ? "pause" : "play"} onClick={playing ? stopEverything : play}>
+          <button className="play" aria-label={playing ? "pause" : "play"} onClick={playing ? stopEverything : play}>
             {playing ? "❚❚" : "▶"}
           </button>
           <button aria-label="next move" onClick={stepForward}>
             ▶︎|
           </button>
-          <button aria-label="end" onClick={() => seek(moves.length)}>
+          <button aria-label="end" onClick={() => jump(tokens.length)}>
             ⏭
           </button>
           <button
@@ -206,161 +244,145 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
             {speed}×
           </button>
         </div>
-        <MoveList solve={solve} analysis={analysis} index={index} onSeek={seek} />
-      </div>
+        <div className="nowline">
+          {preview ? (
+            <>
+              <span className="label">best</span>
+              <span className="moves">{preview}</span>
+            </>
+          ) : (
+            <>
+              <span className="label">{stage?.label ?? ""}</span>
+              <span className="moves">
+                {stageTokens.map(({ t, i }) => (
+                  <button
+                    key={i}
+                    className={`${i === played - 1 ? "current" : i >= played ? "future" : ""} ${t.kind === "rotation" ? "rot" : ""}`}
+                    onClick={() => jump(i + 1)}
+                  >
+                    {t.text}
+                  </button>
+                ))}
+              </span>
+            </>
+          )}
+        </div>
+      </section>
 
-      <div className="panel">
-        <PaceChart moves={moves} totalMs={solve.totalMs} analysis={analysis} index={index} onSeek={seek} />
-        <div className="scores">
-          <div className="score">
-            <div className="num">{efficient === null ? "–" : `${efficient}%`}</div>
-            <div className="label">efficiency</div>
+      <aside className="report">
+        <div className="headline">
+          <div>
+            <span className="label">accuracy</span>
+            <span className="num">{accurate ?? "–"}</span>
           </div>
-          <div className="score">
-            <div className="num">{flowing === null ? "–" : `${flowing}%`}</div>
-            <div className="label">flow</div>
-          </div>
-          <div className="score">
-            <div className="num">{totalMoves}</div>
-            <div className="label">moves</div>
-          </div>
-          <div className="score">
-            <div className="num">{tps.toFixed(2)}</div>
-            <div className="label">tps</div>
+          <div>
+            <span className="label">flow</span>
+            <span className="num">{flowing ?? "–"}</span>
           </div>
         </div>
 
-        <p className="section-label">stages</p>
-        <div className="stages">
-          {analysis.stages.map((stage, i) => (
-            <StageRow key={i} stage={stage} active={i === currentStage} onClick={() => seek(stage.startMove)} />
-          ))}
-        </div>
-
-        {moments.length > 0 && (
+        {tour === null ? (
           <>
-            <p className="section-label">key moments</p>
-            <div className="moments">
-              {moments.map((moment, i) => (
-                <MomentRow key={i} moment={moment} analysis={analysis} onSeek={seek} onShowLine={showLine} />
+            <ul className="verdicts">
+              {VERDICTS.map((v) => (
+                <li key={v}>
+                  <span className={`badge ${v}`}>{VERDICT_MARK[v]}</span>
+                  <span className="name">{v}</span>
+                  <span className="count">{counts[v]}</span>
+                </li>
               ))}
-            </div>
+            </ul>
+            {moments.length > 0 && (
+              <ul className="moments-list">
+                {moments.map((moment, i) => (
+                  <li key={i}>
+                    <button className="what" onClick={() => visit(i)}>
+                      {moment.title}
+                    </button>
+                    {moment.line && <span className="hint">show best</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {moments.length > 0 && (
+              <button className="pill primary step" onClick={() => visit(0)}>
+                step through
+              </button>
+            )}
           </>
+        ) : (
+          <TourPanel
+            moment={moments[tour]}
+            index={tour}
+            total={moments.length}
+            analysis={analysis}
+            tokens={tokens}
+            onPrev={() => visit(Math.max(0, tour - 1))}
+            onNext={() => visit(Math.min(moments.length - 1, tour + 1))}
+            onReplay={() => visit(tour)}
+            onDone={() => {
+              setTour(null);
+              jump(tokens.length);
+            }}
+          />
+        )}
+      </aside>
+    </div>
+  );
+}
+
+function TourPanel({
+  moment,
+  index,
+  total,
+  analysis,
+  tokens,
+  onPrev,
+  onNext,
+  onReplay,
+  onDone,
+}: {
+  moment: Moment | undefined;
+  index: number;
+  total: number;
+  analysis: SolveAnalysis;
+  tokens: readonly TimedToken[];
+  onPrev: () => void;
+  onNext: () => void;
+  onReplay: () => void;
+  onDone: () => void;
+}) {
+  const stage = moment ? analysis.stages[moment.stageIndex] : undefined;
+  if (!moment || !stage) return null;
+  const best = moment.line ? inViewAfter(tokens, tokenCountBefore(tokens, stage.startMove), moment.line) : null;
+  return (
+    <div className="tour">
+      <span className="count">
+        {index + 1} / {total}
+      </span>
+      <p className="title">{moment.title}</p>
+      {best && (
+        <>
+          <code className="line">{best}</code>
+          <button className="pill" onClick={onReplay}>
+            show best
+          </button>
+        </>
+      )}
+      <div className="tour-nav">
+        <button onClick={onPrev} disabled={index === 0}>
+          ‹ prev
+        </button>
+        {index < total - 1 ? (
+          <button className="pill primary" onClick={onNext}>
+            next ›
+          </button>
+        ) : (
+          <button className="pill primary" onClick={onDone}>
+            done
+          </button>
         )}
       </div>
-    </div>
-  );
-}
-
-function StageRow({ stage, active, onClick }: { stage: Stage; active: boolean; onClick: () => void }) {
-  const verdict = stageVerdict(stage);
-  const best = bestPossibleMoves(stage);
-  const detail = [
-    `${stage.moveCount} moves${best === null ? "" : ` · best ${best}`}`,
-    stage.caseName,
-    stage.slots?.join(" "),
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  return (
-    <button className={`stage ${active ? "active" : ""}`} onClick={onClick}>
-      <span className={`badge ${verdict ?? "none"}`} title={verdict ?? undefined}>
-        {verdict ? VERDICT_MARK[verdict] : "·"}
-      </span>
-      <span className="name">{stage.label}</span>
-      <span className="detail">{detail}</span>
-      <span className="t">
-        {formatSeconds(stage.totalMs)}
-        <small>
-          {formatSeconds(stage.recognitionMs)} + {formatSeconds(stage.executionMs)}
-        </small>
-      </span>
-    </button>
-  );
-}
-
-function MomentRow({
-  moment,
-  analysis,
-  onSeek,
-  onShowLine,
-}: {
-  moment: Moment;
-  analysis: SolveAnalysis;
-  onSeek: (index: number) => void;
-  onShowLine: (stage: Stage, line: string) => void;
-}) {
-  const stage = analysis.stages[moment.stageIndex];
-  if (!stage) return null;
-  const line = moment.line;
-  return (
-    <div className="moment">
-      <button className="what" style={{ textAlign: "left" }} onClick={() => onSeek(stage.startMove)}>
-        {moment.title}
-        {line && (
-          <>
-            <br />
-            <code>{line}</code>
-          </>
-        )}
-      </button>
-      {line && (
-        <button className="pill" onClick={() => onShowLine(stage, line)}>
-          show
-        </button>
-      )}
-    </div>
-  );
-}
-
-/** Two turns this close together are one move on a smart cube: a slice (R L') or a half turn (R R). */
-const SLICE_GAP_MS = 60;
-
-function displayMoves(solve: SolveRecord, analysis: SolveAnalysis): DisplayMove[] {
-  return humanize(
-    solve.moves.map((m) => m.move),
-    (i) => {
-      const gap = (solve.moves[i + 1]?.t ?? Infinity) - (solve.moves[i]?.t ?? 0);
-      return gap <= SLICE_GAP_MS && stageAt(analysis, i) === stageAt(analysis, i + 1);
-    },
-  );
-}
-
-function MoveList({
-  solve,
-  analysis,
-  index,
-  onSeek,
-}: {
-  solve: SolveRecord;
-  analysis: SolveAnalysis;
-  index: number;
-  onSeek: (index: number) => void;
-}) {
-  const tokens = useMemo(() => displayMoves(solve, analysis), [solve, analysis]);
-  return (
-    <div className="movelist">
-      {analysis.stages.map((stage, s) => (
-        <div className="row" key={s}>
-          <span className="label">{stage.label}</span>
-          <span className="moves">
-            {tokens
-              .filter((token) => token.from >= stage.startMove && token.from < stage.endMove)
-              .map((token) => {
-                const gap = (solve.moves[token.from]?.t ?? 0) - (solve.moves[token.from - 1]?.t ?? 0);
-                const state = index - 1 >= token.from && index - 1 <= token.to ? "current" : token.from >= index ? "future" : "";
-                return (
-                  <span key={token.from} style={{ display: "contents" }}>
-                    {token.from > stage.startMove && gap > PAUSE_MS && <span className="gap">{(gap / 1000).toFixed(1)}</span>}
-                    <button className={state} onClick={() => onSeek(token.to + 1)}>
-                      {token.text}
-                    </button>
-                  </span>
-                );
-              })}
-          </span>
-        </div>
-      ))}
     </div>
   );
 }

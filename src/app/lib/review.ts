@@ -16,13 +16,32 @@ export const VERDICT_MARK: Record<Verdict, string> = {
   blunder: "??",
 };
 
+/**
+ * Extra moves over the best available grade a step. A blunder is kept for concrete errors (a wrong alg, breaking
+ * something already solved), so extra moves alone stop at mistake.
+ */
 export function verdictForExtraMoves(extra: number): Verdict {
   if (extra <= 0) return "best";
   if (extra === 1) return "excellent";
   if (extra === 2) return "good";
   if (extra <= 4) return "inaccuracy";
-  if (extra <= 7) return "mistake";
-  return "blunder";
+  return "mistake";
+}
+
+export const VERDICTS: readonly Verdict[] = ["best", "excellent", "good", "inaccuracy", "mistake", "blunder"];
+
+export function verdictCounts(analysis: SolveAnalysis): Record<Verdict, number> {
+  const counts = Object.fromEntries(VERDICTS.map((v) => [v, 0])) as Record<Verdict, number>;
+  for (const stage of analysis.stages) {
+    const verdict = stageVerdict(stage);
+    if (verdict) counts[verdict] += 1;
+  }
+  return counts;
+}
+
+/** Key moments in the order they happened, for stepping through the solve. */
+export function momentsInOrder(analysis: SolveAnalysis): Moment[] {
+  return keyMoments(analysis, 8).sort((a, b) => a.stageIndex - b.stageIndex || a.kind.localeCompare(b.kind));
 }
 
 /** A single-pair alternative only competes with a stage that made a single pair. */
@@ -44,8 +63,8 @@ export function stageVerdict(stage: Stage): Verdict | null {
   return verdictForExtraMoves(stage.moveCount - best);
 }
 
-/** Share of the cross and F2L moves that were necessary, as a percentage. */
-export function efficiency(analysis: SolveAnalysis): number | null {
+/** Accuracy: how close the cross and F2L moves were to the best available, as a percentage. */
+export function accuracy(analysis: SolveAnalysis): number | null {
   let optimal = 0;
   let actual = 0;
   for (const stage of analysis.stages) {
@@ -69,7 +88,7 @@ export function pauseMs(moves: readonly TimedMove[]): number {
   return paused;
 }
 
-/** Share of the solve spent turning rather than paused, as a percentage. */
+/** Flow: share of the solve spent turning rather than paused, as a percentage. Lockups join this once the smart cube reports them. */
 export function flow(moves: readonly TimedMove[], totalMs: number): number | null {
   if (totalMs <= 0) return null;
   return Math.round(100 * (1 - pauseMs(moves) / totalMs));
