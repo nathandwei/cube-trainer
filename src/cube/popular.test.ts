@@ -85,6 +85,32 @@ describe("turnsMatchAlg", () => {
   it("tells another alg for the same case apart", () => {
     expect(turnsMatchAlg(turns("R2 U R U R' U' R' U' R' U R'"), "M2 U M U2 M' U M2")).toBe(false);
   });
+
+  it("reads a slice's two turns in either order and a half turn as two quarters", () => {
+    const ua = "M2 U M U2 M' U M2";
+    // As a smart cube can report it: each slice's L before its R, the first R2 as R R.
+    const reported = turns(ua).map((move) => move);
+    const swapped: string[] = [];
+    for (let i = 0; i < reported.length; i++) {
+      const [a, b] = [reported[i]!, reported[i + 1]];
+      if (b && a[0] === "R" && b[0] === "L") {
+        swapped.push(b, a);
+        i++;
+      } else swapped.push(a);
+    }
+    expect(swapped).not.toEqual(reported);
+    expect(turnsMatchAlg(swapped, ua)).toBe(true);
+    const tTurns = turns(T_PERM);
+    const split = tTurns.flatMap((move) => (move === "R2" ? ["R", "R"] : [move]));
+    expect(turnsMatchAlg(split, T_PERM)).toBe(true);
+  });
+
+  it("takes an alg written with an odd AUF (U2', y2') without throwing", () => {
+    expect(withoutAuf("U2' R U R' U R U2 R'")).toBe("R U R' U R U2 R'");
+    expect(withoutAuf("y2' U' R U R'")).toBe("R U R'");
+    expect(turnsMatchAlg(turns("R U R' U R U2 R'"), "U2' R U R' U R U2 R'")).toBe(true);
+    expect(turnsMatchAlg(turns("R U R'"), "R Q")).toBe(false);
+  });
 });
 
 describe("referencePick", () => {

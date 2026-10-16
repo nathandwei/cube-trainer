@@ -270,6 +270,8 @@ export function Session({ caseIds, input, onExit }: Props) {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
+      // Learning a new alg: its page has its own keys (Space plays, Enter drills, Escape goes back).
+      if (learning !== null && learning === caseId) return;
       if (event.key === "Escape") {
         finish();
         return;
@@ -286,7 +288,7 @@ export function Session({ caseIds, input, onExit }: Props) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [finish, input, loading, needsAlg, next, phase, runTest]);
+  }, [caseId, finish, input, learning, loading, needsAlg, next, phase, runTest]);
 
   useEffect(() => {
     const pending = testTimers;

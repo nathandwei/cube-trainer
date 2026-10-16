@@ -340,6 +340,8 @@ export class CubeRenderer {
     };
     canvas.addEventListener("pointerup", stop);
     canvas.addEventListener("pointercancel", stop);
+    // Capture can go without either (a window switch mid-drag): the drag ends there too.
+    canvas.addEventListener("lostpointercapture", stop);
     canvas.addEventListener("dblclick", () => this.resetView());
   }
 

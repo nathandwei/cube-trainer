@@ -139,7 +139,7 @@ function Review({ solve, analysis, back }: { solve: SolveRecord; analysis: Solve
   const parts = useMemo(() => partSplits(solve, analysis, solves), [analysis, solve, solves]);
   const switchAlg = useCallback((stage: StageView) => {
     const use = stage.algUse;
-    if (use && !use.used && use.switchable) chooseAlg(use.caseId, use.did);
+    if (use && !use.used && use.switchable) chooseAlg(use.storedId, use.did);
   }, []);
 
   /** A best line in his view at stage `index`'s start. */

@@ -9,7 +9,7 @@
 
 import { isSameAlg } from "./algs";
 import { getCase } from "./cases";
-import { toFaceTurns } from "./cubie";
+import { simplifyMoves, toFaceTurns, tokenizeAlg } from "./cubie";
 import { JPERM_ALGS } from "./jperm-data";
 import { PRO_ALGS } from "./pro-data";
 import { COMMUNITY_VOTES, type CommunityCase } from "./speed-votes";
@@ -25,9 +25,17 @@ export type ReferenceSource = "ruling" | "pros" | "jperm" | "votes";
 /** An alg from outside the catalog: the pros' pick, J Perm's list, or one of the community's most voted. */
 export type ReferenceAlg = { alg: string; source: "pro" | "jperm" | "community" };
 
-/** The alg without the U turns and y rotations it opens with (the angle it starts from). */
+const AMOUNTS = ["", "2", "'"] as const;
+
+/** The alg without the U turns and y rotations it opens with (the angle it starts from), moves written plainly. */
 export function withoutAuf(alg: string): string {
-  return alg.replace(/^(\s*\(?\s*(y2|y'|y|U2|U'|U)\s*\)?\s*)+/, "");
+  const tokens = tokenizeAlg(alg);
+  let first = 0;
+  while (first < tokens.length && (tokens[first]!.family === "U" || tokens[first]!.family === "y")) first++;
+  return tokens
+    .slice(first)
+    .map(({ family, amount }) => family + AMOUNTS[amount - 1])
+    .join(" ");
 }
 
 /**
@@ -39,24 +47,52 @@ export function spellingKey(alg: string): string {
   return turnsKey(toFaceTurns(withoutAuf(alg)).split(" ").filter(Boolean));
 }
 
+const AXIS: Readonly<Record<string, number>> = { U: 0, D: 0, R: 1, L: 1, F: 2, B: 2 };
+const FACE_ORDER = "URFDLB";
+
+/**
+ * Face turns in one form however they came: same-face turns merged (R R → R2), and each run of turns on one axis,
+ * which commute, in a fixed order (a slice the cube reports as L' R or R L' comes out the same).
+ */
+function normalized(turns: readonly string[]): string[] {
+  let current = simplifyMoves(turns);
+  for (;;) {
+    const sorted: string[] = [];
+    for (let i = 0; i < current.length; ) {
+      let j = i;
+      while (j < current.length && AXIS[current[j]![0]!] === AXIS[current[i]![0]!]) j++;
+      sorted.push(...current.slice(i, j).sort((a, b) => FACE_ORDER.indexOf(a[0]!) - FACE_ORDER.indexOf(b[0]!)));
+      i = j;
+    }
+    const merged = simplifyMoves(sorted);
+    if (merged.join(" ") === current.join(" ")) return merged;
+    current = merged;
+  }
+}
+
 function turnsKey(turns: readonly string[]): string {
-  const t = [...turns];
+  const t = normalized(turns);
   while (t.length > 0 && /^[UD]/.test(t[0]!)) t.shift();
   while (t.length > 0 && /^[UD]/.test(t.at(-1)!)) t.pop();
-  for (let i = 0; i + 1 < t.length; i++) {
-    if (t[i]![0] === "D" && t[i + 1]![0] === "U") [t[i], t[i + 1]] = [t[i + 1]!, t[i]!];
-  }
   return t.join(" ");
 }
 
 /**
  * True when turns a smart cube reported (outer face turns, centre frame) are `alg` done from some angle: the same
- * turns once each is seen from a y rotation, with AUFs and the D turns at either end left out (spellingKey).
+ * turns once each is seen from a y rotation, in one form (merged, commuting turns ordered), with AUFs and the D
+ * turns at either end left out. An alg that doesn't parse matches nothing.
  */
 export function turnsMatchAlg(turns: readonly string[], alg: string): boolean {
   const done = turnsKey(turns);
   if (done === "") return false;
-  const body = withoutAuf(alg);
+  let body: string;
+  try {
+    body = withoutAuf(alg);
+  } catch (error) {
+    if (!(error instanceof Error)) throw error;
+    // A stored alg that no longer parses matches nothing.
+    return false;
+  }
   return ["", "y", "y2", "y'"].some((y) => turnsKey(toFaceTurns(`${y} ${body}`).split(" ").filter(Boolean)) === done);
 }
 

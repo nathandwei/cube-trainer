@@ -108,6 +108,21 @@ describe("algOptions over the whole catalog", () => {
   });
 });
 
+describe("reference options' closing rotations", () => {
+  it("adds nothing where the alg ends in the grip it started (M slices, r moves)", () => {
+    for (const id of ["PLL-H", "EPLL-H", "PLL-Z", "OLL-5", "F2L-8", "PLL-Gb"]) {
+      for (const { alg, source } of algOptions(id)) {
+        if (source === "catalog" || source === "mirror" || source === "search") continue;
+        expect(alg, `${id}: ${alg}`).not.toMatch(/([xyz]2?'?\s+){2,}[xyz]2?'?\s*$/);
+      }
+    }
+  });
+
+  it("undoes a grip the alg leaves open with one rotation", () => {
+    expect(algOptions("PLL-Aa").map((o) => o.alg)).toContain("x L2 D2 L' U' L D2 L' U L' x'");
+  });
+});
+
 describe("algOptions", () => {
   it("offers F2L 2's U' F' U F next to the catalog's F R' F' R", () => {
     const options = algOptions("F2L-2");

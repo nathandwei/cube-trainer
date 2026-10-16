@@ -11,6 +11,7 @@ const TEMPO = 0.9;
 const LL_SETS = new Set(["PLL", "OLL", "COLL", "EPLL", "EO"]);
 
 const TOOLS: Readonly<Record<Fingering["tool"], string>> = { wrist: "Wrist", index: "Index", ring: "Ring", thumb: "Thumb", rotation: "Rotate" };
+// A move with no fingering isn't done in the alg: the AUF (a U turn), or a rotation at the end that only regrips.
 
 type Props = { caseId: string; alg: string; onDrill: () => void; onBack: () => void };
 
@@ -93,7 +94,7 @@ export function LearnAlg({ caseId, alg, onDrill, onBack }: Props) {
                     {(how?.regrips.length ?? 0) > 0 && <RotateCw className="learn-regrip" aria-label="Regrip" strokeWidth={2} />}
                     {move}
                   </span>
-                  <span className="learn-move-how">{how ? TOOLS[how.tool] : "AUF"}</span>
+                  <span className="learn-move-how">{how ? TOOLS[how.tool] : /^U/.test(move) ? "AUF" : ""}</span>
                 </span>
               );
             })}

@@ -190,12 +190,17 @@ function asOptimal(solution: StepSolution | null): Pick<Stage, "optimalMoves" | 
   return solution ? { optimalMoves: solution.moves, optimalSolution: solution.solution } : {};
 }
 
+/** A pair's best line, putting back the other slots; the free one when holding them finds nothing within the depth limit. */
+function bestPairLine(state: CubeState, slots: readonly Slot[], keep: readonly Slot[]): StepSolution | null {
+  return solveSlots(state, slots, keep, { holdOthers: true }) ?? solveSlots(state, slots, keep);
+}
+
 function bestSinglePair(state: CubeState, keep: readonly Slot[], prefer: readonly Slot[]): Stage["bestAlternative"] {
   let best: { slot: Slot; moves: number; solution: string } | undefined;
   const order = [...prefer, ...SLOTS.filter((slot) => !prefer.includes(slot))];
   for (const slot of order) {
     if (keep.includes(slot)) continue;
-    const found = solveSlots(state, [slot], keep, { holdOthers: true });
+    const found = bestPairLine(state, [slot], keep);
     if (found && (!best || found.moves < best.moves)) best = { slot, ...found };
   }
   return best;
@@ -229,7 +234,7 @@ function annotate(kind: StageKind, label: string, states: readonly CubeState[], 
       // A joint search over three or four pairs can take over a second; such multislots go unscored.
       if (slots.length > 2) return { slots, bestAlternative };
       const keep = solvedAtStart.filter((slot) => !slots.includes(slot));
-      return { slots, bestAlternative, ...asOptimal(solveSlots(startState, slots, keep, { holdOthers: true })) };
+      return { slots, bestAlternative, ...asOptimal(bestPairLine(startState, slots, keep)) };
     }
     case "eo":
       return { caseName: recognizeEO(startState)?.caseName };

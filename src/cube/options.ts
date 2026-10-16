@@ -8,7 +8,8 @@
 
 import { algMoveCount, isSameAlg } from "./algs";
 import { caseState, getCase, isGoalReached, recognizeCase, type CaseDef, type CaseSetId } from "./cases";
-import { SOLVED, applyAlg, invertAlg, toFaceTurns, toFaceTurnsDetailed, tokenizeAlg, type CubeState } from "./cubie";
+import { IDENTITY_FRAME, SOLVED, applyAlg, invertAlg, rotateFrame, toFaceTurns, toFaceTurnsDetailed, tokenizeAlg, type CubeState, type Frame } from "./cubie";
+import { parseRotation } from "./frame";
 import { llCornerAlignment } from "./milestones";
 import { mirrorAlg } from "./mirror";
 import { referenceAlgs, sameAlgLoose } from "./popular";
@@ -126,18 +127,32 @@ function* f2lSolutions(caseId: string): Generator<string, void, undefined> {
 // ---------------------------------------------------------------------------------------------------------------
 // Options
 
-function inverseRotation(rotation: string): string {
-  if (rotation.endsWith("2")) return rotation;
-  return rotation.endsWith("'") ? rotation.slice(0, -1) : `${rotation}'`;
+const SINGLE_ROTATIONS = ["x", "x'", "x2", "y", "y'", "y2", "z", "z'", "z2"] as const;
+/** Every way back to the starting grip, shortest first: one rotation, then two. */
+const CLOSERS: readonly (readonly string[])[] = [
+  ...SINGLE_ROTATIONS.map((r) => [r]),
+  ...SINGLE_ROTATIONS.flatMap((a) => SINGLE_ROTATIONS.map((b) => [a, b])),
+];
+
+function rotated(frame: Frame, rotations: readonly string[]): Frame {
+  return rotations.reduce((current, rotation) => rotateFrame(current, ...parseRotation(rotation)), frame);
+}
+
+function isIdentity(frame: Frame): boolean {
+  return (Object.keys(IDENTITY_FRAME) as (keyof Frame)[]).every((face) => frame[face] === IDENTITY_FRAME[face]);
 }
 
 /**
- * The alg with the rotations it leaves open undone at its end, as the catalog writes them ("x L2 D2 ... L' x'"), so
- * playing it leaves the cube held the way it started. The angle it starts from (its leading AUF) stays as written.
+ * The alg with the grip it leaves the cube in undone at its end, as the catalog writes it ("x L2 D2 ... L' x'"), so
+ * playing it leaves the cube held the way it started. Only the net turn counts (an M or r turns the cube too, but
+ * M2 U M2 U2 M2 U M2 ends where it began). The angle it starts from (its leading AUF) stays as written.
  */
 function closeRotations(set: CaseSetId, alg: string): string {
-  const { rotations } = toFaceTurnsDetailed(splitLeadingAuf(set, alg).body);
-  return rotations.length === 0 ? alg : `${alg} ${rotations.map(inverseRotation).reverse().join(" ")}`;
+  const end = rotated(IDENTITY_FRAME, toFaceTurnsDetailed(splitLeadingAuf(set, alg).body).rotations);
+  if (isIdentity(end)) return alg;
+  const closer = CLOSERS.find((candidate) => isIdentity(rotated(end, candidate)));
+  if (!closer) throw new Error(`No rotation brings "${alg}" back to its starting grip`);
+  return `${alg} ${closer.join(" ")}`;
 }
 
 const optionCache = new Map<string, readonly AlgOption[]>();

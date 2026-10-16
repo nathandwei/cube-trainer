@@ -46,12 +46,32 @@ describe("algUse", () => {
     expect(["inaccuracy", "mistake"]).toContain(use!.verdict);
   });
 
+  it("counts moves alike on both sides, so a slice alg isn't marked down for its slices", () => {
+    // His Ua is the M-slice one; he did the RU one, which the model rates a little slower.
+    const ua = "M2 U M U2 M' U M2";
+    const moves = [...turns("R U R' U R U2 R'"), ...turns("R U R' U R' U' R2 U' R' U R' U R")];
+    const scramble = invertAlg(moves).map((m) => SWAP[m[0]!]! + m.slice(1)).join(" ");
+    const timed: TimedMove[] = moves.map((move, i) => ({ move, t: i * 100 }));
+    const analysis = analyzeSolve(scramble, timed, { method: "oll-pll" });
+    const stage = analysis.stages.find((s) => s.kind === "pll")!;
+    const start = applyAlg(scrambledState(scramble), moves.slice(0, stage.startMove));
+    const stageTurns = moves.slice(stage.startMove, stage.endMove);
+    const use = algUse(stage, stageCase(stage, start), { "PLL-Ua": ua }, stageTurns, stageTurns);
+    expect(use?.used).toBe(false);
+    expect(use?.verdict).not.toBe("mistake");
+  });
+
+  it("switches under the id his alg is saved under", () => {
+    expect(pllUse(T_PERM, { "PLL-T": T_PERM })?.storedId).toBe("PLL-T");
+    expect(yourAlg("EPLL-Ua", { "PLL-Ua": "M2 U M U2 M' U M2" })?.id).toBe("PLL-Ua");
+  });
+
   it("says nothing without an alg for the case", () => {
     expect(pllUse(T_PERM, {})).toBeNull();
   });
 
   it("shares U, H and Z perm picks between PLL and EPLL", () => {
-    expect(yourAlg("EPLL-Ua", { "PLL-Ua": "M2 U M U2 M' U M2" })).toBe("M2 U M U2 M' U M2");
-    expect(yourAlg("PLL-H", { "EPLL-H": "M2 U M2 U2 M2 U M2" })).toBe("M2 U M2 U2 M2 U M2");
+    expect(yourAlg("EPLL-Ua", { "PLL-Ua": "M2 U M U2 M' U M2" })).toEqual({ id: "PLL-Ua", alg: "M2 U M U2 M' U M2" });
+    expect(yourAlg("PLL-H", { "EPLL-H": "M2 U M2 U2 M2 U M2" })).toEqual({ id: "EPLL-H", alg: "M2 U M2 U2 M2 U M2" });
   });
 });
