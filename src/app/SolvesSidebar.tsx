@@ -14,6 +14,9 @@ function label(solve: SolveRecord): string {
   return formatMs(resultMs(solve)) + (solve.penalty === "+2" ? "+" : "");
 }
 
+/** The list shows the newest solves; the stats page has the full history. */
+const LISTED = 200;
+
 /** The timer's sidebar: recent solves (pick one to see it on the timer), then the averages. */
 export function SolvesSidebar({ solves, selectedId }: { solves: readonly SolveRecord[]; selectedId?: string }) {
   // Test solves are computer-made, so they never count toward your averages.
@@ -21,7 +24,7 @@ export function SolvesSidebar({ solves, selectedId }: { solves: readonly SolveRe
   return (
     <>
       <ul className="solves">
-        {solves.map((solve) => (
+        {solves.slice(0, LISTED).map((solve) => (
           <li
             key={solve.id}
             className={[solve.analysis ? "reviewable" : "", solve.id === selectedId ? "selected" : ""].join(" ")}

@@ -69,24 +69,47 @@ export function performances(solve: SolveRecord): Record<Part, number> | null {
   return { cross: partPerformance("cross", times.cross), f2l: partPerformance("f2l", times.f2l), ll: partPerformance("ll", times.ll) };
 }
 
+function advance(previous: PartRating | null, performance: number): PartRating {
+  if (!previous) return { rating: performance, delta: 0, solves: 1 };
+  const capped = Math.max(previous.rating - MAX_SWING, Math.min(previous.rating + MAX_SWING, performance));
+  const step = Math.max(MIN_STEP, 1 / (previous.solves + 1));
+  const rating = previous.rating + step * (capped - previous.rating);
+  return { rating, delta: rating - previous.rating, solves: previous.solves + 1 };
+}
+
 /** Replays solves oldest first. Nothing decays with time away: only solves move a rating. */
 export function computeRatings(solvesNewestFirst: readonly SolveRecord[]): Ratings {
   const ratings: Ratings = { cross: null, f2l: null, ll: null };
   for (const solve of [...solvesNewestFirst].reverse()) {
     const scores = performances(solve);
     if (!scores) continue;
-    for (const part of PARTS) {
-      const performance = scores[part];
-      const previous = ratings[part];
-      if (!previous) {
-        ratings[part] = { rating: performance, delta: 0, solves: 1 };
-        continue;
-      }
-      const capped = Math.max(previous.rating - MAX_SWING, Math.min(previous.rating + MAX_SWING, performance));
-      const step = Math.max(MIN_STEP, 1 / (previous.solves + 1));
-      const rating = previous.rating + step * (capped - previous.rating);
-      ratings[part] = { rating, delta: rating - previous.rating, solves: previous.solves + 1 };
-    }
+    for (const part of PARTS) ratings[part] = advance(ratings[part], scores[part]);
   }
   return ratings;
+}
+
+/** One rated solve in the replay: what it scored and the ratings right after it. */
+export type RatingStep = {
+  id: string;
+  createdAt: number;
+  performance: Record<Part, number>;
+  rating: Record<Part, number>;
+};
+
+/** The same replay as computeRatings, oldest first, keeping the ratings after every solve that moved them. */
+export function ratingHistory(solvesNewestFirst: readonly SolveRecord[]): RatingStep[] {
+  const ratings: Ratings = { cross: null, f2l: null, ll: null };
+  const steps: RatingStep[] = [];
+  for (const solve of [...solvesNewestFirst].reverse()) {
+    const scores = performances(solve);
+    if (!scores) continue;
+    const rating = { cross: 0, f2l: 0, ll: 0 };
+    for (const part of PARTS) {
+      const next = advance(ratings[part], scores[part]);
+      ratings[part] = next;
+      rating[part] = next.rating;
+    }
+    steps.push({ id: solve.id, createdAt: solve.createdAt, performance: scores, rating });
+  }
+  return steps;
 }
