@@ -79,6 +79,12 @@ a:focus-visible {
   height: 100%;
 }
 
+.sidebar *,
+.main {
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}
+
 .sidebar {
   background: var(--sidebar);
   display: flex;
@@ -688,13 +694,15 @@ a:focus-visible {
   color: var(--accent);
 }
 
-/* The tooltip: the button's label, shown under it after a short hover or on keyboard focus. */
+/* The tooltip: the button's label, shown under it after a short hover or on keyboard focus. It only exists while
+   shown: a hidden one still counts as overflow and gives scrolling panels (the sidebars) a stray scrollbar. */
 [data-tip]::after {
   content: attr(data-tip);
+  display: none;
   position: absolute;
   top: calc(100% + 6px);
   left: 50%;
-  transform: translate(-50%, -2px);
+  transform: translateX(-50%);
   padding: 5px 9px;
   border-radius: 7px;
   background: var(--ink);
@@ -704,22 +712,28 @@ a:focus-visible {
   line-height: 1;
   white-space: nowrap;
   pointer-events: none;
-  opacity: 0;
   z-index: 20;
-  transition:
-    opacity 120ms,
-    transform 120ms;
 }
 
 [data-tip]:hover::after,
 [data-tip]:focus-visible::after {
-  opacity: 1;
-  transform: translate(-50%, 0);
-  transition-delay: 350ms;
+  display: block;
+  animation: tip-in 120ms ease 350ms both;
 }
 
 [data-tip]:focus-visible::after {
-  transition-delay: 0ms;
+  animation-delay: 0ms;
+}
+
+@keyframes tip-in {
+  from {
+    opacity: 0;
+    translate: 0 -2px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
 }
 
 /* Near the bottom of the window the tooltip goes above. */
