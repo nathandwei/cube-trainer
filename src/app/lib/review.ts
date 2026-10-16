@@ -5,16 +5,7 @@ export type Verdict = "best" | "excellent" | "good" | "inaccuracy" | "mistake" |
 /** A gap between turns longer than this counts as a pause rather than turning. */
 export const PAUSE_MS = 400;
 /** A recognition gap this long before a stage is worth pointing out. */
-const LONG_RECOGNITION_MS = 900;
-
-export const VERDICT_MARK: Record<Verdict, string> = {
-  best: "★",
-  excellent: "!",
-  good: "✓",
-  inaccuracy: "?!",
-  mistake: "?",
-  blunder: "??",
-};
+export const LONG_RECOGNITION_MS = 900;
 
 /**
  * Extra moves over the best available grade a step. A blunder is kept for concrete errors (a wrong alg, breaking
@@ -39,13 +30,17 @@ export function verdictCounts(analysis: SolveAnalysis): Record<Verdict, number> 
   return counts;
 }
 
-/** Key moments in the order they happened, for stepping through the solve. */
-export function momentsInOrder(analysis: SolveAnalysis): Moment[] {
-  return keyMoments(analysis, 8).sort((a, b) => a.stageIndex - b.stageIndex || a.kind.localeCompare(b.kind));
+/**
+ * The costliest key moments in the order they happened: a pause comes before the moves of the stage it delays.
+ * Three by default, which is what the review's report has room for.
+ */
+export function momentsInOrder(analysis: SolveAnalysis, limit = 3): Moment[] {
+  const happened = (moment: Moment) => moment.stageIndex * 2 + (moment.kind === "pause" ? 0 : 1);
+  return keyMoments(analysis, limit).sort((a, b) => happened(a) - happened(b));
 }
 
 /** A single-pair alternative only competes with a stage that made a single pair. */
-function singlePairAlternative(stage: Stage): Stage["bestAlternative"] {
+export function singlePairAlternative(stage: Stage): Stage["bestAlternative"] {
   return stage.kind === "pair" && stage.slots?.length === 1 ? stage.bestAlternative : undefined;
 }
 
@@ -94,49 +89,25 @@ export function flow(moves: readonly TimedMove[], totalMs: number): number | nul
   return Math.round(100 * (1 - pauseMs(moves) / totalMs));
 }
 
-export type Moment = {
-  kind: "moves" | "slot" | "pause";
-  stageIndex: number;
-  /** Rough cost in ms, used only to rank moments. */
-  costMs: number;
-  title: string;
-  /** A better line from the start of the stage, when there is one. */
-  line?: string;
-};
+/** Something worth a second look: a step that took extra moves, or a long pause before a step. */
+export type Moment =
+  | { kind: "moves"; stageIndex: number; costMs: number; moves: number; best: number }
+  | { kind: "pause"; stageIndex: number; costMs: number; ms: number };
 
 function msPerMove(stage: Stage): number {
   return stage.moveCount > 0 ? stage.executionMs / stage.moveCount : 130;
 }
 
+/** The costliest moments, `limit` at most. `costMs` is a rough price used only for this ranking. */
 export function keyMoments(analysis: SolveAnalysis, limit = 5): Moment[] {
   const moments: Moment[] = [];
   analysis.stages.forEach((stage, stageIndex) => {
-    const alternative = singlePairAlternative(stage);
     const best = bestPossibleMoves(stage);
-    if (alternative && stage.optimalMoves !== undefined && alternative.moves <= stage.optimalMoves - 2) {
-      moments.push({
-        kind: "slot",
-        stageIndex,
-        costMs: (stage.moveCount - alternative.moves) * msPerMove(stage),
-        title: `${stage.label}: ${alternative.slot} was ${alternative.moves} moves`,
-        line: alternative.solution,
-      });
-    } else if (best !== null && stage.moveCount - best >= 2) {
-      moments.push({
-        kind: "moves",
-        stageIndex,
-        costMs: (stage.moveCount - best) * msPerMove(stage),
-        title: `${stage.label}: ${stage.moveCount} moves, best ${best}`,
-        line: stage.optimalSolution,
-      });
+    if (best !== null && stage.moveCount - best >= 2) {
+      moments.push({ kind: "moves", stageIndex, costMs: (stage.moveCount - best) * msPerMove(stage), moves: stage.moveCount, best });
     }
     if (stageIndex > 0 && stage.recognitionMs >= LONG_RECOGNITION_MS) {
-      moments.push({
-        kind: "pause",
-        stageIndex,
-        costMs: stage.recognitionMs - PAUSE_MS,
-        title: `${(stage.recognitionMs / 1000).toFixed(2)} s pause before ${stage.label}`,
-      });
+      moments.push({ kind: "pause", stageIndex, costMs: stage.recognitionMs - PAUSE_MS, ms: stage.recognitionMs });
     }
   });
   return moments.sort((a, b) => b.costMs - a.costMs).slice(0, limit);

@@ -1,4 +1,3 @@
-import { resultMs } from "@/app/lib/averages";
 import type { SolveRecord, Stage } from "@/cube/types";
 
 // Scale: 1000 = a 30 s solver, and every +100 is 10% faster (18 s ≈ 1485, 15 s ≈ 1658, 12 s ≈ 1870,
@@ -53,16 +52,12 @@ export type PartRating = { rating: number; delta: number; solves: number };
 export type Ratings = Record<Part, PartRating | null>;
 
 /**
- * What one solve says about each part, on the rating scale. A smart-cube solve rates each part from its own
- * stage times. A timer-only solve has just a total, so it moves every part equally by that time. Test solves are
- * computer-made and virtual-cube solves are keyboard turning, so neither rates you; nor does a DNF.
+ * What one solve says about each part, on the rating scale: each part from its own stage times. Only smart-cube
+ * solves rate; test solves are computer-made, and the timer-only and virtual solves from before the site went
+ * smart-cube-only have no real stage times. A DNF doesn't rate either.
  */
 export function performances(solve: SolveRecord): Record<Part, number> | null {
   if (solve.penalty === "dnf") return null;
-  if (solve.source === "keyboard") {
-    const overall = ratingForMs(resultMs(solve));
-    return { cross: overall, f2l: overall, ll: overall };
-  }
   if (solve.source !== "smartcube" || !solve.analysis?.solved) return null;
   const times = partTimes(solve.analysis.stages);
   if (PARTS.some((part) => times[part] <= 0)) return null;

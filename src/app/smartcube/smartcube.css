@@ -12,7 +12,8 @@
   --sheet: #f6f1ea;
 }
 
-/* ---------- sheet ---------- */
+/* ---------- sheet ----------
+   Sizes in --u, measured on the approved mockups (concepts/round-8/16-connect.png, 17-connected.png). */
 
 .cube-sheet-backdrop {
   position: fixed;
@@ -25,19 +26,19 @@
 }
 
 .cube-sheet {
-  width: min(440px, 100%);
+  width: min(calc(540 * var(--u)), 100%);
   max-height: calc(100vh - 32px);
   overflow-y: auto;
   background: var(--sheet);
-  border: 1px solid var(--rule);
-  border-radius: 20px;
-  padding: 28px 30px 24px;
+  border-radius: calc(28 * var(--u));
+  padding: calc(44 * var(--u)) calc(36 * var(--u)) calc(36 * var(--u));
+  font-size: calc(20 * var(--u));
 }
 
 .cube-step {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: calc(24 * var(--u));
 }
 
 .cube-step.center {
@@ -47,37 +48,36 @@
 
 .cube-step p {
   margin: 0;
-  line-height: 1.45;
+  line-height: 1.4;
 }
 
 .cube-step h2 {
   margin: 0;
-  font-size: 17px;
-  font-weight: 600;
+  font-size: calc(24 * var(--u));
+  font-weight: 500;
 }
 
 .cube-muted {
   color: var(--muted);
-  font-size: 13px;
-}
-
-.center-text {
-  text-align: center;
+  font-size: calc(17 * var(--u));
 }
 
 .cube-error {
   color: var(--bad);
-  font-size: 13px;
+  font-size: calc(17 * var(--u));
 }
 
 .cube-progress {
   color: var(--muted);
-  font-size: 14px;
+}
+
+.cube-note {
+  text-align: center;
 }
 
 .cube-art {
-  width: 84px;
-  height: 100px;
+  width: calc(124 * var(--u));
+  height: calc(149 * var(--u));
 }
 
 .cube-art .art {
@@ -89,61 +89,40 @@
 .cube-copy {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: calc(12 * var(--u));
   max-width: 100%;
 }
 
 .cube-copy code {
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: calc(18 * var(--u));
   overflow-wrap: anywhere;
-}
-
-.cube-copy .copy {
-  flex: none;
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  color: var(--muted);
-}
-
-.cube-copy .copy:hover {
-  background: var(--rule);
-  color: var(--ink);
-}
-
-.cube-copy svg {
-  width: 20px;
-  height: 20px;
+  text-align: left;
 }
 
 .cube-hint {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--page);
+  gap: calc(8 * var(--u));
 }
 
 .cube-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 13px;
+  gap: calc(8 * var(--u));
+  font-size: calc(17 * var(--u));
   color: var(--muted);
 }
 
 .cube-field input {
+  height: calc(52 * var(--u));
+  padding: 0 calc(18 * var(--u));
   font: inherit;
   font-family: var(--mono);
-  font-size: 15px;
+  font-size: calc(20 * var(--u));
   color: var(--ink);
-  padding: 10px 12px;
   border: 1px solid var(--rule);
-  border-radius: 10px;
+  border-radius: calc(14 * var(--u));
   background: var(--page);
 }
 
@@ -156,63 +135,41 @@
   border-color: var(--bad);
 }
 
-.cube-actions {
+/* Equal pills side by side; positioned so the shared [data-tip] tooltip sits under its pill. */
+.cube-row {
   display: flex;
-  gap: 12px;
-  justify-content: center;
-  flex-wrap: wrap;
+  gap: calc(12 * var(--u));
+  align-self: stretch;
 }
 
-.cube-actions .pill {
-  flex: 1 1 140px;
+.cube-row .pill {
+  position: relative;
+  flex: 1;
 }
 
-.pill.outline {
-  background: transparent;
-  border: 1px solid var(--faint);
-  color: var(--muted);
-}
-
-.pill.outline:hover {
-  background: var(--page);
-  color: var(--ink);
-}
-
-.pill.wide {
-  width: 100%;
-  padding: 12px 18px;
-  font-size: 15px;
-}
-
-.link {
-  align-self: center;
-  font-size: 13px;
-  color: var(--muted);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.link:hover {
-  color: var(--ink);
+/* The sheet's single action, full width (the mockup's "done"). */
+.cube-done {
+  align-self: stretch;
 }
 
 .cube-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: calc(12 * var(--u));
 }
 
 .cube-name {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  font-size: 18px;
+  gap: calc(14 * var(--u));
+  font-size: calc(24 * var(--u));
+  font-weight: 500;
 }
 
 .cube-head .dot {
-  width: 10px;
-  height: 10px;
+  width: calc(16 * var(--u));
+  height: calc(16 * var(--u));
   border-radius: 50%;
   background: var(--faint);
 }
@@ -221,17 +178,22 @@
   background: #5d9b5c;
 }
 
+.cube-head-end {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(12 * var(--u));
+}
+
 .cube-battery {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: calc(8 * var(--u));
   color: var(--muted);
-  font-size: 14px;
 }
 
 .cube-battery svg {
-  width: 30px;
-  height: 14px;
+  width: calc(38 * var(--u));
+  height: calc(18 * var(--u));
 }
 
 .cube-battery .low {
@@ -244,13 +206,13 @@
   display: grid;
   grid-template-columns: repeat(4, auto);
   justify-content: center;
-  padding: 6px 0;
+  padding: calc(8 * var(--u)) 0;
 }
 
 .cube-net .face {
   display: grid;
-  grid-template-columns: repeat(3, 19px);
-  grid-auto-rows: 19px;
+  grid-template-columns: repeat(3, calc(26 * var(--u)));
+  grid-auto-rows: calc(26 * var(--u));
   border: 1px solid var(--st-line);
 }
 
@@ -336,7 +298,7 @@
 
 .cube-scramble-note {
   margin: 0;
-  font-size: 13px;
+  font-size: calc(17 * var(--u));
   color: var(--muted);
 }
 

@@ -1,4 +1,6 @@
+import { LogOut, Settings } from "lucide-react";
 import { useState } from "react";
+import { IconButton } from "@/app/components/IconButton";
 import { signOut, useAccount } from "@/app/lib/account";
 import { navigate } from "@/app/lib/router";
 
@@ -31,12 +33,10 @@ export function AccountRow() {
       <span className="name" title={account.email}>
         {account.name}
       </span>
-      <button className="signout" onClick={() => navigate("/settings")}>
-        settings
-      </button>
-      <button className="signout" onClick={leave} title={failed ? "sign out failed, try again" : "sign out"}>
-        {failed ? "retry" : "sign out"}
-      </button>
+      <span className="account-actions">
+        <IconButton icon={Settings} label="Settings" className="tip-up" onClick={() => navigate("/settings")} />
+        <IconButton icon={LogOut} label={failed ? "Sign out failed: try again" : "Sign out"} className={`tip-up ${failed ? "failed" : ""}`} onClick={() => void leave()} />
+      </span>
     </div>
   );
 }

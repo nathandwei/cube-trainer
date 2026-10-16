@@ -1,3 +1,4 @@
+import { ArrowDown, ArrowUp } from "lucide-react";
 import { median } from "@/app/lib/averages";
 import { formatSeconds } from "@/app/lib/format";
 import type { SolveRecord, Stage } from "@/cube/types";
@@ -8,6 +9,8 @@ const MARGIN = 0.05;
 const HISTORY = 50;
 
 type Chip = { label: string; ms: number };
+
+const DISPLAY: Readonly<Record<string, string>> = { cross: "Cross", xcross: "XCross", f2l: "F2L", "last layer": "Last layer" };
 
 const LAST_LAYER: readonly Stage["kind"][] = ["eo", "coll", "epll", "oll", "pll", "ll"];
 
@@ -44,10 +47,11 @@ export function SplitChips({ solve, history }: Props) {
         const tone = usual === null ? "" : chip.ms < usual * (1 - MARGIN) ? "faster" : chip.ms > usual * (1 + MARGIN) ? "slower" : "";
         return (
           <div key={chip.label} className={`chip ${tone}`}>
-            <span className="label">{chip.label}</span>
+            <span className="label">{DISPLAY[chip.label] ?? chip.label}</span>
             <span className="value">
               {formatSeconds(chip.ms)}
-              {tone && <span className="arrow">{tone === "faster" ? "↑" : "↓"}</span>}
+              {tone === "faster" && <ArrowUp className="arrow" strokeWidth={2.5} aria-label="faster than usual" />}
+              {tone === "slower" && <ArrowDown className="arrow" strokeWidth={2.5} aria-label="slower than usual" />}
             </span>
           </div>
         );

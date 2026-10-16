@@ -1,30 +1,31 @@
+import { ArrowLeft, Pause, Play } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CubeView, type CubeHandle } from "@/app/components/CubeView";
-import { ScrambleBand } from "@/app/components/ScrambleBand";
-import {
-  displayTokens,
-  inViewAfter,
-  rawIndexAfter,
-  tokenCountBefore,
-  type TimedToken,
-} from "@/app/lib/display";
+import { IconButton } from "@/app/components/IconButton";
+import { displayTokens, inViewAfter, slotInView, type TimedToken } from "@/app/lib/display";
 import { formatMs } from "@/app/lib/format";
-import { splitAlg } from "@/app/lib/frame";
 import { navigate } from "@/app/lib/router";
+import { accuracy, bestPossibleMoves, flow, LONG_RECOGNITION_MS, momentsInOrder, stageVerdict, verdictCounts } from "@/app/lib/review";
+import { learnItem } from "@/app/pages/learn/items";
 import {
-  accuracy,
-  flow,
-  momentsInOrder,
-  stageAt,
-  verdictCounts,
-  VERDICT_MARK,
-  VERDICTS,
-  type Moment,
-} from "@/app/lib/review";
-import type { SolveAnalysis, SolveRecord, Stage } from "@/cube/types";
+  bestLines,
+  currentToken,
+  drillFor,
+  focusedStage,
+  nextStageTarget,
+  previousStageTarget,
+  stageName,
+  stageSpans,
+  type Target,
+} from "@/app/review/model";
+import type { LineId, Shown, StageView, ViewLine } from "@/app/review/parts";
+import { ReportPanel } from "@/app/review/ReportPanel";
+import { StepperPanel } from "@/app/review/StepperPanel";
+import { scrambledState } from "@/cube";
+import type { SolveAnalysis, SolveRecord } from "@/cube/types";
+import "@/app/review/review.css";
 
 const SPEEDS = [0.5, 1, 2];
-const LINE_STEP_MS = 320;
 
 type Props = { solve: SolveRecord | undefined };
 
@@ -34,7 +35,7 @@ export function ReviewPage({ solve }: Props) {
       <div className="timer">
         <p className="empty">–</p>
         <button className="pill" onClick={() => navigate("/")}>
-          timer
+          Timer
         </button>
       </div>
     );
@@ -48,85 +49,125 @@ function setupAfter(solve: SolveRecord, tokens: readonly TimedToken[], count: nu
 
 function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalysis }) {
   const tokens = useMemo(() => displayTokens(solve, analysis), [solve, analysis]);
+  const spans = useMemo(() => stageSpans(tokens, analysis.stages), [tokens, analysis]);
+  const stages = useMemo<StageView[]>(
+    () =>
+      analysis.stages.map((stage, index) => ({
+        index,
+        name: stageName(stage.label),
+        caseName: stage.caseName,
+        verdict: stageVerdict(stage),
+        moves: stage.moveCount,
+        best: bestPossibleMoves(stage),
+        ms: stage.totalMs,
+        pauseMs: index > 0 && stage.recognitionMs >= LONG_RECOGNITION_MS ? stage.recognitionMs : null,
+        span: spans[index] ?? { start: 0, end: 0 },
+      })),
+    [analysis, spans],
+  );
   const moments = useMemo(() => momentsInOrder(analysis), [analysis]);
   const counts = useMemo(() => verdictCounts(analysis), [analysis]);
+
+  // Every stage's best lines, in his view at the stage's start. The cross enumerates its optima from the cross table.
+  const bestByStage = useMemo<ViewLine[][]>(
+    () =>
+      analysis.stages.map((stage, index) => {
+        const start = spans[index]?.start ?? 0;
+        const crossStart = stage.kind === "cross" && stage.startMove === 0 ? scrambledState(solve.scramble) : undefined;
+        return bestLines(stage, crossStart).map((line) => ({
+          moves: inViewAfter(tokens, start, line.moves),
+          slot: line.slot ? slotInView(tokens, start, line.slot) : null,
+        }));
+      }),
+    [analysis, spans, solve.scramble, tokens],
+  );
+  const linesFor = useCallback((index: number): ViewLine[] => bestByStage[index] ?? [], [bestByStage]);
+
+  const drillAfterPause = useCallback(
+    (index: number) => {
+      const stage = analysis.stages[index];
+      return stage ? drillFor(stage, (id) => learnItem(id) !== undefined) : null;
+    },
+    [analysis],
+  );
+
   const cube = useRef<CubeHandle>(null);
-  // `played` counts display tokens (a slice, wide move or rotation is one); the raw index follows from it.
+  const [mode, setMode] = useState<"report" | "stepper">("report");
+  // `played` counts display tokens (a slice, wide move or rotation is one).
   const [played, setPlayed] = useState(tokens.length);
+  const [pinned, setPinned] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
-  const [preview, setPreview] = useState<string | null>(null);
-  // Index into `moments` while stepping through the key moments; null when browsing freely.
-  const [tour, setTour] = useState<number | null>(null);
+  const [open, setOpen] = useState<number | null>(null);
+  const [shown, setShown] = useState<Shown>(null);
   const frame = useRef<number | undefined>(undefined);
-  const timers = useRef<number[]>([]);
   const speedRef = useRef(speed);
-  // True while the cube shows something other than the solve after `played` tokens (a "show best" line).
+  // True while the cube acts out a line from a stage's start instead of showing the solve after `played` tokens.
   const offTrack = useRef(false);
 
-  const raw = rawIndexAfter(tokens, played);
-  const currentStage = stageAt(analysis, Math.max(0, raw - 1));
+  const focus = focusedStage(spans, played, pinned);
+  const current = currentToken(spans, focus, played);
 
-  const stopEverything = useCallback(() => {
-    if (frame.current) cancelAnimationFrame(frame.current);
-    timers.current.forEach((t) => window.clearTimeout(t));
-    timers.current = [];
+  const stopPlayback = useCallback(() => {
+    if (frame.current !== undefined) cancelAnimationFrame(frame.current);
+    frame.current = undefined;
     setPlaying(false);
-    setPreview(null);
   }, []);
 
-  const jump = useCallback(
-    (count: number) => {
-      stopEverything();
+  /** The solve after `count` tokens, without animating; `pin` keeps a stage on show at its start. */
+  const snapTo = useCallback(
+    (count: number, pin: number | null) => {
+      stopPlayback();
       const clamped = Math.max(0, Math.min(tokens.length, count));
       setPlayed(clamped);
+      setPinned(pin);
+      setShown(null);
       offTrack.current = false;
       cube.current?.setTempo(2);
       cube.current?.show(setupAfter(solve, tokens, clamped));
     },
-    [solve, tokens, stopEverything],
+    [solve, tokens, stopPlayback],
   );
+
+  const goTo = useCallback((target: Target) => snapTo(target.played, target.stage), [snapTo]);
 
   useEffect(() => {
     cube.current?.show(setupAfter(solve, tokens, tokens.length));
-    return stopEverything;
-  }, [solve, tokens, stopEverything]);
+    return stopPlayback;
+  }, [solve, tokens, stopPlayback]);
 
-  const resync = useCallback(() => {
-    if (!offTrack.current) return;
-    cube.current?.show(setupAfter(solve, tokens, played));
-    offTrack.current = false;
-  }, [played, solve, tokens]);
-
-  const stepForward = useCallback(() => {
-    if (played >= tokens.length) return;
-    stopEverything();
-    resync();
-    cube.current?.setTempo(2);
-    cube.current?.turn(tokens[played]?.text ?? "");
-    setPlayed(played + 1);
-  }, [played, tokens, resync, stopEverything]);
-
-  const stepBack = useCallback(() => {
-    if (played <= 0) return;
-    stopEverything();
-    resync();
-    cube.current?.setTempo(2);
-    cube.current?.unturn(tokens[played - 1]?.text ?? "");
-    setPlayed(played - 1);
-  }, [played, tokens, resync, stopEverything]);
+  const step = useCallback(
+    (direction: 1 | -1) => {
+      const next = played + direction;
+      if (next < 0 || next > tokens.length) return;
+      stopPlayback();
+      if (offTrack.current) {
+        cube.current?.show(setupAfter(solve, tokens, played));
+        offTrack.current = false;
+      }
+      cube.current?.setTempo(2);
+      if (direction === 1) cube.current?.turn(tokens[played]?.text ?? "");
+      else cube.current?.unturn(tokens[next]?.text ?? "");
+      setPlayed(next);
+      setPinned(null);
+      setShown(null);
+    },
+    [played, solve, tokens, stopPlayback],
+  );
 
   const play = useCallback(() => {
-    stopEverything();
+    stopPlayback();
     let at = played >= tokens.length ? 0 : played;
     cube.current?.show(setupAfter(solve, tokens, at));
     offTrack.current = false;
+    setPinned(null);
+    setShown(null);
     cube.current?.setTempo(3 * speedRef.current);
     // Advance a virtual clock frame by frame so a speed change applies mid-playback.
     let clock = at === 0 ? 0 : (tokens[at - 1]?.t ?? 0);
     let lastFrame = performance.now();
     setPlaying(true);
-    const step = () => {
+    const tick = () => {
       const now = performance.now();
       clock += (now - lastFrame) * speedRef.current;
       lastFrame = now;
@@ -136,252 +177,157 @@ function Review({ solve, analysis }: { solve: SolveRecord; analysis: SolveAnalys
       }
       setPlayed(at);
       if (at >= tokens.length) {
+        frame.current = undefined;
         setPlaying(false);
         return;
       }
-      frame.current = requestAnimationFrame(step);
+      frame.current = requestAnimationFrame(tick);
     };
-    frame.current = requestAnimationFrame(step);
-  }, [played, solve, tokens, stopEverything]);
+    frame.current = requestAnimationFrame(tick);
+  }, [played, solve, tokens, stopPlayback]);
 
-  const showBest = useCallback(
-    (stage: Stage, line: string) => {
-      const start = tokenCountBefore(tokens, stage.startMove);
-      jump(start);
+  /** Acts out a line on the cube from the stage's start: his own moves or one of the best lines. */
+  const playLine = useCallback(
+    (index: number, line: LineId) => {
+      const span = spans[index];
+      if (!span) return;
+      const moves =
+        line === "yours"
+          ? tokens
+              .slice(span.start, span.end)
+              .map((t) => t.text)
+              .join(" ")
+          : linesFor(index)[line]?.moves;
+      if (moves === undefined) return;
+      stopPlayback();
+      setPlayed(span.start);
+      setPinned(index);
+      setShown({ stage: index, line });
       offTrack.current = true;
-      const inView = inViewAfter(tokens, start, line);
-      setPreview(inView);
-      splitAlg(inView).forEach((move, i) => {
-        timers.current.push(window.setTimeout(() => cube.current?.turn(move), 450 + i * LINE_STEP_MS));
-      });
+      cube.current?.setTempo(2);
+      cube.current?.play(setupAfter(solve, tokens, span.start), moves);
     },
-    [jump, tokens],
+    [linesFor, solve, spans, tokens, stopPlayback],
   );
 
-  /** Go to a key moment: the cube waits at the start of that stage and plays the better line if there is one. */
-  const visit = useCallback(
+  const toggleBest = useCallback(
     (index: number) => {
-      const moment = moments[index];
-      const stage = moment ? analysis.stages[moment.stageIndex] : undefined;
-      if (!moment || !stage) return;
-      setTour(index);
-      if (moment.line) showBest(stage, moment.line);
-      else jump(tokenCountBefore(tokens, stage.startMove));
+      if (open === index) {
+        setOpen(null);
+        return;
+      }
+      setOpen(index);
+      playLine(index, linesFor(index).length > 0 ? 0 : "yours");
     },
-    [analysis, jump, moments, showBest, tokens],
+    [linesFor, open, playLine],
   );
+
+  const openStepper = useCallback(
+    (index: number) => {
+      setMode("stepper");
+      goTo({ stage: index, played: spans[index]?.start ?? 0 });
+    },
+    [goTo, spans],
+  );
+
+  const previousStage = useCallback(() => goTo(previousStageTarget(spans, focus, played)), [focus, goTo, played, spans]);
+  const nextStage = useCallback(() => goTo(nextStageTarget(spans, focus)), [focus, goTo, spans]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (tour !== null && event.key === "ArrowDown") visit(Math.min(moments.length - 1, tour + 1));
-      else if (tour !== null && event.key === "ArrowUp") visit(Math.max(0, tour - 1));
-      else if (event.key === "ArrowRight") stepForward();
-      else if (event.key === "ArrowLeft") stepBack();
-      else if (event.key === "Home") jump(0);
-      else if (event.key === "End") jump(tokens.length);
-      else if (event.code === "Space") {
-        if (playing) stopEverything();
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const moves: Record<string, () => void> = {
+        ArrowRight: () => step(1),
+        ArrowLeft: () => step(-1),
+        ArrowDown: nextStage,
+        ArrowUp: previousStage,
+        Home: () => snapTo(0, null),
+        End: () => snapTo(tokens.length, null),
+      };
+      const move = moves[event.key];
+      if (move) {
+        // The position is shown in the stepper, so moving through the solve opens it.
+        setMode("stepper");
+        move();
+      } else if (event.code === "Space") {
+        if (playing) stopPlayback();
         else play();
       } else if (event.key === "Escape") {
-        if (tour !== null) setTour(null);
+        if (mode === "stepper") setMode("report");
         else navigate("/");
       } else return;
       event.preventDefault();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [jump, moments.length, play, playing, stepBack, stepForward, stopEverything, tokens.length, tour, visit]);
+  }, [mode, nextStage, play, playing, previousStage, snapTo, step, stopPlayback, tokens.length]);
 
-  const turns = tokens.filter((t) => t.kind === "turn").length;
-  const tps = turns / (solve.totalMs / 1000);
-  const accurate = accuracy(analysis);
-  const flowing = flow(solve.moves, solve.totalMs);
-  const stage = analysis.stages[currentStage];
-  const stageTokens = stage
-    ? tokens.map((t, i) => ({ t, i })).filter(({ t }) => t.start >= stage.startMove && t.start < stage.endMove)
-    : [];
+  function cycleSpeed() {
+    const next = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length] ?? 1;
+    speedRef.current = next;
+    cube.current?.setTempo(3 * next);
+    setSpeed(next);
+  }
 
   return (
-    <div className="review-report">
-      <section className="replay">
-        <div className="replay-head">
-          <button className="back" aria-label="back to timer" onClick={() => navigate("/")}>
-            ←
-          </button>
-          <span className="total">{formatMs(solve.totalMs)}</span>
-          <span className="meta">
-            {turns} moves · {tps.toFixed(2)} tps
-          </span>
+    <div className="rv">
+      <section className="rv-replay">
+        <div className="rv-back">
+          <IconButton icon={ArrowLeft} label="Back" size="lg" onClick={() => navigate("/")} />
         </div>
-        <ScrambleBand scramble={solve.scramble} className="small" />
-        <CubeView ref={cube} setup={setupAfter(solve, tokens, tokens.length)} className="cube big" />
-        <div className="controls">
-          <button aria-label="start" onClick={() => jump(0)}>
-            ⏮
-          </button>
-          <button aria-label="previous move" onClick={stepBack}>
-            ◀
-          </button>
-          <button className="play" aria-label={playing ? "pause" : "play"} onClick={playing ? stopEverything : play}>
-            {playing ? "❚❚" : "▶"}
-          </button>
-          <button aria-label="next move" onClick={stepForward}>
-            ▶︎|
-          </button>
-          <button aria-label="end" onClick={() => jump(tokens.length)}>
-            ⏭
-          </button>
-          <button
-            className="speed"
-            onClick={() => {
-              const next = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length] ?? 1;
-              speedRef.current = next;
-              cube.current?.setTempo(3 * next);
-              setSpeed(next);
-            }}
-          >
+        <div className="rv-time">{formatMs(solve.totalMs)}</div>
+        <p className="rv-scramble" aria-label="Scramble">
+          {solve.scramble}
+        </p>
+        <CubeView ref={cube} setup={setupAfter(solve, tokens, tokens.length)} className="cube rv-cube" />
+        <div className="rv-playback">
+          <IconButton icon={playing ? Pause : Play} label={playing ? "Pause" : "Play"} variant="soft" size="xl" filled onClick={playing ? stopPlayback : play} />
+          {/* The speed is its own label, so this round button shows text where the others show an icon. */}
+          <button className="icon-btn soft xl rv-speed" aria-label="Speed" data-tip="Speed" onClick={cycleSpeed}>
             {speed}×
           </button>
         </div>
-        <div className="nowline">
-          {preview ? (
-            <>
-              <span className="label">best</span>
-              <span className="moves">{preview}</span>
-            </>
-          ) : (
-            <>
-              <span className="label">{stage?.label ?? ""}</span>
-              <span className="moves">
-                {stageTokens.map(({ t, i }) => (
-                  <button
-                    key={i}
-                    className={`${i === played - 1 ? "current" : i >= played ? "future" : ""} ${t.kind === "rotation" ? "rot" : ""}`}
-                    onClick={() => jump(i + 1)}
-                  >
-                    {t.text}
-                  </button>
-                ))}
-              </span>
-            </>
-          )}
-        </div>
       </section>
 
-      <aside className="report">
-        <div className="headline">
-          <div>
-            <span className="label">accuracy</span>
-            <span className="num">{accurate ?? "–"}</span>
-          </div>
-          <div>
-            <span className="label">flow</span>
-            <span className="num">{flowing ?? "–"}</span>
-          </div>
-        </div>
-
-        {tour === null ? (
-          <>
-            <ul className="verdicts">
-              {VERDICTS.map((v) => (
-                <li key={v}>
-                  <span className={`badge ${v}`}>{VERDICT_MARK[v]}</span>
-                  <span className="name">{v}</span>
-                  <span className="count">{counts[v]}</span>
-                </li>
-              ))}
-            </ul>
-            {moments.length > 0 && (
-              <ul className="moments-list">
-                {moments.map((moment, i) => (
-                  <li key={i}>
-                    <button className="what" onClick={() => visit(i)}>
-                      {moment.title}
-                    </button>
-                    {moment.line && <span className="hint">show best</span>}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {moments.length > 0 && (
-              <button className="pill primary step" onClick={() => visit(0)}>
-                step through
-              </button>
-            )}
-          </>
-        ) : (
-          <TourPanel
-            moment={moments[tour]}
-            index={tour}
-            total={moments.length}
-            analysis={analysis}
+      <aside className="rv-panel">
+        {mode === "report" ? (
+          <ReportPanel
+            accuracy={accuracy(analysis)}
+            flow={flow(solve.moves, solve.totalMs)}
+            counts={counts}
+            moments={moments}
+            stages={stages}
             tokens={tokens}
-            onPrev={() => visit(Math.max(0, tour - 1))}
-            onNext={() => visit(Math.min(moments.length - 1, tour + 1))}
-            onReplay={() => visit(tour)}
-            onDone={() => {
-              setTour(null);
-              jump(tokens.length);
-            }}
+            linesFor={linesFor}
+            drillFor={drillAfterPause}
+            open={open}
+            shown={shown}
+            onToggle={toggleBest}
+            onPlay={playLine}
+            onOpenStage={openStepper}
+            onDrill={(id) => navigate(`/learn/${encodeURIComponent(id)}`)}
+            onStepThrough={() => openStepper(open ?? 0)}
+          />
+        ) : (
+          <StepperPanel
+            stages={stages}
+            tokens={tokens}
+            focus={focus}
+            played={played}
+            current={current}
+            lines={linesFor(focus)}
+            shown={shown}
+            onStage={(index) => goTo({ stage: index, played: spans[index]?.start ?? 0 })}
+            onToken={(index) => snapTo(index + 1, null)}
+            onPlay={playLine}
+            onPreviousStage={previousStage}
+            onPreviousMove={() => step(-1)}
+            onNextMove={() => step(1)}
+            onNextStage={nextStage}
+            onClose={() => setMode("report")}
           />
         )}
       </aside>
-    </div>
-  );
-}
-
-function TourPanel({
-  moment,
-  index,
-  total,
-  analysis,
-  tokens,
-  onPrev,
-  onNext,
-  onReplay,
-  onDone,
-}: {
-  moment: Moment | undefined;
-  index: number;
-  total: number;
-  analysis: SolveAnalysis;
-  tokens: readonly TimedToken[];
-  onPrev: () => void;
-  onNext: () => void;
-  onReplay: () => void;
-  onDone: () => void;
-}) {
-  const stage = moment ? analysis.stages[moment.stageIndex] : undefined;
-  if (!moment || !stage) return null;
-  const best = moment.line ? inViewAfter(tokens, tokenCountBefore(tokens, stage.startMove), moment.line) : null;
-  return (
-    <div className="tour">
-      <span className="count">
-        {index + 1} / {total}
-      </span>
-      <p className="title">{moment.title}</p>
-      {best && (
-        <>
-          <code className="line">{best}</code>
-          <button className="pill" onClick={onReplay}>
-            show best
-          </button>
-        </>
-      )}
-      <div className="tour-nav">
-        <button onClick={onPrev} disabled={index === 0}>
-          ‹ prev
-        </button>
-        {index < total - 1 ? (
-          <button className="pill primary" onClick={onNext}>
-            next ›
-          </button>
-        ) : (
-          <button className="pill primary" onClick={onDone}>
-            done
-          </button>
-        )}
-      </div>
     </div>
   );
 }

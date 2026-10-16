@@ -7,7 +7,7 @@ import { linear, type Axis } from "./scale";
 import type { View } from "./view";
 
 const HEIGHT = 128;
-const M = { left: 38, right: 6, top: 6, bottom: 6 };
+const M = { left: 54, right: 6, top: 8, bottom: 8 };
 
 type Props = {
   label: string;
@@ -16,8 +16,8 @@ type Props = {
   /** Shared by the three charts, so the parts compare at a glance. */
   axis: Axis;
   hoverX: number | null;
-  /** Absent when this chart's x axis is not the main chart's (it then keeps its crosshair to itself). */
-  onHover?: (x: number | null) => void;
+  /** Moves the crosshair shared with the main chart. */
+  onHover: (x: number | null) => void;
 };
 
 /** One part's rating over the same stretch as the main chart, over the band of its usual performances. */
@@ -49,7 +49,7 @@ export const RatingChart = memo(function RatingChart({ label, points, domain, ax
 
   function onPointerMove(e: PointerEvent<HTMLDivElement>) {
     const px = e.clientX - e.currentTarget.getBoundingClientRect().left + M.left;
-    onHover?.(xScale.invert(px));
+    onHover(xScale.invert(px));
   }
 
   return (
@@ -85,8 +85,8 @@ export const RatingChart = memo(function RatingChart({ label, points, domain, ax
         <div
           className="rating-hit"
           style={{ left: M.left, width: plotWidth }}
-          onPointerMove={onHover ? onPointerMove : undefined}
-          onPointerLeave={onHover ? () => onHover(null) : undefined}
+          onPointerMove={onPointerMove}
+          onPointerLeave={() => onHover(null)}
         />
       </div>
     </figure>

@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "cubing": "0.63.8",
+    "lucide-react": "1.49.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "ts-fsrs": "5.4.2",

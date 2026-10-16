@@ -4,7 +4,7 @@ import type { PlanView } from "./session";
 export function ScrambleProgress({ plan }: { plan: PlanView }) {
   return (
     <div className="cube-scramble">
-      <div className={`scramble ${plan.fix ? "fix" : ""}`} aria-label={plan.fix ? "moves back to the scramble" : "scramble"}>
+      <div className={`scramble ${plan.fix ? "fix" : ""}`} aria-label={plan.fix ? "Moves back to the scramble" : "Scramble"}>
         {plan.moves.length === 0 ? (
           <span className="mv">&nbsp;</span>
         ) : (
@@ -19,7 +19,7 @@ export function ScrambleProgress({ plan }: { plan: PlanView }) {
         )}
       </div>
       {(plan.fix || plan.thinking) && (
-        <p className="cube-scramble-note">{plan.thinking ? "working out the moves to the scramble…" : "off the scramble: these moves get you back"}</p>
+        <p className="cube-scramble-note">{plan.thinking ? "Finding the way back…" : "Back to the scramble"}</p>
       )}
     </div>
   );

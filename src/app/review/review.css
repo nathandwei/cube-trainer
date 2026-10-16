@@ -1,0 +1,420 @@
+/* ---------- solve review ----------
+   Sizes are measured on the approved mockup (concepts/round-9/02-review-report.png) in mockup pixels: --u. */
+
+.rv {
+  /* The verdict scale, from a soft green through ochre to a deep red, toned to the oat page. */
+  --v-best: #4f8f5c;
+  --v-excellent: #96bb83;
+  --v-good: #d8c06c;
+  --v-inaccuracy: #e2a184;
+  --v-mistake: #d0704f;
+  --v-blunder: #a6402e;
+  /* .main's top padding: the column rule runs the full height of the window, through it. */
+  --rv-pad-top: calc(33 * var(--u));
+  display: grid;
+  grid-template-columns: minmax(0, 55fr) minmax(0, 45fr);
+  min-height: 100vh;
+  margin: calc(-1 * var(--rv-pad-top)) 0;
+}
+
+/* ----- left: the time, the cube, playback ----- */
+
+.rv-replay {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--rv-pad-top) calc(24 * var(--u)) calc(12 * var(--u)) calc(30 * var(--u));
+}
+
+.rv-back {
+  position: absolute;
+  top: calc(var(--rv-pad-top) + 5 * var(--u));
+  left: calc(-2 * var(--u));
+}
+
+.rv-time {
+  margin-top: calc(75 * var(--u));
+  font-size: calc(117 * var(--u));
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+/* Sits above the cube's canvas, which reaches up behind it. */
+.rv-scramble {
+  position: relative;
+  z-index: 1;
+  margin: calc(3 * var(--u)) 0 0;
+  max-width: 100%;
+  font-family: var(--mono);
+  font-size: calc(13 * var(--u));
+  line-height: 1.5;
+  word-spacing: 0.2em;
+  color: var(--faint);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* cubing.js draws the cube at about two thirds of its canvas, so the canvas overlaps its neighbours. */
+.cube.rv-cube {
+  width: min(calc(504 * var(--u)), 100%);
+  height: calc(504 * var(--u));
+  margin-top: calc(-49 * var(--u));
+}
+
+.rv-playback {
+  display: flex;
+  gap: calc(56 * var(--u));
+  align-items: center;
+  margin-top: calc(-17 * var(--u));
+}
+
+.rv-speed {
+  font-size: calc(24 * var(--u));
+  font-weight: 500;
+}
+
+/* ----- right: the report and the stepper share one plain column ----- */
+
+.rv-panel {
+  border-left: 1px solid var(--rule);
+  padding: var(--rv-pad-top) 0 calc(12 * var(--u)) calc(40 * var(--u));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.rv-report,
+.rv-stepper {
+  width: 100%;
+  max-width: calc(450 * var(--u));
+  display: flex;
+  flex-direction: column;
+}
+
+/* scores */
+
+.rv-scores {
+  display: grid;
+  grid-template-columns: 1fr 1px 1fr;
+  margin-top: calc(14 * var(--u));
+  text-align: center;
+}
+
+.rv-scores-rule {
+  background: var(--rule);
+  margin: calc(3 * var(--u)) 0 calc(-10 * var(--u));
+}
+
+.rv-score {
+  display: flex;
+  flex-direction: column;
+  gap: calc(14 * var(--u));
+}
+
+.rv-score-label {
+  font-size: calc(26 * var(--u));
+  line-height: 1.2;
+  color: var(--muted);
+}
+
+.rv-score-num {
+  font-size: calc(70 * var(--u));
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+/* verdicts */
+
+.rv-verdicts {
+  list-style: none;
+  margin: calc(28 * var(--u)) 0 0;
+  padding: 0;
+}
+
+.rv-verdicts li {
+  display: grid;
+  grid-template-columns: calc(16 * var(--u)) 1fr auto;
+  column-gap: calc(34 * var(--u));
+  align-items: center;
+  height: calc(51 * var(--u));
+  padding: 0 calc(30 * var(--u)) 0 calc(10 * var(--u));
+  font-size: calc(26 * var(--u));
+}
+
+.rv-count {
+  font-weight: 500;
+}
+
+.rv-verdicts li.zero {
+  color: var(--faint);
+}
+
+.rv-verdicts li.zero .rv-dot {
+  opacity: 0.35;
+}
+
+.rv-dot {
+  width: calc(16 * var(--u));
+  height: calc(16 * var(--u));
+  border-radius: 50%;
+  flex: none;
+}
+
+.rv-dot.best {
+  background: var(--v-best);
+}
+
+.rv-dot.excellent {
+  background: var(--v-excellent);
+}
+
+.rv-dot.good {
+  background: var(--v-good);
+}
+
+.rv-dot.inaccuracy {
+  background: var(--v-inaccuracy);
+}
+
+.rv-dot.mistake {
+  background: var(--v-mistake);
+}
+
+.rv-dot.blunder {
+  background: var(--v-blunder);
+}
+
+.rv-dot.none {
+  box-shadow: inset 0 0 0 calc(2 * var(--u)) var(--faint);
+}
+
+/* key moments: one aligned table between two rules */
+
+.rv-moments {
+  list-style: none;
+  margin: calc(20 * var(--u)) 0 0;
+  padding: calc(17 * var(--u)) 0 0;
+  border-top: 1px solid var(--rule);
+}
+
+.rv-moment {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: calc(16 * var(--u));
+  align-items: center;
+  min-height: calc(68 * var(--u));
+}
+
+.rv-moment-open {
+  display: grid;
+  grid-template-columns: calc(106 * var(--u)) calc(87 * var(--u)) minmax(0, 1fr);
+  align-items: baseline;
+  text-align: left;
+  font-size: calc(25 * var(--u));
+  padding: calc(12 * var(--u)) 0;
+}
+
+.rv-moment-label,
+.rv-moment-detail {
+  color: var(--muted);
+  transition: color 150ms;
+}
+
+.rv-moment-value {
+  font-weight: 500;
+}
+
+.rv-moment-open:hover .rv-moment-label,
+.rv-moment-open:hover .rv-moment-detail {
+  color: var(--ink);
+}
+
+.rv-moment-lines {
+  grid-column: 1 / -1;
+  padding-bottom: calc(14 * var(--u));
+}
+
+.rv-foot {
+  margin-top: calc(14 * var(--u));
+  padding-top: calc(28 * var(--u));
+  border-top: 1px solid var(--rule);
+}
+
+.rv-foot .pill {
+  width: 100%;
+}
+
+/* yours / best lines: one table across rows (subgrid), moves starting under the moment values */
+
+.rv-lines {
+  display: grid;
+  grid-template-columns: calc(92 * var(--u)) minmax(0, max-content) auto;
+  column-gap: calc(14 * var(--u));
+  justify-content: start;
+  align-content: start;
+}
+
+.rv-line {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  min-height: calc(50 * var(--u));
+}
+
+.rv-line-label {
+  font-size: calc(22 * var(--u));
+  color: var(--muted);
+}
+
+.rv-line-moves {
+  font-family: var(--mono);
+  font-size: calc(19 * var(--u));
+  word-spacing: 0.12em;
+  line-height: 1.5;
+}
+
+.rv-line-end {
+  display: flex;
+  align-items: center;
+  gap: calc(8 * var(--u));
+}
+
+.rv-line-tag {
+  font-size: calc(16 * var(--u));
+  color: var(--muted);
+}
+
+/* His own line is the reference; the best lines are what to look at. */
+.rv-line.yours .rv-line-moves {
+  color: var(--muted);
+}
+
+.rv-tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(4 * var(--u));
+  margin-left: calc(-5 * var(--u));
+  word-spacing: normal;
+}
+
+.rv-token {
+  font-family: var(--mono);
+  font-size: calc(20 * var(--u));
+  line-height: 1.5;
+  padding: 0 calc(5 * var(--u));
+  border-radius: calc(7 * var(--u));
+  transition:
+    background 120ms,
+    color 120ms;
+}
+
+.rv-token:hover {
+  background: var(--sidebar);
+}
+
+.rv-token.rotation {
+  font-style: italic;
+  color: var(--muted);
+}
+
+.rv-token.future {
+  color: var(--faint);
+}
+
+.rv-token.current {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* stepper */
+
+.rv-stepper-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(16 * var(--u));
+  margin-top: calc(14 * var(--u));
+}
+
+.rv-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(6 * var(--u)) calc(14 * var(--u));
+  font-size: calc(20 * var(--u));
+}
+
+.rv-tabs button {
+  color: var(--muted);
+  padding: calc(6 * var(--u)) 0;
+  border-bottom: calc(3 * var(--u)) solid transparent;
+  transition: color 150ms;
+}
+
+.rv-tabs button:hover {
+  color: var(--ink);
+}
+
+.rv-tabs button.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.rv-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: calc(28 * var(--u));
+  margin: calc(56 * var(--u)) 0 calc(20 * var(--u));
+}
+
+.rv-head .rv-dot {
+  align-self: center;
+  margin-right: calc(-8 * var(--u));
+}
+
+.rv-head-label {
+  font-size: calc(48 * var(--u));
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.rv-head-case {
+  margin-left: calc(14 * var(--u));
+  font-size: calc(26 * var(--u));
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+.rv-head-moves {
+  font-size: calc(30 * var(--u));
+  font-weight: 500;
+}
+
+.rv-head-time {
+  font-size: calc(30 * var(--u));
+  color: var(--muted);
+}
+
+.rv-head-pause {
+  font-size: calc(22 * var(--u));
+  color: var(--muted);
+}
+
+/* Room for his line and three best lines, so the controls stay put from stage to stage. */
+.rv-stepper .rv-lines {
+  min-height: calc(230 * var(--u));
+}
+
+.rv-nav {
+  display: flex;
+  gap: calc(12 * var(--u));
+  margin-top: calc(28 * var(--u));
+}

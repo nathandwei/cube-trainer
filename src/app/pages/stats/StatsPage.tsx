@@ -22,6 +22,7 @@ import {
 } from "./data";
 import { Histogram } from "./Histogram";
 import { useFullHistory, useNow } from "./hooks";
+import { PART_LABEL } from "./labels";
 import { setRange, useStatsPrefs, type Range, type XAxis } from "./prefs";
 import { RatingChart } from "./RatingChart";
 import { niceExtent } from "./scale";
@@ -30,7 +31,7 @@ import { clampView, convertView, extentOf, isFull, minSpan, windowFor, type View
 import "./stats.css";
 
 const FIGURES: readonly { key: keyof Bests; label: string; size: number }[] = [
-  { key: "single", label: "single", size: 1 },
+  { key: "single", label: "Single", size: 1 },
   { key: "ao5", label: "ao5", size: 5 },
   { key: "ao12", label: "ao12", size: 12 },
   { key: "ao100", label: "ao100", size: 100 },
@@ -47,17 +48,16 @@ const RATING_TICKS = 2;
  * A zoom belongs to the axis, range and solve set it was made on; switching axis converts it, the rest reset it.
  * `count` is how many solves were charted then: older pages arriving renumber every solve, and the window follows.
  */
-type Zoom = { view: View; x: XAxis; range: Range; virtual: boolean; count: number };
+type Zoom = { view: View; x: XAxis; range: Range; count: number };
 
 export function StatsPage() {
   const solves = useFullHistory();
   const prefs = useStatsPrefs();
   const now = useNow();
-  const { x, range, virtual, lines, splits } = prefs;
+  const { x, range, lines, splits } = prefs;
   const parts = useMemo(() => PARTS.filter((part) => splits[part]), [splits]);
 
-  const charted = useMemo(() => chartSolves(solves, virtual), [solves, virtual]);
-  const real = useMemo(() => (virtual ? chartSolves(solves, false) : charted), [solves, virtual, charted]);
+  const charted = useMemo(() => chartSolves(solves), [solves]);
   const series = useMemo(() => trend(charted, parts), [charted, parts]);
   const best = useMemo(() => bests(charted.map((s) => s.result)), [charted]);
   const start = rangeStart(range, now);
@@ -67,18 +67,18 @@ export function StatsPage() {
 
   const [zoom, setZoom] = useState<Zoom | null>(null);
   const view = useMemo((): View => {
-    if (!zoom || zoom.range !== range || zoom.virtual !== virtual) return extent;
+    if (!zoom || zoom.range !== range) return extent;
     const shift = zoom.x === "solve" ? charted.length - zoom.count : 0;
     const made: View = [zoom.view[0] + shift, zoom.view[1] + shift];
     const converted = zoom.x === x ? made : convertView(made, zoom.x, charted);
     return converted ? clampView(converted, extent, minSpan(x)) : extent;
-  }, [zoom, range, virtual, x, extent, charted]);
+  }, [zoom, range, x, extent, charted]);
   const zoomed = !isFull(view, extent);
 
   const onView = useCallback(
     (next: View | null) =>
-      setZoom(next === null || isFull(next, extent) ? null : { view: next, x, range, virtual, count: charted.length }),
-    [extent, x, range, virtual, charted.length],
+      setZoom(next === null || isFull(next, extent) ? null : { view: next, x, range, count: charted.length }),
+    [extent, x, range, charted.length],
   );
 
   const [hover, setHover] = useState<{ x: number; axis: XAxis } | null>(null);
@@ -91,9 +91,9 @@ export function StatsPage() {
     (first: ChartSolve, last: ChartSolve) => {
       const target = first.t < start ? "all" : range;
       if (target !== range) setRange(target);
-      setZoom({ view: windowFor(first, last, x), x, range: target, virtual, count: charted.length });
+      setZoom({ view: windowFor(first, last, x), x, range: target, count: charted.length });
     },
-    [start, range, x, virtual, charted.length],
+    [start, range, x, charted.length],
   );
 
   function focusBest(key: keyof Bests, size: number) {
@@ -139,11 +139,10 @@ export function StatsPage() {
     return firstVisible && lastVisible ? [firstVisible.t, lastVisible.t] : null;
   }, [zoomed, x, view, firstVisible, lastVisible]);
 
-  // Ratings come from real solves only. On the real-solve page they share the main chart's x axis, window and
-  // crosshair; while virtual solves are shown they keep their own axis instead.
+  // The rating charts share the main chart's x axis, window and crosshair.
   const steps = useMemo(() => ratingHistory(solves), [solves]);
   const ratingCharts = useMemo(() => {
-    const placed = new Map(real.map((s) => [s.id, s]));
+    const placed = new Map(charted.map((s) => [s.id, s]));
     return PARTS.map((part): { part: Part; points: PlacedRating[] } => ({
       part,
       points: ratingSeries(steps, part).flatMap((p) => {
@@ -151,18 +150,14 @@ export function StatsPage() {
         return solve ? [{ x: x === "solve" ? solve.n : solve.t, rating: p.rating, low: p.low, high: p.high }] : [];
       }),
     }));
-  }, [steps, real, x]);
-  const ratingDomain = useMemo(
-    () => (virtual ? extentOf(real.filter((s) => s.t >= start), x, now) : view),
-    [virtual, real, start, x, now, view],
-  );
+  }, [steps, charted, x]);
   const ratingAxis = useMemo(() => {
-    const found = ratingRange(ratingCharts.map((c) => c.points), ratingDomain);
+    const found = ratingRange(ratingCharts.map((c) => c.points), view);
     if (!found) return niceExtent(1000, 2000, RATING_TICKS);
     const [low, high] = found;
     const pad = Math.max(10, (high - low) * 0.08);
     return niceExtent(low - pad, high + pad, RATING_TICKS);
-  }, [ratingCharts, ratingDomain]);
+  }, [ratingCharts, view]);
 
   return (
     <div className="stats">
@@ -191,12 +186,12 @@ export function StatsPage() {
         {ratingCharts.map(({ part, points }) => (
           <RatingChart
             key={part}
-            label={part}
+            label={PART_LABEL[part]}
             points={points}
-            domain={ratingDomain}
+            domain={view}
             axis={ratingAxis}
-            hoverX={virtual ? null : hoverX}
-            onHover={virtual ? undefined : onHover}
+            hoverX={hoverX}
+            onHover={onHover}
           />
         ))}
         <div className="stats-side">

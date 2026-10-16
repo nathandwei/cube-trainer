@@ -39,22 +39,13 @@ describe("partTimes", () => {
 describe("computeRatings", () => {
   const typical15 = [stage("cross", 15_000 * 0.135), stage("pair", 15_000 * 0.52), stage("ll", 15_000 * 0.345)];
 
-  it.each(["virtual", "demo"] as const)("ignores %s solves", (source) => {
+  it.each(["virtual", "demo", "keyboard"] as const)("ignores %s solves", (source) => {
     expect(computeRatings([solve("a", typical15, source)])).toEqual({ cross: null, f2l: null, ll: null });
   });
 
-  it("moves every part equally for a timer-only solve", () => {
-    const timerOnly: SolveRecord = { id: "k", scramble: "", moves: [], totalMs: 15_000, penalty: "none", createdAt: 0, source: "keyboard" };
-    const ratings = computeRatings([timerOnly]);
-    expect(Math.round(ratings.cross!.rating)).toBe(1658);
-    expect(ratings.f2l!.rating).toBe(ratings.cross!.rating);
-    expect(ratings.ll!.rating).toBe(ratings.cross!.rating);
-  });
-
-  it("counts a +2 in a timer-only solve and skips a DNF", () => {
-    const plusTwo: SolveRecord = { id: "p", scramble: "", moves: [], totalMs: 13_000, penalty: "+2", createdAt: 0, source: "keyboard" };
-    const dnf: SolveRecord = { ...plusTwo, id: "d", penalty: "dnf" };
-    expect(Math.round(computeRatings([dnf, plusTwo]).f2l!.rating)).toBe(1658);
+  it("skips a DNF", () => {
+    const dnf: SolveRecord = { ...solve("d", typical15), penalty: "dnf" };
+    expect(computeRatings([dnf])).toEqual({ cross: null, f2l: null, ll: null });
   });
 
   it("starts at the first solve's performance", () => {

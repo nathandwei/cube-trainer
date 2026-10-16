@@ -4,12 +4,12 @@ import { PARTS } from "@/app/lib/ratings";
 import { useSolves } from "@/app/lib/store";
 import { showTime } from "./chart";
 import { isCharted } from "./data";
+import { LINE_LABEL, PART_LABEL, RANGE_LABEL, X_AXIS_LABEL } from "./labels";
 import { LineKey } from "./LineKey";
 import {
   LINES,
   RANGES,
   setRange,
-  setVirtual,
   setXAxis,
   toggleLine,
   toggleSplit,
@@ -18,12 +18,21 @@ import {
 } from "./prefs";
 import "./stats.css";
 
-function Segmented<T extends string>({ label, options, value, onChange }: { label: string; options: readonly T[]; value: T; onChange: (value: T) => void }) {
+type SegmentedProps<T extends string> = {
+  label: string;
+  options: readonly T[];
+  labels: Readonly<Record<T, string>>;
+  value: T;
+  onChange: (value: T) => void;
+};
+
+/** The shared segmented switch (`.switch`), stretched to the sidebar's width. */
+function Segmented<T extends string>({ label, options, labels, value, onChange }: SegmentedProps<T>) {
   return (
-    <div className="stats-seg" role="radiogroup" aria-label={label}>
+    <div className="switch" role="radiogroup" aria-label={label}>
       {options.map((option) => (
-        <button key={option} role="radio" aria-checked={option === value} onClick={() => onChange(option)}>
-          {option}
+        <button key={option} role="radio" aria-checked={option === value} className={option === value ? "on" : ""} onClick={() => onChange(option)}>
+          {labels[option]}
         </button>
       ))}
     </div>
@@ -48,27 +57,24 @@ function Toggle({ label, on, onToggle, children }: { label: string; on: boolean;
 export function StatsSidebar() {
   const prefs = useStatsPrefs();
   const solves = useSolves();
-  const results = solves.filter((s) => isCharted(s, prefs.virtual)).map(resultMs);
+  const results = solves.filter((s) => isCharted(s)).map(resultMs);
   return (
     <div className="stats-controls">
-      <div className="stats-group">
-        <Segmented label="x axis" options={X_AXES} value={prefs.x} onChange={setXAxis} />
-        <Segmented label="range" options={RANGES} value={prefs.range} onChange={setRange} />
+      <div className="stats-group switches">
+        <Segmented label="X axis" options={X_AXES} labels={X_AXIS_LABEL} value={prefs.x} onChange={setXAxis} />
+        <Segmented label="Range" options={RANGES} labels={RANGE_LABEL} value={prefs.range} onChange={setRange} />
       </div>
-      <div className="stats-group toggles" role="group" aria-label="lines">
+      <div className="stats-group" role="group" aria-label="Lines">
         {LINES.map((line) => (
-          <Toggle key={line} label={line} on={prefs.lines[line]} onToggle={() => toggleLine(line)}>
+          <Toggle key={line} label={LINE_LABEL[line]} on={prefs.lines[line]} onToggle={() => toggleLine(line)}>
             <LineKey line={line} />
           </Toggle>
         ))}
       </div>
-      <div className="stats-group toggles" role="group" aria-label="splits">
+      <div className="stats-group" role="group" aria-label="Splits">
         {PARTS.map((part) => (
-          <Toggle key={part} label={part} on={prefs.splits[part]} onToggle={() => toggleSplit(part)} />
+          <Toggle key={part} label={PART_LABEL[part]} on={prefs.splits[part]} onToggle={() => toggleSplit(part)} />
         ))}
-      </div>
-      <div className="stats-group toggles">
-        <Toggle label="virtual" on={prefs.virtual} onToggle={() => setVirtual(!prefs.virtual)} />
       </div>
       <dl className="averages">
         <dt>ao5</dt>

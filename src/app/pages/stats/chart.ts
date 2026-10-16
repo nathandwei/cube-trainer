@@ -1,7 +1,8 @@
 import { formatMs } from "@/app/lib/format";
 
 /** The main chart's plot margins, shared by the overview strip so the two x axes line up exactly. */
-export const MARGIN = { left: 44, right: 14, top: 10, bottom: 28 };
+// Wide enough on the left for "20.0" in the axis type at its largest (15u at 1.25px per u).
+export const MARGIN = { left: 56, right: 14, top: 10, bottom: 32 };
 
 export function showTime(ms: number | null | undefined): string {
   if (ms == null) return "–";

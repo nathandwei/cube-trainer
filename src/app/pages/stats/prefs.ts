@@ -23,8 +23,6 @@ const prefsSchema = z.object({
   splits: z
     .object({ cross: z.boolean().catch(false), f2l: z.boolean().catch(false), ll: z.boolean().catch(false) })
     .catch({ cross: false, f2l: false, ll: false }),
-  /** Virtual-cube solves are keyboard turning, not solve times: shown only on their own, never mixed in. */
-  virtual: z.boolean().catch(false),
 });
 
 export type StatsPrefs = z.infer<typeof prefsSchema>;
@@ -100,8 +98,4 @@ export function toggleLine(line: Line): void {
 
 export function toggleSplit(part: Part): void {
   update((p) => ({ ...p, splits: { ...p.splits, [part]: !p.splits[part] } }));
-}
-
-export function setVirtual(virtual: boolean): void {
-  update((p) => ({ ...p, virtual }));
 }

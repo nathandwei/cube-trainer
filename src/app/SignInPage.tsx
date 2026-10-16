@@ -102,14 +102,14 @@ export function SignInPage() {
     <main className="signin">
       <div className="signin-stack">
         <CubeMark />
-        <h1 className="signin-word">cube</h1>
+        <h1 className="signin-word">Cube</h1>
         <button type="button" className="signin-google" onClick={signIn}>
           <GoogleG />
           <span>Sign in with Google</span>
         </button>
         {failed && (
           <p className="signin-failed" role="alert">
-            Sign-in didn't finish. Try again.
+            Sign-in failed
           </p>
         )}
       </div>

@@ -114,15 +114,11 @@ describe("chartSolves", () => {
     record("k", 14_000, { createdAt: 1 }),
   ];
 
-  it("keeps real solves oldest first, numbered, with penalties applied", () => {
-    expect(chartSolves(solves, false).map((s) => [s.id, s.n, s.result])).toEqual([
+  it("keeps real-cube solves only (no test or virtual), oldest first, numbered, with penalties applied", () => {
+    expect(chartSolves(solves).map((s) => [s.id, s.n, s.result])).toEqual([
       ["k", 0, 14_000],
       ["p", 1, 17_000],
     ]);
-  });
-
-  it("keeps virtual solves on their own", () => {
-    expect(chartSolves(solves, true).map((s) => s.id)).toEqual(["v"]);
   });
 });
 
@@ -164,7 +160,6 @@ describe("trend", () => {
         record("b", 14_000, { createdAt: 2 }),
         analysed("a", [stage("cross", 2500), stage("pair", 7000), stage("ll", 6000)], { createdAt: 1 }),
       ],
-      false,
     );
     const crosses = trend(solves, ["cross"]);
     expect(crosses.points.map((p) => [p.n, p.value])).toEqual([

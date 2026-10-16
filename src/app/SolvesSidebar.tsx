@@ -1,4 +1,6 @@
+import { Trash2 } from "lucide-react";
 import { averageOf, resultMs } from "@/app/lib/averages";
+import { isCharted } from "@/app/pages/stats/data";
 import { formatMs } from "@/app/lib/format";
 import { navigate } from "@/app/lib/router";
 import { deleteSolve } from "@/app/lib/store";
@@ -19,8 +21,8 @@ const LISTED = 200;
 
 /** The timer's sidebar: recent solves (pick one to see it on the timer), then the averages. */
 export function SolvesSidebar({ solves, selectedId }: { solves: readonly SolveRecord[]; selectedId?: string }) {
-  // Test solves are computer-made, so they never count toward your averages.
-  const results = solves.filter((s) => s.source !== "demo").map(resultMs);
+  // Same solves as the stats page: test solves and old virtual-cube solves never count toward your averages.
+  const results = solves.filter(isCharted).map(resultMs);
   return (
     <>
       <ul className="solves">
@@ -33,8 +35,8 @@ export function SolvesSidebar({ solves, selectedId }: { solves: readonly SolveRe
               <span className="dot" />
               {label(solve)}
             </button>
-            <button className="delete" aria-label="delete solve" onClick={() => deleteSolve(solve.id)}>
-              ×
+            <button className="delete" aria-label="Delete solve" onClick={() => deleteSolve(solve.id)}>
+              <Trash2 strokeWidth={1.75} aria-hidden="true" />
             </button>
           </li>
         ))}

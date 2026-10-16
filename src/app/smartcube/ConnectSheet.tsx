@@ -1,4 +1,6 @@
+import { Check, Copy, Unplug } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { IconButton } from "@/app/components/IconButton";
 import { BRAVE_FLAG, MAC_HINT_COMMAND, checkBluetooth, looksLikeBrave, type BluetoothSupport } from "./browser";
 import { shortCubeName, smartCube, useSmartCube } from "./connection";
 import { CubeNet } from "./CubeNet";
@@ -46,7 +48,7 @@ export function ConnectSheet({ onClose }: Props) {
     if (connection.status === "need-mac" && connection.macRequest) return <MacStep request={connection.macRequest} />;
     if (connection.status === "connecting" || connection.status === "reconnecting") return <Working text={connection.progress} />;
     if (connection.status === "lost") return <Lost name={connection.deviceName} error={connection.error} />;
-    if (!support) return <Working text="Checking this browser…" />;
+    if (!support) return <Working text="Checking…" />;
     if (support.kind !== "ok") return <Unsupported support={support} onRecheck={recheck} />;
     return <Choose error={connection.failure === "disabled" ? null : connection.error} />;
   }
@@ -61,7 +63,7 @@ export function ConnectSheet({ onClose }: Props) {
 
   return (
     <div className="cube-sheet-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="cube-sheet" role="dialog" aria-modal="true" aria-label="smart cube">
+      <section className="cube-sheet" role="dialog" aria-modal="true" aria-label="Smart cube">
         {disabled ? <Unsupported support={disabled} onRecheck={recheck} /> : body()}
       </section>
     </div>
@@ -75,8 +77,8 @@ function Working({ text }: { text: string | null }) {
       <p className="cube-progress" aria-live="polite">
         {text ?? "Connecting…"}
       </p>
-      <button className="link" onClick={() => void smartCube.disconnect()}>
-        cancel
+      <button className="pill" onClick={() => void smartCube.disconnect()}>
+        Cancel
       </button>
     </div>
   );
@@ -86,18 +88,20 @@ function Choose({ error }: { error: string | null }) {
   return (
     <div className="cube-step center">
       <CubeArt />
-      <p>Twist a face to wake the cube, then pick it in the list.</p>
+      <p>Twist the cube to wake it</p>
       {error && (
         <p className="cube-error" role="alert">
           {error}
         </p>
       )}
-      <button className="pill primary wide" onClick={() => void smartCube.connect()}>
-        connect cube
+      <button className="pill primary" onClick={() => void smartCube.connect()}>
+        Connect
       </button>
     </div>
   );
 }
+
+const BROWSER_NAME = { safari: "Safari", firefox: "Firefox", other: "This browser" } as const;
 
 function Unsupported({ support, onRecheck }: { support: BluetoothSupport; onRecheck: () => void }) {
   switch (support.kind) {
@@ -106,9 +110,9 @@ function Unsupported({ support, onRecheck }: { support: BluetoothSupport; onRech
         <div className="cube-step center">
           <CubeArt />
           <Copyable text={BRAVE_FLAG} />
-          <p className="cube-muted">Brave ships Bluetooth off. Open the flag, set it to Enabled, then relaunch Brave.</p>
-          <button className="pill primary wide" onClick={onRecheck}>
-            relaunched? check again
+          <p className="cube-muted">Set it to Enabled, then relaunch Brave</p>
+          <button className="pill primary" onClick={onRecheck}>
+            Retry
           </button>
         </div>
       );
@@ -116,20 +120,18 @@ function Unsupported({ support, onRecheck }: { support: BluetoothSupport; onRech
       return (
         <div className="cube-step center">
           <CubeArt />
-          <p>
-            {support.browser === "safari" ? "Safari" : support.browser === "firefox" ? "Firefox" : "This browser"} can't talk to
-            Bluetooth cubes. Use Chrome (or Brave with its Bluetooth flag on).
-          </p>
+          <p>Use Chrome or Brave</p>
+          <p className="cube-muted">{BROWSER_NAME[support.browser]} has no Bluetooth</p>
         </div>
       );
     case "off":
       return (
         <div className="cube-step center">
           <CubeArt />
-          <p>Bluetooth is off, or the browser isn't allowed to use it.</p>
-          <p className="cube-muted">Turn Bluetooth on, and allow the browser in System Settings › Privacy &amp; Security › Bluetooth.</p>
-          <button className="pill primary wide" onClick={onRecheck}>
-            check again
+          <p>Turn on Bluetooth</p>
+          <p className="cube-muted">System Settings › Privacy &amp; Security › Bluetooth</p>
+          <button className="pill primary" onClick={onRecheck}>
+            Retry
           </button>
         </div>
       );
@@ -137,17 +139,17 @@ function Unsupported({ support, onRecheck }: { support: BluetoothSupport; onRech
       return (
         <div className="cube-step center">
           <CubeArt />
-          <p>Bluetooth only works on https (or localhost).</p>
+          <p>Bluetooth needs https</p>
         </div>
       );
     case "blocked":
       return (
         <div className="cube-step center">
           <CubeArt />
-          <p>Bluetooth is switched off in this browser.</p>
+          <p>Bluetooth is off in this browser</p>
           {support.message && <p className="cube-muted">{support.message}</p>}
-          <button className="pill primary wide" onClick={onRecheck}>
-            check again
+          <button className="pill primary" onClick={onRecheck}>
+            Retry
           </button>
         </div>
       );
@@ -169,10 +171,7 @@ function MacStep({ request }: { request: { deviceName: string; rejected: boolean
 
   return (
     <form className="cube-step" onSubmit={submit}>
-      <h2>{request.deviceName}'s address</h2>
-      <p className="cube-muted">
-        Chrome can't read a GAN cube's Bluetooth address by itself. Type it once; it is remembered for this cube.
-      </p>
+      <h2>{shortCubeName(request.deviceName)}</h2>
       <label className="cube-field">
         <span>MAC address</span>
         <input
@@ -187,19 +186,19 @@ function MacStep({ request }: { request: { deviceName: string; rejected: boolean
       </label>
       {(invalid || request.rejected) && (
         <p className="cube-error" role="alert">
-          {invalid ? "That isn't a MAC address: six pairs like AB:12:34:56:78:9A." : "The cube didn't answer with that address. Check it and try again."}
+          {invalid ? "Six pairs, like AB:12:34:56:78:9A" : "No answer at that address"}
         </p>
       )}
       <div className="cube-hint">
-        <p className="cube-muted">On the Mac, run this in Terminal and find {request.deviceName}'s Address:</p>
+        <p className="cube-muted">In Terminal, find {request.deviceName}'s Address</p>
         <Copyable text={MAC_HINT_COMMAND} />
       </div>
-      <div className="cube-actions">
-        <button type="button" className="pill outline" onClick={() => smartCube.cancelMac()}>
-          cancel
+      <div className="cube-row">
+        <button type="button" className="pill" onClick={() => smartCube.cancelMac()}>
+          Cancel
         </button>
         <button type="submit" className="pill primary">
-          connect
+          Connect
         </button>
       </div>
     </form>
@@ -211,7 +210,7 @@ function Connected({ onDone }: { onDone: () => void }) {
   const [note, setNote] = useState<string | null>(null);
 
   function resetOrientation() {
-    setNote(smartCube.resetOrientation() ? "Saved this grip as white down, green front." : "No gyro reading yet.");
+    setNote(smartCube.resetOrientation() ? "Saved: white down, green front" : "No gyro reading yet");
   }
 
   return (
@@ -221,28 +220,23 @@ function Connected({ onDone }: { onDone: () => void }) {
           <span className="dot live" />
           {shortCubeName(connection.deviceName ?? "cube")}
         </span>
-        {connection.battery !== null && <Battery level={connection.battery} />}
+        <span className="cube-head-end">
+          {connection.battery !== null && <Battery level={connection.battery} />}
+          <IconButton icon={Unplug} label="Disconnect" size="sm" onClick={() => void smartCube.disconnect()} />
+        </span>
       </header>
       <CubeNet state={connection.cube} />
-      <div className="cube-actions">
-        <button className="pill outline" onClick={() => void smartCube.markSolved()}>
-          mark solved
+      <div className="cube-row">
+        <button className="pill" data-tip="Mark solved" onClick={() => void smartCube.markSolved()}>
+          Solved
         </button>
-        <button
-          className="pill outline"
-          onClick={resetOrientation}
-          disabled={!connection.hasGyro}
-          title="Hold the cube white down, green front, then press"
-        >
-          reset orientation
+        <button className="pill" data-tip="Hold white down, green front" onClick={resetOrientation} disabled={!connection.hasGyro}>
+          Reorient
         </button>
       </div>
-      {note && <p className="cube-muted center-text">{note}</p>}
-      <button className="pill primary wide" onClick={onDone}>
-        done
-      </button>
-      <button className="link" onClick={() => void smartCube.disconnect()}>
-        disconnect
+      {note && <p className="cube-muted cube-note">{note}</p>}
+      <button className="pill primary cube-done" onClick={onDone}>
+        Done
       </button>
     </div>
   );
@@ -252,14 +246,16 @@ function Lost({ name, error }: { name: string | null; error: string | null }) {
   return (
     <div className="cube-step center">
       <CubeArt />
-      <p>Lost {name ? shortCubeName(name) : "the cube"}. Is it on and nearby?</p>
+      <p>Lost {name ? shortCubeName(name) : "the cube"}</p>
       {error && <p className="cube-muted">{error}</p>}
-      <button className="pill primary wide" onClick={() => void smartCube.reconnect()}>
-        reconnect
-      </button>
-      <button className="link" onClick={() => void smartCube.disconnect()}>
-        forget it
-      </button>
+      <div className="cube-row">
+        <button className="pill" onClick={() => void smartCube.disconnect()}>
+          Forget
+        </button>
+        <button className="pill primary" onClick={() => void smartCube.reconnect()}>
+          Reconnect
+        </button>
+      </div>
     </div>
   );
 }
@@ -278,25 +274,14 @@ function Copyable({ text }: { text: string }) {
   return (
     <div className="cube-copy">
       <code>{text}</code>
-      <button type="button" className="copy" onClick={() => void copy()} aria-label={`copy ${text}`} title={copied ? "copied" : "copy"}>
-        {copied ? (
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path d="M4 10.5l4 4 8-9" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        ) : (
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <rect x="7" y="7" width="9" height="10" rx="1.8" fill="none" stroke="currentColor" strokeWidth="1.6" />
-            <path d="M13 4.5V4.3A1.3 1.3 0 0 0 11.7 3H5.3A1.3 1.3 0 0 0 4 4.3v8.4A1.3 1.3 0 0 0 5.3 14H5.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
-          </svg>
-        )}
-      </button>
+      <IconButton icon={copied ? Check : Copy} label={copied ? "Copied" : "Copy"} size="sm" onClick={() => void copy()} />
     </div>
   );
 }
 
 function Battery({ level }: { level: number }) {
   return (
-    <span className="cube-battery" aria-label={`battery ${level}%`}>
+    <span className="cube-battery" aria-label={`Battery ${level}%`}>
       <svg viewBox="0 0 30 14" aria-hidden="true">
         <rect x="0.75" y="0.75" width="25.5" height="12.5" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
         <rect x="27.5" y="4.5" width="2" height="5" rx="1" fill="currentColor" />

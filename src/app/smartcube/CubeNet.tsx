@@ -17,7 +17,7 @@ const ORDER = ["U", "R", "F", "D", "L", "B"];
 export function CubeNet({ state }: { state: CubeState | null }) {
   const facelets = solverFacelets(state ?? SOLVED);
   return (
-    <div className={`cube-net ${state ? "" : "unknown"}`} role="img" aria-label={state ? "cube state" : "cube state unknown"}>
+    <div className={`cube-net ${state ? "" : "unknown"}`} role="img" aria-label={state ? "Cube state" : "Cube state unknown"}>
       {ORDER.map((face, f) => {
         const place = PLACES[face]!;
         return (

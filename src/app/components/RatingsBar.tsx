@@ -1,7 +1,7 @@
 import { msForRating, PARTS, type Ratings } from "@/app/lib/ratings";
 import { formatSeconds } from "@/app/lib/format";
 
-const LABEL = { cross: "cross", f2l: "f2l", ll: "ll" } as const;
+const LABEL = { cross: "Cross", f2l: "F2L", ll: "LL" } as const;
 
 export function RatingsBar({ ratings }: { ratings: Ratings }) {
   return (
@@ -13,7 +13,7 @@ export function RatingsBar({ ratings }: { ratings: Ratings }) {
           <div
             key={part}
             className="rating"
-            title={r ? `as fast as a typical ${formatSeconds(msForRating(r.rating))} s solver` : undefined}
+            title={r ? `As fast as a typical ${formatSeconds(msForRating(r.rating))} s solver` : undefined}
           >
             <span className="label">{LABEL[part]}</span>
             <span className="value">

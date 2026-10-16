@@ -8,7 +8,6 @@ describe("parsePrefs", () => {
       range: "all",
       lines: { ao12: false, ao100: true, pb: true },
       splits: { cross: false, f2l: false, ll: false },
-      virtual: false,
     });
   });
 
@@ -18,8 +17,13 @@ describe("parsePrefs", () => {
     { name: "not an object", raw: "42", expected: DEFAULT_PREFS },
     {
       name: "saved choices",
-      raw: JSON.stringify({ x: "date", range: "7d", lines: { ao12: true, ao100: false, pb: true }, splits: { cross: true, f2l: false, ll: false }, virtual: true }),
-      expected: { x: "date", range: "7d", lines: { ao12: true, ao100: false, pb: true }, splits: { cross: true, f2l: false, ll: false }, virtual: true },
+      raw: JSON.stringify({ x: "date", range: "7d", lines: { ao12: true, ao100: false, pb: true }, splits: { cross: true, f2l: false, ll: false } }),
+      expected: { x: "date", range: "7d", lines: { ao12: true, ao100: false, pb: true }, splits: { cross: true, f2l: false, ll: false } },
+    },
+    {
+      name: "a retired choice is dropped",
+      raw: JSON.stringify({ x: "date", virtual: true }),
+      expected: { ...DEFAULT_PREFS, x: "date" },
     },
     {
       name: "one bad choice keeps the others",

@@ -1,0 +1,53 @@
+/* Settings: sizes in --u, measured on the approved mockup (concepts/round-8/18-settings.png). */
+
+.settings-anchors {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-anchors a {
+  display: flex;
+  align-items: center;
+  height: calc(48 * var(--u));
+  font-size: calc(22 * var(--u));
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 150ms;
+}
+
+.settings-anchors a:hover {
+  color: var(--ink);
+}
+
+.prefs {
+  max-width: calc(965 * var(--u));
+  display: flex;
+  flex-direction: column;
+}
+
+.prefs section {
+  scroll-margin-top: calc(40 * var(--u));
+}
+
+.prefs-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: calc(32 * var(--u));
+  min-height: calc(124 * var(--u));
+  border-bottom: 1px solid var(--rule);
+  font-size: calc(30 * var(--u));
+}
+
+.prefs-email {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Equal segments, so both switches are one width and their "Off" sits in one column. */
+.prefs .switch button {
+  min-width: calc(104 * var(--u));
+  justify-content: center;
+}

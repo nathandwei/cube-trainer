@@ -1,9 +1,11 @@
 /* ---------- stats page ---------- */
 
+/* Sizes in --u, measured on the approved mockup (concepts/round-8/07-stats.png, 08-stats-hover.png). */
+
 .stats {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: calc(36 * var(--u));
 }
 
 /* Dragging the charts should move the window, not select their labels. */
@@ -22,8 +24,8 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
-  padding: 2px 0 4px 32px;
+  gap: calc(6 * var(--u));
+  padding: calc(4 * var(--u)) 0 calc(4 * var(--u)) calc(48 * var(--u));
   border-left: 1px solid var(--rule);
   text-align: left;
 }
@@ -34,16 +36,17 @@
 }
 
 .stats-figure .label {
-  font-size: 15px;
+  font-size: calc(22 * var(--u));
+  line-height: 1.2;
   color: var(--muted);
   transition: color 150ms;
 }
 
 .stats-figure .num {
-  font-size: 42px;
+  font-size: calc(46 * var(--u));
   font-weight: 500;
   letter-spacing: -0.025em;
-  line-height: 1.12;
+  line-height: 1.1;
 }
 
 .stats-figure:not(:disabled):hover .label {
@@ -88,7 +91,7 @@
 
 .trend-grid text,
 .rating-chart text {
-  font-size: 11px;
+  font-size: calc(15 * var(--u));
   fill: var(--muted);
 }
 
@@ -175,15 +178,15 @@
   position: absolute;
   z-index: 2;
   pointer-events: none;
-  min-width: 140px;
-  padding: 10px 12px;
-  border-radius: 10px;
+  min-width: calc(160 * var(--u));
+  padding: calc(16 * var(--u)) calc(18 * var(--u));
+  border-radius: calc(14 * var(--u));
   border: 1px solid var(--rule);
   background: color-mix(in srgb, white 45%, var(--page));
-  font-size: 12px;
+  font-size: calc(16 * var(--u));
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: calc(8 * var(--u));
 }
 
 .trend-readout.off {
@@ -192,12 +195,12 @@
 
 .trend-readout .when {
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(14 * var(--u));
 }
 
 .trend-readout .value {
-  font-size: 20px;
-  font-weight: 600;
+  font-size: calc(26 * var(--u));
+  font-weight: 500;
   letter-spacing: -0.02em;
   line-height: 1.1;
   display: flex;
@@ -206,7 +209,7 @@
 }
 
 .trend-readout .metric {
-  font-size: 11px;
+  font-size: calc(14 * var(--u));
   font-weight: 400;
   letter-spacing: 0;
   color: var(--muted);
@@ -216,13 +219,13 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: calc(4 * var(--u));
 }
 
 .trend-readout .row {
   display: flex;
   justify-content: space-between;
-  gap: 18px;
+  gap: calc(20 * var(--u));
 }
 
 .trend-readout dt {
@@ -238,34 +241,35 @@
 }
 
 .trend-readout .splits + .series,
-.trend-readout .value + .series {
+.trend-readout .value + .series,
+.trend-readout .open {
   border-top: 1px solid var(--rule);
-  padding-top: 6px;
+  padding-top: calc(8 * var(--u));
 }
 
 .trend-readout .open {
   color: var(--accent);
-  font-size: 11px;
+  font-size: calc(15 * var(--u));
   font-weight: 500;
 }
 
-.key {
+.line-key {
   flex: none;
   overflow: visible;
 }
 
-.key path {
+.line-key path {
   fill: none;
   stroke: var(--accent);
   stroke-width: 2;
 }
 
-.key-ao12 path {
+.line-key-ao12 path {
   stroke-width: 1.25;
   stroke-opacity: 0.55;
 }
 
-.key-pb path {
+.line-key-pb path {
   stroke: var(--ink);
   stroke-opacity: 0.35;
   stroke-width: 1.25;
@@ -275,7 +279,7 @@
 
 .overview {
   position: relative;
-  margin-top: 2px;
+  margin-top: calc(8 * var(--u));
 }
 
 .overview-base {
@@ -316,14 +320,14 @@
 .stats-lower {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
-  margin-top: 14px;
+  margin-top: calc(12 * var(--u));
 }
 
 .rating-chart {
   align-self: start;
   margin: 0;
   min-width: 0;
-  padding: 0 24px;
+  padding: 0 calc(32 * var(--u));
   border-left: 1px solid var(--rule);
 }
 
@@ -335,19 +339,21 @@
 .rating-chart figcaption {
   display: flex;
   flex-direction: column;
-  margin-bottom: 12px;
+  gap: calc(4 * var(--u));
+  margin-bottom: calc(20 * var(--u));
 }
 
 .rating-chart .label {
-  font-size: 15px;
+  font-size: calc(22 * var(--u));
+  line-height: 1.2;
   color: var(--muted);
 }
 
 .rating-chart .num {
-  font-size: 30px;
+  font-size: calc(36 * var(--u));
   font-weight: 500;
   letter-spacing: -0.02em;
-  line-height: 1.15;
+  line-height: 1.1;
 }
 
 .rating-plot {
@@ -380,8 +386,8 @@
 .stats-side {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding-left: 28px;
+  gap: calc(28 * var(--u));
+  padding-left: calc(32 * var(--u));
   border-left: 1px solid var(--rule);
 }
 
@@ -445,7 +451,7 @@
 }
 
 .calendar-month {
-  font-size: 10px;
+  font-size: 11px;
   fill: var(--muted);
 }
 
@@ -455,9 +461,10 @@
   transform: translate(-50%, -100%);
   white-space: nowrap;
   pointer-events: none;
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 9px;
+  border-radius: 7px;
   background: var(--ink);
   color: var(--page);
 }
@@ -475,15 +482,15 @@
 .histogram {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: calc(5 * var(--u));
 }
 
 .histogram-row {
   display: grid;
-  grid-template-columns: 36px 1fr;
+  grid-template-columns: calc(44 * var(--u)) 1fr;
   align-items: center;
-  height: 16px;
-  font-size: 12px;
+  height: calc(18 * var(--u));
+  font-size: calc(15 * var(--u));
 }
 
 .histogram-row .label {
@@ -498,7 +505,7 @@
 }
 
 .histogram-row .bar {
-  height: 12px;
+  height: calc(14 * var(--u));
   border-radius: 2px;
   background: color-mix(in srgb, var(--ink) 22%, var(--page));
   transition: background 150ms;
@@ -509,7 +516,7 @@
 }
 
 .histogram-row .count {
-  font-size: 11px;
+  font-size: calc(13 * var(--u));
   color: var(--muted);
 }
 
@@ -518,14 +525,14 @@
 @container (max-width: 980px) {
   .stats-lower {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    row-gap: 32px;
+    row-gap: calc(40 * var(--u));
   }
 
   .stats-side {
     grid-column: 1 / -1;
     flex-direction: row;
     flex-wrap: wrap;
-    gap: 40px;
+    gap: calc(48 * var(--u));
     padding-left: 0;
     border-left: 0;
   }
@@ -539,16 +546,12 @@
 @container (max-width: 640px) {
   .stats-figures {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    row-gap: 16px;
+    row-gap: calc(24 * var(--u));
   }
 
   .stats-figure:nth-child(3) {
     border-left: 0;
     padding-left: 0;
-  }
-
-  .stats-figure .num {
-    font-size: 32px;
   }
 
   .stats-lower {
@@ -569,14 +572,13 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: calc(12 * var(--u));
 }
 
 .stats-group {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding-top: 16px;
+  padding-top: calc(10 * var(--u));
   border-top: 1px solid var(--rule);
 }
 
@@ -585,43 +587,28 @@
   border-top: 0;
 }
 
-.stats-group.toggles {
-  gap: 4px;
+.stats-group.switches {
+  gap: calc(14 * var(--u));
+  padding-bottom: calc(4 * var(--u));
 }
 
-.stats-seg {
+/* The shared switch, full width; on the sidebar's oat its track is a step darker so the page-coloured segment reads. */
+.stats-controls .switch {
   display: flex;
-  padding: 3px;
-  border-radius: 999px;
-  background: var(--page);
-  font-size: 13px;
+  background: var(--rule);
 }
 
-.stats-seg button {
+.stats-controls .switch button {
   flex: 1;
-  padding: 6px 0;
-  border-radius: 999px;
-  color: var(--ink);
-  transition:
-    background 150ms,
-    color 150ms;
-}
-
-.stats-seg button:hover {
-  color: var(--accent);
-}
-
-.stats-seg button[aria-checked="true"] {
-  background: var(--accent);
-  color: var(--accent-ink);
+  justify-content: center;
 }
 
 .stats-toggle {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 0;
-  font-size: 14px;
+  height: calc(42 * var(--u));
+  font-size: calc(21 * var(--u));
   color: var(--muted);
   transition: color 150ms;
 }
@@ -633,14 +620,14 @@
 .stats-toggle .name {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: calc(12 * var(--u));
 }
 
 .stats-toggle .track {
   position: relative;
   flex: none;
-  width: 30px;
-  height: 17px;
+  width: calc(44 * var(--u));
+  height: calc(24 * var(--u));
   border-radius: 999px;
   background: var(--rule);
   transition: background 150ms;
@@ -648,10 +635,10 @@
 
 .stats-toggle .knob {
   position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 13px;
-  height: 13px;
+  top: calc(3 * var(--u));
+  left: calc(3 * var(--u));
+  width: calc(18 * var(--u));
+  height: calc(18 * var(--u));
   border-radius: 50%;
   background: var(--page);
   transition: transform 180ms var(--ease);
@@ -662,7 +649,7 @@
 }
 
 .stats-toggle[aria-checked="true"] .knob {
-  transform: translateX(13px);
+  transform: translateX(calc(20 * var(--u)));
 }
 
 .stats-toggle:hover .track {

@@ -19,19 +19,19 @@ export function splitsOf(solve: SolveRecord): Splits | null {
 }
 
 /**
- * Test solves are computer-made and never count; virtual-cube solves are keyboard turning, so they are charted
- * only on their own (`virtual`), never mixed with real solve times.
+ * A time on a real cube: smart-cube solves, and spacebar times from before the site went smart-cube-only. Test
+ * solves are computer-made and old virtual-cube solves were keyboard turning, so neither counts (as in ratings).
  */
-export function isCharted(solve: SolveRecord, virtual: boolean): boolean {
-  return solve.source !== "demo" && (solve.source === "virtual") === virtual;
+export function isCharted(solve: SolveRecord): boolean {
+  return solve.source !== "demo" && solve.source !== "virtual";
 }
 
 /** Oldest first. */
-export function chartSolves(solvesNewestFirst: readonly SolveRecord[], virtual: boolean): ChartSolve[] {
+export function chartSolves(solvesNewestFirst: readonly SolveRecord[]): ChartSolve[] {
   const out: ChartSolve[] = [];
   for (let i = solvesNewestFirst.length - 1; i >= 0; i--) {
     const solve = solvesNewestFirst[i];
-    if (!solve || !isCharted(solve, virtual)) continue;
+    if (!solve || !isCharted(solve)) continue;
     out.push({ id: solve.id, n: out.length, t: solve.createdAt, result: resultMs(solve), splits: splitsOf(solve) });
   }
   return out;

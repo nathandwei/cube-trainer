@@ -1,11 +1,16 @@
+import { LogOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { IconButton } from "@/app/components/IconButton";
 import { signOut, useAccount } from "@/app/lib/account";
 import { setSetting, useSettings } from "@/app/lib/settings";
 import { loadMoreSolves, useHasMoreSolves, useSolves } from "@/app/lib/store";
+import "./settings.css";
 
-function Segmented<T extends string>({ value, options, onChange }: { value: T; options: readonly T[]; onChange: (v: T) => void }) {
+type SegmentedProps<T extends string> = { label: string; value: T; options: readonly T[]; onChange: (v: T) => void };
+
+function Segmented<T extends string>({ label, value, options, onChange }: SegmentedProps<T>) {
   return (
-    <div className="switch" role="radiogroup">
+    <div className="switch" role="radiogroup" aria-label={label}>
       {options.map((option) => (
         <button key={option} role="radio" aria-checked={value === option} className={value === option ? "on" : ""} onClick={() => onChange(option)}>
           {option}
@@ -55,31 +60,44 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="settings">
+    <div className="prefs">
       <section id="timer">
-        <div className="row">
-          <span>inspection</span>
-          <Segmented value={settings.inspection ? "15 s" : "off"} options={["off", "15 s"] as const} onChange={(v) => setSetting("inspection", v === "15 s")} />
+        <div className="prefs-row">
+          <span>Inspection</span>
+          <Segmented
+            label="Inspection"
+            value={settings.inspection ? "15 s" : "Off"}
+            options={["Off", "15 s"] as const}
+            onChange={(v) => setSetting("inspection", v === "15 s")}
+          />
         </div>
-        <div className="row">
-          <span>hide time while solving</span>
-          <Segmented value={settings.hideTime ? "on" : "off"} options={["on", "off"] as const} onChange={(v) => setSetting("hideTime", v === "on")} />
+        <div className="prefs-row">
+          <span>Hide time while solving</span>
+          <Segmented
+            label="Hide time while solving"
+            value={settings.hideTime ? "On" : "Off"}
+            options={["Off", "On"] as const}
+            onChange={(v) => setSetting("hideTime", v === "On")}
+          />
         </div>
       </section>
       <section id="data">
-        <div className="row">
-          <span>solves</span>
-          <button className="pill" onClick={runExport} disabled={exporting}>
-            {failed ? "retry export" : "export"}
+        <div className="prefs-row">
+          <span>Solves</span>
+          <button className="pill primary" onClick={runExport} disabled={exporting}>
+            {failed ? "Retry" : "Export"}
           </button>
         </div>
       </section>
       <section id="account">
-        <div className="row">
-          <span>{account.status === "signed-in" ? account.account.email : ""}</span>
-          <button className="pill" onClick={() => void signOut().catch((error: unknown) => console.error("Sign out failed", error))}>
-            sign out
-          </button>
+        <div className="prefs-row">
+          <span className="prefs-email">{account.status === "signed-in" ? account.account.email : ""}</span>
+          <IconButton
+            icon={LogOut}
+            label="Sign out"
+            variant="soft"
+            onClick={() => void signOut().catch((error: unknown) => console.error("Sign out failed", error))}
+          />
         </div>
       </section>
     </div>

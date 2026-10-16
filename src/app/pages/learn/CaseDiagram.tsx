@@ -23,13 +23,23 @@ function colourFor(set: CaseDef["set"], color: Face, isEdge: boolean): string {
   return COLOR[color];
 }
 
+type Props = {
+  caseDef: CaseDef;
+  size?: number;
+  /** iso: top, front and right faces (the learn grid); top: the last layer from above (summaries). */
+  view?: "auto" | "iso" | "top";
+  /** A case not learned yet: only the cube's outline, like the empty cubes in the mockup's grid. */
+  ghost?: boolean;
+};
+
 /**
- * A small picture of a case, drawn from the engine's state: the last layer from above with its side stickers for
- * last-layer sets, or the top, front and right faces for F2L.
+ * A small picture of a case, drawn from the engine's state. By default the last layer from above with its side
+ * stickers for last-layer sets, and the top, front and right faces for F2L.
  */
-export function CaseDiagram({ caseDef, size = 64 }: { caseDef: CaseDef; size?: number }) {
+export function CaseDiagram({ caseDef, size = 64, view = "auto", ghost = false }: Props) {
   const stickers = useMemo(() => facelets(caseState(caseDef.id)), [caseDef.id]);
-  return caseDef.set === "F2L" ? <Iso stickers={stickers} size={size} /> : <TopView stickers={stickers} set={caseDef.set} size={size} />;
+  const iso = view === "iso" || (view === "auto" && caseDef.set === "F2L");
+  return iso ? <Iso stickers={stickers} set={caseDef.set} size={size} ghost={ghost} /> : <TopView stickers={stickers} set={caseDef.set} size={size} />;
 }
 
 function TopView({ stickers, set, size }: { stickers: Stickers; set: CaseDef["set"]; size: number }) {
@@ -75,20 +85,33 @@ function quad(points: readonly [number, number, number][]): string {
 }
 
 /** Top, front and right faces in isometric view; x runs right, y up, z towards the viewer. */
-function Iso({ stickers, size }: { stickers: Stickers; size: number }) {
+function Iso({ stickers, set, size, ghost }: { stickers: Stickers; set: CaseDef["set"]; size: number; ghost: boolean }) {
   const polys: { points: string; fill: string }[] = [];
+  // Only the top layer's side stickers matter for OLL and EO; the layers below are F2L, already solved.
+  const side = (face: "F" | "R", r: number, c: number) => {
+    const color = stickers[face][r * 3 + c] ?? face;
+    return r === 0 ? colourFor(set, color, c === 1) : set === "OLL" || set === "EO" ? MUTED : COLOR[color];
+  };
   for (let r = 0; r < 3; r++) {
     for (let c = 0; c < 3; c++) {
-      polys.push({ points: quad([[c, 3, r], [c + 1, 3, r], [c + 1, 3, r + 1], [c, 3, r + 1]]), fill: COLOR[stickers.U[r * 3 + c] ?? "U"] });
-      polys.push({ points: quad([[c, 3 - r, 3], [c + 1, 3 - r, 3], [c + 1, 2 - r, 3], [c, 2 - r, 3]]), fill: COLOR[stickers.F[r * 3 + c] ?? "F"] });
-      polys.push({ points: quad([[3, 3 - r, 3 - c], [3, 3 - r, 2 - c], [3, 2 - r, 2 - c], [3, 2 - r, 3 - c]]), fill: COLOR[stickers.R[r * 3 + c] ?? "R"] });
+      polys.push({ points: quad([[c, 3, r], [c + 1, 3, r], [c + 1, 3, r + 1], [c, 3, r + 1]]), fill: colourFor(set, stickers.U[r * 3 + c] ?? "U", EDGE_INDEX.has(r * 3 + c)) });
+      polys.push({ points: quad([[c, 3 - r, 3], [c + 1, 3 - r, 3], [c + 1, 2 - r, 3], [c, 2 - r, 3]]), fill: side("F", r, c) });
+      polys.push({ points: quad([[3, 3 - r, 3 - c], [3, 3 - r, 2 - c], [3, 2 - r, 2 - c], [3, 2 - r, 3 - c]]), fill: side("R", r, c) });
     }
   }
   const w = 3 * COS30 * 2;
   return (
-    <svg className="case-diagram" width={size} height={size} viewBox={`${-w / 2 - 0.2} ${-3.2} ${w + 0.4} ${6.4}`} aria-hidden="true">
+    <svg className={`case-diagram ${ghost ? "ghost" : ""}`} width={size} height={size} viewBox={`${-w / 2 - 0.2} ${-3.2} ${w + 0.4} ${6.4}`} aria-hidden="true">
       {polys.map((p, i) => (
-        <polygon key={i} points={p.points} fill={p.fill} stroke="#3a2e28" strokeOpacity={0.35} strokeWidth={0.06} strokeLinejoin="round" />
+        <polygon
+          key={i}
+          points={p.points}
+          fill={ghost ? "none" : p.fill}
+          stroke="#3a2e28"
+          strokeOpacity={ghost ? 0.22 : 0.55}
+          strokeWidth={ghost ? 0.05 : 0.08}
+          strokeLinejoin="round"
+        />
       ))}
     </svg>
   );

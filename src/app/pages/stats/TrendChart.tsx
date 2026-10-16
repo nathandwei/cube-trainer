@@ -4,6 +4,7 @@ import { clamp, crisp, MARGIN, showTime } from "./chart";
 import { cssColor, dotSprite, prepareCanvas, stamp } from "./canvas";
 import { firstAtOrAfter, lastAtOrBefore, nearestIndex, type Trend, type TrendPoint } from "./data";
 import { useBoxSize, useWidth } from "./hooks";
+import { LINE_LABEL, PART_LABEL, SPLIT_LABEL } from "./labels";
 import { LineKey } from "./LineKey";
 import { Overview } from "./Overview";
 import { linePath, stepPath } from "./paths";
@@ -32,8 +33,6 @@ export function xTicks(x: XAxis, [v0, v1]: View, plotWidth: number): Tick[] {
   const step = Math.max(1, niceStep(v1 - v0, count));
   return ticks(v0 + 1, v1 + 1, count, step).map((n) => ({ value: n - 1, label: String(n) }));
 }
-
-const SPLIT_LABEL: Record<Part, string> = { cross: "cross", f2l: "f2l", ll: "last layer" };
 
 type Props = {
   trend: Trend;
@@ -154,7 +153,7 @@ export function TrendChart({ trend, from, x, parts, lines, view, extent, onView,
   readoutLeft = clamp(readoutLeft, 0, Math.max(0, width - readoutSize.width));
   const readoutTop = clamp(anchorY - readoutSize.height / 2, 0, Math.max(0, HEIGHT - readoutSize.height));
   const when = x === "solve" ? (shown ? `#${shown.n + 1} · ${formatDay(shown.t)}` : "") : hovering ? formatMoment(shown?.t ?? hoverX) : "";
-  const metricLabel = parts.length === 0 ? "" : parts.join(" + ");
+  const metricLabel = parts.map((part) => PART_LABEL[part]).join(" + ");
 
   // ---------- interaction ----------
 
@@ -361,7 +360,7 @@ export function TrendChart({ trend, from, x, parts, lines, view, extent, onView,
             <dl className="splits">
               {parts.length > 0 && (
                 <div className="row">
-                  <dt>solve</dt>
+                  <dt>Solve</dt>
                   <dd>{showTime(shown.result)}</dd>
                 </div>
               )}
@@ -379,14 +378,14 @@ export function TrendChart({ trend, from, x, parts, lines, view, extent, onView,
                 <div key={s.key} className="row">
                   <dt>
                     <LineKey line={s.key} />
-                    {s.key}
+                    {LINE_LABEL[s.key]}
                   </dt>
                   <dd>{showTime(s.value === undefined || (s.key === "pb" && !Number.isFinite(s.value)) ? null : s.value)}</dd>
                 </div>
               ))}
             </dl>
           )}
-          {pickedPoint && <div className="open">open →</div>}
+          {pickedPoint && <div className="open">Review →</div>}
         </div>
       </div>
       <Overview

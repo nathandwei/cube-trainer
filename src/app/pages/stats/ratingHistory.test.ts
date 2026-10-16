@@ -25,8 +25,8 @@ describe("ratingHistory", () => {
     smart("a", 2200, 9000, 6000, 1),
   ];
 
-  it("keeps one step per rated solve, oldest first", () => {
-    expect(ratingHistory(newestFirst).map((s) => s.id)).toEqual(["a", "b", "e"]);
+  it("keeps one step per rated (smart-cube) solve, oldest first", () => {
+    expect(ratingHistory(newestFirst).map((s) => s.id)).toEqual(["a", "b"]);
   });
 
   it("ends where computeRatings ends", () => {

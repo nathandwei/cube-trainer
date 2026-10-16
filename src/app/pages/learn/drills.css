@@ -1,0 +1,586 @@
+/* The cross / xcross trainer and the lookahead drill: their pages in the learn tab, and the full page an attempt runs
+   on. Every size is measured on the approved mockups and written in mockup pixels (--u, docs/UI.md): round-9 08 for
+   the page header, round-9 10 and round-8 15 for the cross result, round-8 14 and round-9 09 for the full page.
+   Type on the ground, no boxes; the scramble band and the first best solution are the only tinted fills. Buttons are
+   the shared .pill / .icon-btn / .key from styles.css. */
+
+.drill-page {
+  display: flex;
+  flex-direction: column;
+  gap: calc(48 * var(--u));
+  padding: calc(10 * var(--u)) calc(14 * var(--u)) 0 calc(16 * var(--u));
+}
+
+/* ---------- header: title | metric | start, as on a set's page (round-9 08) ---------- */
+
+/* Same measures as a set's header (.learn-head in styles.css), so every learn page starts the same way. */
+.drill-head {
+  display: flex;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  align-items: center;
+  gap: calc(16 * var(--u)) calc(28 * var(--u));
+  min-height: calc(60 * var(--u));
+}
+
+.drill-head h1 {
+  margin: 0 calc(32 * var(--u)) 0 0;
+  font-size: calc(62 * var(--u));
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.drill-spacer {
+  flex: 1;
+}
+
+.drill-divider {
+  align-self: stretch;
+  width: 1px;
+  min-height: calc(56 * var(--u));
+  background: var(--rule);
+}
+
+.drill-rating {
+  display: flex;
+  align-items: baseline;
+  gap: calc(14 * var(--u));
+  margin: 0 calc(32 * var(--u));
+}
+
+.drill-rating .value {
+  font-size: calc(50 * var(--u));
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.drill-rating .delta {
+  font-size: calc(34 * var(--u));
+  font-weight: 500;
+}
+
+.drill-start {
+  display: flex;
+  align-items: center;
+  gap: calc(28 * var(--u));
+}
+
+.drill-start .pill.primary {
+  height: calc(58 * var(--u));
+  min-width: calc(168 * var(--u));
+  font-size: calc(21 * var(--u));
+}
+
+/* ---------- the full page an attempt runs on (round-9 09; band as in round-8 14) ---------- */
+
+.drill-run {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: var(--page);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(24 * var(--u));
+  padding: calc(40 * var(--u)) calc(34 * var(--u)) calc(110 * var(--u));
+  container-type: inline-size;
+}
+
+.drill-run > .band-fit {
+  margin-bottom: calc(18 * var(--u));
+}
+
+.drill-run .cube-scramble .scramble {
+  min-height: calc(90 * var(--u));
+}
+
+/* A band sized to fit its moves on one line at up to the mockup's size: moves spaced like words (about 1.6em apiece,
+   round-9 10) rather than the shared 1.5em boxes, and the type shrinking only when a long scramble needs it. */
+.band-fit {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.band-fit .scramble {
+  font-size: min(calc(34 * var(--u)), calc(1010 * var(--u) / (var(--moves, 20) * 1.62)));
+  gap: 0 0.3em;
+}
+
+.band-fit .scramble .mv {
+  min-width: 0;
+  padding: 0 0.1em;
+}
+
+.band-fit .cube-scramble {
+  width: 100%;
+}
+
+/* cubing.js draws the cube at about 0.73 of its box's height, in a wide box. The box is made big enough for a cube of
+   the mockup's size and centred over a slot of exactly that size; it lets clicks through to whatever it overhangs. */
+.cube-slot {
+  position: relative;
+  flex: none;
+  width: 100%;
+  overflow-x: clip;
+}
+
+.cube-slot > .cube {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.cube-slot.running {
+  height: calc(404 * var(--u));
+}
+
+.cube-slot.running > .cube {
+  width: calc(800 * var(--u));
+  height: calc(552 * var(--u));
+}
+
+.drill-clock {
+  font-size: calc(170 * var(--u));
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+.drill-clock.idle {
+  color: var(--faint);
+}
+
+.drill-clock.hidden,
+.drill-pauses.hidden {
+  visibility: hidden;
+}
+
+.drill-clock.tone-good {
+  color: var(--good);
+}
+
+.drill-clock.tone-bad {
+  color: var(--bad);
+}
+
+.drill-foot {
+  position: absolute;
+  bottom: calc(52 * var(--u));
+  left: 0;
+  right: 0;
+  margin: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: calc(24 * var(--u));
+  min-height: calc(40 * var(--u));
+  color: var(--faint);
+  font-size: calc(26 * var(--u));
+}
+
+.drill-device {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(14 * var(--u));
+  color: var(--ink);
+  font-size: calc(28 * var(--u));
+}
+
+.drill-device .dot {
+  width: calc(18 * var(--u));
+  height: calc(18 * var(--u));
+  border-radius: 50%;
+  background: var(--good);
+}
+
+.drill-tag {
+  font-size: calc(26 * var(--u));
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.drill-elapsed {
+  font-size: calc(30 * var(--u));
+  color: var(--faint);
+}
+
+/* ---------- cross result (round-9 10, round-8 15) ---------- */
+
+.cross-result {
+  display: grid;
+  grid-template-columns: calc(552 * var(--u)) minmax(0, 1fr);
+  gap: calc(52 * var(--u)) calc(40 * var(--u));
+  align-items: start;
+}
+
+.cross-result > .band-fit {
+  grid-column: 1 / -1;
+}
+
+.cross-result-main {
+  display: flex;
+  flex-direction: column;
+  gap: calc(48 * var(--u));
+  padding-left: calc(21 * var(--u));
+}
+
+.cross-numbers {
+  display: flex;
+  align-items: stretch;
+}
+
+.cross-number {
+  display: flex;
+  flex-direction: column;
+  gap: calc(10 * var(--u));
+  padding-right: calc(54 * var(--u));
+}
+
+.cross-number.best {
+  padding: 0 0 0 calc(52 * var(--u));
+  border-left: 1px solid var(--rule);
+}
+
+.cross-number .label {
+  font-size: calc(26 * var(--u));
+  color: var(--muted);
+  line-height: 1.2;
+}
+
+.cross-number .moves,
+.cross-number .time {
+  font-size: calc(54 * var(--u));
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.12;
+  white-space: nowrap;
+}
+
+.cross-number .verdict {
+  font-size: calc(30 * var(--u));
+  font-weight: 500;
+  line-height: 1.12;
+  padding-top: calc(14 * var(--u));
+}
+
+.tone-good {
+  color: var(--good);
+}
+
+.tone-ok {
+  color: var(--ink);
+}
+
+.tone-bad {
+  color: var(--bad);
+}
+
+.cross-lines {
+  list-style: none;
+  margin: 0 0 0 calc(-21 * var(--u));
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cross-lines li {
+  display: flex;
+  align-items: center;
+  gap: calc(8 * var(--u));
+  min-height: calc(65 * var(--u));
+}
+
+/* One line each, at the mockup's size for a short cross and smaller for a long xcross (about 2em a move in mono). */
+.cross-lines .line {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-height: calc(65 * var(--u));
+  padding: 0 calc(27 * var(--u));
+  border-radius: calc(12 * var(--u));
+  font-family: var(--mono);
+  font-size: min(calc(30 * var(--u)), calc(400 * var(--u) / (var(--moves, 6) * 2.05)));
+  letter-spacing: 0.06em;
+  word-spacing: 0.14em;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.cross-lines .line.first {
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.cross-lines .slot {
+  min-width: calc(40 * var(--u));
+  font-size: calc(20 * var(--u));
+  color: var(--muted);
+}
+
+.cross-actions {
+  display: flex;
+  align-items: center;
+  gap: calc(24 * var(--u));
+}
+
+.cross-actions .group {
+  display: flex;
+  align-items: center;
+  gap: calc(8 * var(--u));
+}
+
+.cube-slot.result {
+  height: calc(443 * var(--u));
+  align-self: start;
+  margin-top: calc(-10 * var(--u));
+}
+
+.cube-slot.result > .cube {
+  width: calc(840 * var(--u));
+  height: calc(604 * var(--u));
+}
+
+/* ---------- history ---------- */
+
+.cross-history {
+  display: flex;
+  flex-direction: column;
+  gap: calc(24 * var(--u));
+  padding-top: calc(32 * var(--u));
+  border-top: 1px solid var(--rule);
+}
+
+.cross-dots {
+  display: flex;
+  align-items: flex-end;
+  gap: calc(9 * var(--u));
+}
+
+.drill-dot {
+  flex: none;
+  width: calc(12 * var(--u));
+  height: calc(12 * var(--u));
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.drill-dot.tone-good {
+  background: var(--good);
+}
+
+.drill-dot.tone-ok {
+  background: var(--faint);
+}
+
+.drill-dot.tone-bad {
+  background: var(--bad);
+}
+
+.cross-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: calc(24 * var(--u));
+}
+
+.cross-rows li {
+  display: grid;
+  grid-template-columns: calc(12 * var(--u)) calc(96 * var(--u)) calc(84 * var(--u)) calc(150 * var(--u)) auto;
+  align-items: center;
+  gap: calc(20 * var(--u));
+  min-height: calc(47 * var(--u));
+}
+
+.cross-rows .verdict,
+.cross-rows .note {
+  color: var(--muted);
+  font-size: calc(20 * var(--u));
+}
+
+/* ---------- lookahead ---------- */
+
+.bpm-control {
+  display: flex;
+  align-items: baseline;
+  gap: calc(12 * var(--u));
+}
+
+.tempo-row {
+  display: flex;
+  align-items: center;
+  gap: calc(12 * var(--u));
+  margin-top: calc(-20 * var(--u));
+}
+
+.tempo-row .beat-dot {
+  margin: 0 calc(20 * var(--u));
+}
+
+.bpm-value {
+  width: 3.3ch;
+  font: inherit;
+  font-size: calc(50 * var(--u));
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  text-align: center;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 0;
+  font-feature-settings: "tnum";
+}
+
+.bpm-value:hover,
+.bpm-value:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+}
+
+.bpm-unit {
+  font-size: calc(22 * var(--u));
+  color: var(--muted);
+}
+
+.beat-dot {
+  flex: none;
+  width: calc(24 * var(--u));
+  height: calc(24 * var(--u));
+  border-radius: 50%;
+  background: var(--accent);
+  animation: beat var(--beat, 1000ms) linear infinite;
+}
+
+.beat-dot.big {
+  width: calc(32 * var(--u));
+  height: calc(32 * var(--u));
+}
+
+@keyframes beat {
+  0% {
+    transform: scale(1.45);
+    opacity: 1;
+  }
+  22% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .beat-dot {
+    animation-name: beat-fade;
+  }
+
+  @keyframes beat-fade {
+    0% {
+      opacity: 1;
+    }
+    30%,
+    100% {
+      opacity: 0.35;
+    }
+  }
+}
+
+.drill-pauses {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(6 * var(--u));
+}
+
+.drill-pauses .count {
+  font-size: calc(170 * var(--u));
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+.drill-pauses.some .count {
+  color: var(--bad);
+}
+
+.drill-pauses .label {
+  font-size: calc(30 * var(--u));
+  color: var(--muted);
+}
+
+.lookahead-result {
+  display: flex;
+  flex-direction: column;
+  gap: calc(28 * var(--u));
+}
+
+.lookahead-summary {
+  display: flex;
+  align-items: baseline;
+  gap: calc(16 * var(--u)) calc(40 * var(--u));
+  flex-wrap: wrap;
+}
+
+.lookahead-summary .hero {
+  font-size: calc(54 * var(--u));
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.lookahead-summary .meta {
+  font-size: calc(26 * var(--u));
+  color: var(--muted);
+}
+
+.lookahead-summary .next {
+  display: inline-flex;
+  align-items: baseline;
+  gap: calc(10 * var(--u));
+  font-size: calc(30 * var(--u));
+  font-weight: 500;
+}
+
+.lookahead-summary .next .delta {
+  font-size: calc(26 * var(--u));
+}
+
+.drill-timeline {
+  width: 100%;
+  height: calc(32 * var(--u));
+  overflow: visible;
+}
+
+.drill-timeline line {
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+}
+
+.drill-timeline .base {
+  stroke: var(--rule);
+  stroke-width: 3;
+}
+
+.drill-timeline .turn {
+  stroke: var(--faint);
+  stroke-width: 1.5;
+}
+
+.drill-timeline .pause {
+  stroke: var(--accent);
+  stroke-width: 10;
+}
+
+.lookahead-rows li {
+  grid-template-columns: calc(12 * var(--u)) calc(110 * var(--u)) calc(120 * var(--u)) calc(110 * var(--u)) auto;
+}

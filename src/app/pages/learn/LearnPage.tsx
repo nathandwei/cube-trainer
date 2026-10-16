@@ -1,29 +1,26 @@
+import { SlidersHorizontal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { IconButton } from "@/app/components/IconButton";
+import { CubeStatus } from "@/app/components/CubeStatus";
 import { formatSeconds } from "@/app/lib/format";
 import { loadAllReps, updateLearnSettings, useLearnSettings, useReps } from "@/app/lib/learnStore";
 import { navigate } from "@/app/lib/router";
 import { median } from "@/app/lib/averages";
+import { ConnectSheet } from "@/app/smartcube/ConnectSheet";
+import { useSmartCube } from "@/app/smartcube/connection";
 import type { CaseDef } from "@/cube";
 import type { CaseRep } from "@/shared/learn";
 import { CaseDiagram } from "./CaseDiagram";
+import { CrossDrill } from "./CrossDrill";
+import { LookaheadDrill } from "./LookaheadDrill";
 import { LearnChart } from "./LearnChart";
-import { casesOf, LEARN_ITEMS, learnItem } from "./items";
-import { caseProgress, currentCaseReps, sessionMedians, totalMs, targetMs } from "./progress";
+import { casesOf, itemLabel, LEARN_ITEMS, learnItem } from "./items";
+import { caseProgress, currentCaseReps, setOf, totalMs, targetMs } from "./progress";
 import { pickSession } from "./scheduler";
 import { Session, Summary, type DrillInput } from "./Session";
 
-const INPUT_KEY = "cube.input";
-
-function savedInput(): DrillInput {
-  try {
-    return localStorage.getItem(INPUT_KEY) === "keyboard" ? "keyboard" : "virtual";
-  } catch (error) {
-    console.warn("Could not read the input mode", error);
-    return "virtual";
-  }
-}
-
-type Running = { caseIds: string[]; startedAt: number };
+/** The input is fixed when a session starts: a Bluetooth blip mid-session must not reset the case it's on. */
+type Running = { caseIds: string[]; startedAt: number; input: DrillInput };
 type Finished = { caseIds: string[]; reps: CaseRep[]; previousMedian: number | null };
 
 export function LearnPage({ set }: { set?: string }) {
@@ -33,18 +30,22 @@ export function LearnPage({ set }: { set?: string }) {
   const [running, setRunning] = useState<Running | null>(null);
   const [finished, setFinished] = useState<Finished | null>(null);
   const [custom, setCustom] = useState(false);
-  const [input, setInput] = useState<DrillInput>(savedInput);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const cubeLink = useSmartCube();
+  // Without a cube the drill still runs, on screen, for trying it out (nothing is saved).
+  const input: DrillInput = cubeLink.status === "connected" ? "cube" : "test";
 
   useEffect(() => {
     void loadAllReps();
   }, []);
 
   const open = learnItem(set ?? settings.items[0]);
+  const hasCases = casesOf(settings.items).length > 0;
 
   function start(caseIds: string[]) {
     if (caseIds.length === 0) return;
     setFinished(null);
-    setRunning({ caseIds, startedAt: Date.now() });
+    setRunning({ caseIds, startedAt: Date.now(), input });
   }
 
   function previousMedianFor(caseIds: readonly string[], before: number): number | null {
@@ -56,7 +57,7 @@ export function LearnPage({ set }: { set?: string }) {
     return (
       <Session
         caseIds={running.caseIds}
-        input={input}
+        input={running.input}
         onExit={(done) => {
           setRunning(null);
           if (done.length > 0) setFinished({ caseIds: running.caseIds, reps: done, previousMedian: previousMedianFor(running.caseIds, running.startedAt) });
@@ -82,83 +83,66 @@ export function LearnPage({ set }: { set?: string }) {
       <div className="learn-empty">
         {LEARN_ITEMS.map((item) => (
           <button key={item.id} className="pill" onClick={() => updateLearnSettings((s) => ({ ...s, items: [...s.items, item.id] }))}>
-            + {item.id}
+            + {itemLabel(item.id)}
           </button>
         ))}
       </div>
     );
   }
 
+  const openCases = open?.kind === "cases" ? open.cases : null;
+  const learnedCount = openCases ? openCases.filter((c) => settings.algs[c.id] !== undefined).length : 0;
+
+  // The skill drills bring their own header (title, number, Start, Test), sheet and attempt page.
+  if (open?.kind === "cross") return <CrossDrill variant={open.id} />;
+  if (open?.kind === "lookahead") return <LookaheadDrill />;
+
   return (
     <div className="learn">
-      <div className="learn-top">
-        <div className="actions">
-          <button className="pill primary" onClick={() => start(pickSession(settings, reps, Date.now()))}>
-            learn now
-          </button>
-          <button className="pill" onClick={() => setCustom(!custom)}>
-            custom
-          </button>
-        </div>
-        <div className="switch" role="radiogroup" aria-label="input">
-          {(["virtual", "keyboard"] as const).map((mode) => (
-            <button
-              key={mode}
-              role="radio"
-              aria-checked={input === mode}
-              className={input === mode ? "on" : ""}
-              onClick={() => {
-                setInput(mode);
-                try {
-                  localStorage.setItem(INPUT_KEY, mode);
-                } catch (error) {
-                  console.warn("Could not save the input mode", error);
-                }
-              }}
-            >
-              {mode}
+      <div className="learn-head">
+        <h1>{open ? itemLabel(open.id) : ""}</h1>
+        {openCases && (
+          <>
+            <span className="head-rule" aria-hidden="true" />
+            <span className="head-count">
+              {learnedCount}/{openCases.length}
+            </span>
+            <button className="pill primary start" onClick={() => start(pickSession(settings, reps, Date.now(), { only: openCases.map((c) => c.id) }))}>
+              Start
             </button>
-          ))}
-        </div>
+          </>
+        )}
+        {hasCases && <IconButton icon={SlidersHorizontal} label="Custom session" variant="soft" aria-pressed={custom} onClick={() => setCustom(!custom)} />}
+        <span className="head-spacer" />
+        <CubeStatus onClick={() => setSheetOpen(true)} />
       </div>
-      {custom && <CustomSession items={settings.items} onStart={(ids) => start(ids)} />}
-      {open?.kind === "cases" && <CaseSetView cases={open.cases} name={open.id} reps={reps} algs={settings.algs} onDrill={(id) => start([id, id, id, id, id])} />}
-      {open?.kind === "cross" && (
-        <div className="learn-set">
-          <h1>{open.id}</h1>
-        </div>
-      )}
+      {sheetOpen && <ConnectSheet onClose={() => setSheetOpen(false)} />}
+      {custom && hasCases && <CustomSession items={settings.items} onStart={(ids) => start(ids)} />}
+      {openCases && <CaseSetView cases={openCases} reps={reps} algs={settings.algs} onDrill={(id) => start([id, id, id, id, id])} />}
       {!open && settings.items[0] && (
         <button className="pill" onClick={() => navigate(`/learn/${settings.items[0]}`)}>
-          {settings.items[0]}
+          {itemLabel(settings.items[0])}
         </button>
       )}
     </div>
   );
 }
 
-function CaseSetView({ cases, name, reps, algs, onDrill }: { cases: readonly CaseDef[]; name: string; reps: readonly CaseRep[]; algs: Record<string, string>; onDrill: (caseId: string) => void }) {
+function CaseSetView({ cases, reps, algs, onDrill }: { cases: readonly CaseDef[]; reps: readonly CaseRep[]; algs: Record<string, string>; onDrill: (caseId: string) => void }) {
   const setId = cases[0]?.set;
   const target = setId ? targetMs(setId, reps) : 0;
-  const learned = cases.filter((c) => algs[c.id] !== undefined);
   return (
     <div className="learn-set">
-      <div className="set-head">
-        <h1>{name}</h1>
-        <span className="count">
-          {learned.length}/{cases.length}
-        </span>
-      </div>
       {setId && <LearnChartForSet set={setId} reps={reps} />}
       <div className="case-grid">
         {cases.map((c) => {
           const progress = caseProgress(c.id, reps, target);
           const isLearned = algs[c.id] !== undefined;
+          const time = progress.medianMs === null ? "" : ` · ${formatSeconds(progress.medianMs)}`;
           return (
-            <button key={c.id} className={`case-cell ${isLearned ? "" : "new"} ${progress.fluent ? "fluent" : ""}`} onClick={() => onDrill(c.id)} title={c.label}>
-              <CaseDiagram caseDef={c} size={58} />
+            <button key={c.id} className={`case-cell ${isLearned ? "" : "new"} ${progress.fluent ? "fluent" : ""}`} onClick={() => onDrill(c.id)} data-tip={`${c.label}${time}`}>
+              <CaseDiagram caseDef={c} size={74} view="iso" ghost={!isLearned} />
               <span className="name">{c.name}</span>
-              <span className="time">{progress.medianMs === null ? "" : formatSeconds(progress.medianMs)}</span>
             </button>
           );
         })}
@@ -168,8 +152,8 @@ function CaseSetView({ cases, name, reps, algs, onDrill }: { cases: readonly Cas
 }
 
 function LearnChartForSet({ set, reps }: { set: CaseDef["set"]; reps: readonly CaseRep[] }) {
-  const points = useMemo(() => sessionMedians(set, reps), [set, reps]);
-  return <LearnChart points={points} />;
+  const times = useMemo(() => reps.filter((r) => r.correct && setOf(r.item) === set).map(totalMs), [set, reps]);
+  return <LearnChart times={times} />;
 }
 
 function CustomSession({ items, onStart }: { items: readonly string[]; onStart: (caseIds: string[]) => void }) {
@@ -178,24 +162,24 @@ function CustomSession({ items, onStart }: { items: readonly string[]; onStart: 
   const pool = casesOf(chosen).map((c) => c.id);
   return (
     <div className="custom-session">
-      <div className="choices">
+      <div className="choices" role="group" aria-label="Sets">
         {items
           .filter((id) => learnItem(id)?.kind === "cases")
           .map((id) => (
-            <button key={id} className={`chip-toggle ${chosen.includes(id) ? "on" : ""}`} onClick={() => setChosen(chosen.includes(id) ? chosen.filter((c) => c !== id) : [...chosen, id])}>
-              {id}
+            <button key={id} className="pill toggle" aria-pressed={chosen.includes(id)} onClick={() => setChosen(chosen.includes(id) ? chosen.filter((c) => c !== id) : [...chosen, id])}>
+              {itemLabel(id)}
             </button>
           ))}
       </div>
-      <div className="switch" role="radiogroup" aria-label="length">
+      <div className="switch" role="radiogroup" aria-label="Length">
         {[10, 20, 40].map((n) => (
           <button key={n} role="radio" aria-checked={size === n} className={size === n ? "on" : ""} onClick={() => setSize(n)}>
             {n}
           </button>
         ))}
       </div>
-      <button className="pill primary" disabled={pool.length === 0} onClick={() => onStart(shuffle(pool, size))}>
-        start
+      <button className="pill" disabled={pool.length === 0} onClick={() => onStart(shuffle(pool, size))}>
+        Start
       </button>
     </div>
   );
