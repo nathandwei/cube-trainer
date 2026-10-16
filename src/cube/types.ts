@@ -61,6 +61,13 @@ export type Rotation = "x" | "x'" | "x2" | "y" | "y'" | "y2" | "z" | "z'" | "z2"
  */
 export type RotationEvent = { rotation: Rotation; after: number; t: number };
 
+/**
+ * One raw gyro report during a smart-cube solve: [t, w, x, y, z]. `t` is ms since the timer started; w..z is the
+ * core's orientation quaternion in the cube's own axes (+x red, +y blue, +z white), each component × 10 000 and
+ * rounded. Kept so rotations can be re-derived when the gyro detector is retuned.
+ */
+export type GyroSample = [t: number, w: number, x: number, y: number, z: number];
+
 export type SolveSource = "demo" | "keyboard" | "smartcube" | "virtual";
 
 export type SolveRecord = {
@@ -71,6 +78,8 @@ export type SolveRecord = {
   moves: TimedMove[];
   /** Whole-cube rotations, when known (generator or gyro). */
   rotations?: RotationEvent[];
+  /** Raw gyro reports while solving, for smart cubes with a gyro (at most MAX_GYRO_SAMPLES, src/shared/schema.ts). */
+  gyro?: GyroSample[];
   totalMs: number;
   penalty: "none" | "+2" | "dnf";
   createdAt: number;

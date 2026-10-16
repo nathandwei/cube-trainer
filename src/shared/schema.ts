@@ -13,6 +13,9 @@ export const MAX_BYTES_PER_ACCOUNT = 40 * 1024 * 1024;
 /** Most solves one GET /api/solves page returns (and the default). */
 export const MAX_PAGE_SIZE = 500;
 
+/** Most raw gyro reports one solve keeps (about 30 bytes each; ~45 s at the gyro's 11 Hz before thinning). */
+export const MAX_GYRO_SAMPLES = 500;
+
 export const penaltySchema = z.enum(["none", "+2", "dnf"]);
 
 const timedMove = z.object({ move: z.string(), t: z.number() });
@@ -30,6 +33,7 @@ export const solveRecordSchema = z.object({
   scramble: z.string(),
   moves: z.array(timedMove),
   rotations: z.array(rotationEvent).optional(),
+  gyro: z.array(z.tuple([z.number(), z.number(), z.number(), z.number(), z.number()])).max(MAX_GYRO_SAMPLES).optional(),
   totalMs: z.number(),
   penalty: penaltySchema,
   createdAt: z.number(),

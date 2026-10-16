@@ -1,0 +1,422 @@
+/* Smart cube: connect sheet, cube net, scramble progress, and the timer's cube-mode, inspection and hidden-time states. */
+
+:root {
+  /* Matte stickers, a notch below full saturation like the rest of the page. */
+  --st-white: #f7f3ec;
+  --st-yellow: #e9c64c;
+  --st-green: #4f965a;
+  --st-blue: #4677bd;
+  --st-red: #c5483b;
+  --st-orange: #df883d;
+  --st-line: rgb(58 46 40 / 0.62);
+  --sheet: #f6f1ea;
+}
+
+/* ---------- sheet ---------- */
+
+.cube-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(58 46 40 / 0.34);
+}
+
+.cube-sheet {
+  width: min(440px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-radius: 20px;
+  padding: 28px 30px 24px;
+}
+
+.cube-step {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cube-step.center {
+  align-items: center;
+  text-align: center;
+}
+
+.cube-step p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.cube-step h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.cube-muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.center-text {
+  text-align: center;
+}
+
+.cube-error {
+  color: var(--bad);
+  font-size: 13px;
+}
+
+.cube-progress {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.cube-art {
+  width: 84px;
+  height: 100px;
+}
+
+.cube-art .art {
+  stroke: var(--st-line);
+  stroke-width: 0.9;
+  stroke-linejoin: round;
+}
+
+.cube-copy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+}
+
+.cube-copy code {
+  font-family: var(--mono);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.cube-copy .copy {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.cube-copy .copy:hover {
+  background: var(--rule);
+  color: var(--ink);
+}
+
+.cube-copy svg {
+  width: 20px;
+  height: 20px;
+}
+
+.cube-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--page);
+}
+
+.cube-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.cube-field input {
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--ink);
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--page);
+}
+
+.cube-field input:focus {
+  outline: 2px solid var(--accent-tint);
+  border-color: var(--accent);
+}
+
+.cube-field input[aria-invalid="true"] {
+  border-color: var(--bad);
+}
+
+.cube-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.cube-actions .pill {
+  flex: 1 1 140px;
+}
+
+.pill.outline {
+  background: transparent;
+  border: 1px solid var(--faint);
+  color: var(--muted);
+}
+
+.pill.outline:hover {
+  background: var(--page);
+  color: var(--ink);
+}
+
+.pill.wide {
+  width: 100%;
+  padding: 12px 18px;
+  font-size: 15px;
+}
+
+.link {
+  align-self: center;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.link:hover {
+  color: var(--ink);
+}
+
+.cube-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.cube-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+}
+
+.cube-head .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.cube-head .dot.live {
+  background: #5d9b5c;
+}
+
+.cube-battery {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.cube-battery svg {
+  width: 30px;
+  height: 14px;
+}
+
+.cube-battery .low {
+  color: var(--bad);
+}
+
+/* ---------- net ---------- */
+
+.cube-net {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  justify-content: center;
+  padding: 6px 0;
+}
+
+.cube-net .face {
+  display: grid;
+  grid-template-columns: repeat(3, 19px);
+  grid-auto-rows: 19px;
+  border: 1px solid var(--st-line);
+}
+
+.cube-net .sticker {
+  border: 0.5px solid var(--st-line);
+}
+
+.sticker.white,
+.art.white {
+  background: var(--st-white);
+  fill: var(--st-white);
+}
+
+.sticker.yellow,
+.art.yellow {
+  background: var(--st-yellow);
+  fill: var(--st-yellow);
+}
+
+.sticker.green,
+.art.green {
+  background: var(--st-green);
+  fill: var(--st-green);
+}
+
+.sticker.blue,
+.art.blue {
+  background: var(--st-blue);
+  fill: var(--st-blue);
+}
+
+.sticker.red,
+.art.red {
+  background: var(--st-red);
+  fill: var(--st-red);
+}
+
+.sticker.orange,
+.art.orange {
+  background: var(--st-orange);
+  fill: var(--st-orange);
+}
+
+.cube-net.unknown .sticker {
+  background: var(--rule);
+}
+
+/* ---------- scramble progress ---------- */
+
+.cube-scramble {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.scramble .mv.half {
+  box-shadow:
+    inset 0 -5px 0 var(--accent),
+    inset 0 0 0 1.5px var(--accent);
+}
+
+.scramble.fix {
+  color: var(--warn);
+  background: var(--warn-tint);
+}
+
+.scramble.fix .mv.done {
+  background: var(--warn);
+  color: var(--accent-ink);
+}
+
+.scramble.fix .mv.next {
+  box-shadow: inset 0 0 0 1.5px var(--warn);
+}
+
+.scramble.fix .mv.half {
+  box-shadow:
+    inset 0 -5px 0 var(--warn),
+    inset 0 0 0 1.5px var(--warn);
+}
+
+.cube-scramble-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.timer.solo .cube-scramble {
+  visibility: hidden;
+}
+
+/* ---------- timer states ---------- */
+
+.timer-hint {
+  margin: -10px 0 0;
+  min-height: 18px;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.timer-hint.alert {
+  color: var(--bad);
+}
+
+.clock.inspecting {
+  color: var(--warn);
+}
+
+.clock-cue {
+  margin: -14px 0 0;
+  min-height: 18px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.clock-solving {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  font-size: clamp(26px, 3.4vw, 40px);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.clock-solving::before {
+  content: "";
+  width: 0.4em;
+  height: 0.4em;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: cube-pulse 1.4s var(--ease) infinite;
+}
+
+@keyframes cube-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clock-solving::before {
+    animation: none;
+  }
+}
+
+.switch .dot.lost {
+  background: var(--faint);
+  box-shadow: 0 0 0 2px rgb(185 173 160 / 0.35);
+}
+
+@media (max-width: 520px) {
+  .cube-sheet {
+    padding: 22px 18px 18px;
+  }
+
+  .cube-net .face {
+    grid-template-columns: repeat(3, 15px);
+    grid-auto-rows: 15px;
+  }
+}
