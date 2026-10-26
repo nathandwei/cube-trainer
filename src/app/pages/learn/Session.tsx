@@ -1,5 +1,5 @@
 import { Play, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { CubeView, type CubeHandle } from "@/app/components/CubeView";
 import { IconButton, Key } from "@/app/components/IconButton";
 import { formatSeconds } from "@/app/lib/format";
@@ -18,12 +18,15 @@ import {
   getCase,
   isGoalReached,
   scrambledState,
+  splitMoves,
   type CaseScramble,
   type CubeState,
 } from "@/cube";
 import type { CaseRep } from "@/shared/learn";
 import { CaseDiagram } from "./CaseDiagram";
 import { CasePage } from "./CasePage";
+import { countTurns } from "./cross/attempt";
+import { heldAtScramble, useCubeFollower } from "./follow";
 import { LearnAlg } from "./LearnAlg";
 import { totalMs } from "./progress";
 
@@ -42,6 +45,15 @@ const TEST_TURN_MS = 150;
 /** Give up on a rep after this many turns past the alg's length: something went wrong. */
 const SPARE_TURNS = 8;
 const RESULT_MS = 1100;
+
+/**
+ * The alg's length in the turns a smart cube reports, counted like the rep's turns: a slice is two (R L'), and a half
+ * turn one, though it arrives as two quarters.
+ */
+function algTurns(alg: string): number {
+  const tracker = new FrameTracker();
+  return countTurns(splitMoves(alg).flatMap((token) => tracker.apply(token).turns));
+}
 
 type Props = { caseIds: readonly string[]; input: DrillInput; onExit: (done: CaseRep[]) => void };
 
@@ -80,6 +92,9 @@ export function Session({ caseIds, input, onExit }: Props) {
   );
   /** Set the moment a rep is recorded, so turns still arriving (queued test turns, a fast hand) can't record it twice. */
   const recorded = useRef(false);
+  const follower = useCubeFollower(cube);
+  /** The cube went through the scramble band on the way to this case, so it's held white on top. */
+  const followedBand = useRef(false);
   const subscribeCube = useCallback((listener: () => void) => cubeSession.subscribe(listener), [cubeSession]);
   const cubeView = useSyncExternalStore(subscribeCube, () => cubeSession.view());
   const onCube = input === "cube" && (cubeView.phase === "ready" || cubeView.phase === "solving");
@@ -87,6 +102,7 @@ export function Session({ caseIds, input, onExit }: Props) {
   const caseId = caseIds[index];
   const caseDef = caseId ? getCase(caseId) : undefined;
   const alg = caseId ? settings.algs[caseId] : undefined;
+  const turnBudget = useMemo(() => (alg ? algTurns(alg) : 12) + SPARE_TURNS, [alg]);
   const needsAlg = Boolean(caseId) && !alg;
   const loading = !needsAlg && loadedFor !== index;
 
@@ -134,6 +150,8 @@ export function Session({ caseIds, input, onExit }: Props) {
         turns.current = [];
         cube.current?.setTempo(3);
         cube.current?.show(`${next.scramble} z2`);
+        follower.reset();
+        followedBand.current = false;
         shownAt.current = performance.now();
         setElapsed(0);
         setPhase("ready");
@@ -148,7 +166,7 @@ export function Session({ caseIds, input, onExit }: Props) {
     return () => {
       stale = true;
     };
-  }, [caseId, cubeSession, index, input, learning, needsAlg, scrambleFor, tick]);
+  }, [caseId, cubeSession, follower, index, input, learning, needsAlg, scrambleFor, tick]);
 
   const record = useCallback(
     (correct: boolean, recognitionMs: number, executionMs: number) => {
@@ -183,9 +201,12 @@ export function Session({ caseIds, input, onExit }: Props) {
     [alg, caseId, cubeSession, input, setup],
   );
 
-  /** One turn on the case: `turns` in the solver's centre frame, `shown` as it animates on screen. */
+  /**
+   * One turn on the case: `turns` in the solver's centre frame, `shown` as it animates on screen (a test rep's
+   * token); a smart cube's turn shows on the face it was turned, the way the cube is held.
+   */
   const drillTurn = useCallback(
-    (turns_: readonly string[], shown: string) => {
+    (turns_: readonly string[], shown?: string) => {
       if (!caseDef || !state.current || recorded.current) return;
       if (phase === "ready") {
         firstTurnAt.current = performance.now();
@@ -196,15 +217,14 @@ export function Session({ caseIds, input, onExit }: Props) {
       }
       turns.current = [...turns.current, ...turns_];
       state.current = applyAlg(state.current, turns_);
-      cube.current?.turn(shown);
+      for (const token of shown === undefined ? turns_.flatMap((move) => follower.turn(move)) : [shown]) cube.current?.turn(token);
       if (isGoalReached(caseDef.set, state.current)) {
         record(true, firstTurnAt.current - shownAt.current, performance.now() - firstTurnAt.current);
         return;
       }
-      const budget = (alg?.split(/\s+/).length ?? 12) + SPARE_TURNS;
-      if (turns.current.length > budget) record(false, firstTurnAt.current - shownAt.current, performance.now() - firstTurnAt.current);
+      if (countTurns(turns.current) > turnBudget) record(false, firstTurnAt.current - shownAt.current, performance.now() - firstTurnAt.current);
     },
-    [alg, caseDef, input, phase, record, tick],
+    [caseDef, follower, input, phase, record, tick, turnBudget],
   );
 
   // The smart cube: its own scramble tracker brings the cube to the case, then its turns drive the drill.
@@ -221,18 +241,25 @@ export function Session({ caseIds, input, onExit }: Props) {
     const known = smartCube.state.cube;
     if (known) cubeSession.facelets(known, performance.now());
     const off = [
+      cubeSession.subscribe(() => {
+        const { phase: cubePhase } = cubeSession.view();
+        if (cubePhase === "scrambling") followedBand.current = true;
+        // In the case: the cube on screen follows the cube from the grip it's held in now.
+        if (cubePhase !== "ready" || follower.holding) return;
+        for (const rotation of follower.hold(heldAtScramble(followedBand.current))) cube.current?.turn(rotation);
+      }),
       smartCube.onMove((move, hostT, cubeT) => {
         const before = cubeSession.view().phase;
         cubeSession.move(move, hostT, cubeT);
         const live = phaseRef.current === "ready" || phaseRef.current === "running";
-        if (live && (before === "ready" || before === "solving")) drillTurnRef.current([move], move);
+        if (live && (before === "ready" || before === "solving")) drillTurnRef.current([move]);
       }),
       smartCube.onGyro((q, hostT) => cubeSession.gyro(q, hostT)),
       smartCube.onFacelets((cubeState, hostT) => cubeSession.facelets(cubeState, hostT)),
       smartCube.onLost(() => cubeSession.connectionLost()),
     ];
     return () => off.forEach((unsubscribe) => unsubscribe());
-  }, [cubeSession, input]);
+  }, [cubeSession, follower, input]);
 
   const next = useCallback(() => {
     if (index + 1 >= caseIds.length) {

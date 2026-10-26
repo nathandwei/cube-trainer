@@ -11,8 +11,8 @@
 
 import { FrameTracker, applyAlg, applyMove, fitCubeClock, getCase, isGoalReached, stateKey, type CaseDef, type CubeState } from "@/cube";
 import type { Move, Rotation, RotationEvent } from "@/cube/types";
-import { RotationDetector, rotationsBetween, wideMoveEnd, type GridOrientation, type Quaternion } from "@/app/smartcube/gyro";
-import { SCRAMBLE_GRIP, SOLVER_GRIP, keepsYellowUp, leadRotations, solverGripReport } from "./grip";
+import { rotationsBetween, wideMoveEnd, type GridOrientation, type Quaternion, type RotationDetector } from "@/app/smartcube/gyro";
+import { SCRAMBLE_GRIP, SOLVER_GRIP, detectorAt, keepsYellowUp, leadRotations } from "./grip";
 import { asAlg, moveCount, takeTokens, type Take } from "./notation";
 
 const ROTATION = /^[xyz](2|')?$/;
@@ -203,12 +203,8 @@ export class Recorder {
     return this.#face(grip);
   }
 
-  /** A detector reading `report` as `grip`, already settled there (it would otherwise start from the solver's grip). */
   #anchor(report: Quaternion, grip: GridOrientation): void {
-    const detector = new RotationDetector(solverGripReport(report, grip));
-    for (let i = 0; i < 8 && detector.orientation !== grip; i++) detector.sample(report, 0);
-    if (detector.orientation !== grip) throw new Error(`The gyro reference doesn't read back as ${grip.rotations.join(" ") || "the solver's grip"}`);
-    this.#detector = detector;
+    this.#detector = detectorAt(report, grip);
   }
 
   /** Turns the cube on screen to face like his. */

@@ -5,7 +5,7 @@
 // solver's grip (white down, green front). Turning that report into "the report the solver's grip would give" lets
 // RotationDetector measure every later orientation against the solver's grip directly, the way the timer does.
 
-import { GRID, GYRO_INVERTED, conjugate, multiply, snap, type GridOrientation, type Quaternion } from "@/app/smartcube/gyro";
+import { GRID, GYRO_INVERTED, RotationDetector, conjugate, multiply, snap, type GridOrientation, type Quaternion } from "@/app/smartcube/gyro";
 import type { Rotation } from "@/cube/types";
 
 /** The grid orientation reached by exactly these rotations ("z2", "y'"). */
@@ -31,6 +31,14 @@ function inCubeAxes(q: Quaternion): Quaternion {
 export function solverGripReport(report: Quaternion, held: GridOrientation): Quaternion {
   const offset = inCubeAxes(held.q);
   return GYRO_INVERTED ? multiply(offset, report) : multiply(report, conjugate(offset));
+}
+
+/** A detector reading `report` as `grip`, already settled there (it would otherwise start from the solver's grip). */
+export function detectorAt(report: Quaternion, grip: GridOrientation): RotationDetector {
+  const detector = new RotationDetector(solverGripReport(report, grip));
+  for (let i = 0; i < 8 && detector.orientation !== grip; i++) detector.sample(report, 0);
+  if (detector.orientation !== grip) throw new Error(`The gyro reference doesn't read back as ${grip.rotations.join(" ") || "the solver's grip"}`);
+  return detector;
 }
 
 /** Holding the last layer up: only a y away from the solver's grip. */

@@ -23,6 +23,7 @@ import type { LookaheadRep } from "@/shared/learn";
 import { countTurns } from "./cross/attempt";
 import { BandFit } from "./cross/BandFit";
 import { useCubeScramble } from "./cross/cubeScramble";
+import { useCubeFollower } from "./follow";
 import { fromTextField, hasModifier, releaseFocus, takeSpace, useFrameClock } from "./cross/drill";
 import { BPM_STEP, clampBpm, isClean, isMessy, startingBpm, suggestBpm } from "./lookahead/bpm";
 import { Metronome } from "./lookahead/metronome";
@@ -372,7 +373,8 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
     finishFromSession.current(solve);
   }, []);
   const simulated = useRef<Recorded | null>(null);
-  const { view, readyAt } = useCubeScramble(setup.scramble, !setup.test, keepSolve);
+  const { view, readyAt, hold } = useCubeScramble(setup.scramble, !setup.test, keepSolve);
+  const follower = useCubeFollower(cube);
   const now = useFrameClock(phase === "solve");
   const shownPhase: RunPhase = !setup.test && phase === "scramble" && readyAt !== null ? "ready" : phase;
   const threshold = pauseThresholdMs(setup.bpm);
@@ -396,7 +398,7 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
       run.times.push(t);
       if (previous !== undefined && t - previous > threshold) setClosedPauses((count) => count + 1);
       setLastTurnAt(t);
-      if (animate) cube.current?.turn(move);
+      if (animate) for (const shown of follower.turn(move)) cube.current?.turn(shown);
       run.turns.push(move);
       run.state = applyAlg(run.state, [move]);
       if (!isSolved(run.state)) return;
@@ -427,7 +429,7 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
         onDone(outcome(finished.current ? fromSession(finished.current) : fallback));
       };
     },
-    [attempt, onDone, threshold],
+    [attempt, follower, onDone, threshold],
   );
 
   // The session saw the cube solved: hand its solve to a run that's waiting for it, or finish a run that missed a turn
@@ -479,10 +481,12 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
     return () => window.clearTimeout(timer);
   }, [onClose, phase]);
 
+  // A smart cube at the scramble: the cube on screen turns as it's turned.
   useEffect(() => {
-    if (setup.test || readyAt === null) return;
+    if (setup.test || readyAt === null || !hold) return;
+    for (const rotation of follower.hold(hold)) cube.current?.turn(rotation);
     return smartCube.onMove((move, hostT) => turnNow.current(move, hostT));
-  }, [readyAt, setup.test]);
+  }, [follower, hold, readyAt, setup.test]);
 
   // The Test button: scramble a pretend cube, look for a moment, then a slow solve re-timed to the beat.
   useEffect(() => {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { smartCube } from "@/app/smartcube/connection";
 import { solveFix } from "@/app/smartcube/fixup";
 import { CubeSession, type FinishedSolve, type SessionView } from "@/app/smartcube/session";
+import { heldAtScramble, type Hold } from "../follow";
 
 /** Each session's current "solve finished" callback, so the session (made once) always calls the latest one. */
 const finishHandlers = new WeakMap<CubeSession, (solve: FinishedSolve) => void>();
@@ -11,6 +12,8 @@ export type CubeScramble = {
   view: SessionView;
   /** When the cube reached the scramble (host ms), or null until it does. */
   readyAt: number | null;
+  /** How the cube was held then, for the cube on screen to follow from (null until then). */
+  hold: Hold | null;
 };
 
 /**
@@ -36,7 +39,7 @@ export function useCubeScramble(scramble: string, active: boolean, onSolved?: (s
     if (onSolved) finishHandlers.set(session, onSolved);
     else finishHandlers.delete(session);
   }, [onSolved, session]);
-  const [readyAt, setReadyAt] = useState<number | null>(null);
+  const [ready, setReady] = useState<{ at: number; hold: Hold } | null>(null);
   const subscribe = useCallback((listener: () => void) => session.subscribe(listener), [session]);
   const view = useSyncExternalStore(subscribe, () => session.view());
 
@@ -45,12 +48,16 @@ export function useCubeScramble(scramble: string, active: boolean, onSolved?: (s
     if (!active) return;
     let following = true;
     let readyAtSet = false;
+    let followedBand = false;
     const off = [
       session.subscribe(() => {
-        if (readyAtSet || session.view().phase !== "ready") return;
+        const { phase } = session.view();
+        if (phase === "scrambling") followedBand = true;
+        if (readyAtSet || phase !== "ready") return;
         readyAtSet = true;
         if (!wholeSolve) following = false;
-        setReadyAt(performance.now());
+        // Read now, not once React renders: the cube may already be turning over.
+        setReady({ at: performance.now(), hold: heldAtScramble(followedBand) });
       }),
       smartCube.onMove((move, hostT, cubeT) => {
         if (following) session.move(move, hostT, cubeT);
@@ -70,5 +77,5 @@ export function useCubeScramble(scramble: string, active: boolean, onSolved?: (s
     return () => off.forEach((unsubscribe) => unsubscribe());
   }, [active, scramble, session, wholeSolve]);
 
-  return { view, readyAt };
+  return { view, readyAt: ready?.at ?? null, hold: ready?.hold ?? null };
 }
