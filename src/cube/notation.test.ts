@@ -79,6 +79,18 @@ describe("humanize with rotation events", () => {
     expect(texts(withRotations(sequence, [[after, rotation]]))).toBe(expected);
   });
 
+  it("reads a slow M2, reported as two M' halves, as M2 when one x2 closes them", () => {
+    expect(texts(withRotations("R'+L R'+L", [[4, "x2"]]))).toBe("M2");
+  });
+
+  it.each([
+    { slicesApart: false, expected: "F' f" },
+    { slicesApart: true, expected: "S" },
+  ])("reads opposite turns that arrived apart, closed by a slice's rotation, as $expected with slicesApart $slicesApart", ({ slicesApart, expected }) => {
+    const moves = timed("F' B");
+    expect(texts(humanize(moves, [{ rotation: "z", after: 2, t: moves[1]!.t }], never, { slicesApart }))).toBe(expected);
+  });
+
   it("renames turns into the solver's view as rotations accumulate", () => {
     expect(texts(withRotations("B U B' R", [[0, "y"]]))).toBe("y R U R' F");
     expect(texts(withRotations("R+L' U", [[2, "x'"]]))).toBe("M F");

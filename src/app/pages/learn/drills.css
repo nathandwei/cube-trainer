@@ -543,6 +543,13 @@
   color: var(--muted);
 }
 
+.lookahead-summary .why {
+  display: inline-flex;
+  gap: calc(14 * var(--u));
+  font-size: calc(26 * var(--ut));
+  color: var(--muted);
+}
+
 .lookahead-summary .next {
   display: inline-flex;
   align-items: baseline;
@@ -579,6 +586,17 @@
 .drill-timeline .pause {
   stroke: var(--accent);
   stroke-width: 10;
+}
+
+/* Filler sits on the line like a pause (it stands in for one); a detour runs under the stretch it wasted. */
+.drill-timeline .filler {
+  stroke: var(--warn);
+  stroke-width: 10;
+}
+
+.drill-timeline .detour {
+  stroke: var(--warn);
+  stroke-width: 4;
 }
 
 /* Reviewing a lookahead solve: beside the summary, and at the end of each history row. */

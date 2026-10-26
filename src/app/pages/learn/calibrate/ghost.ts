@@ -1,5 +1,5 @@
 // The ghost cube: a case on screen that follows his smart cube, whatever state the cube itself is in. His turns
-// (named by centre colour, as the cube reports them) play on the case and his regrips turn it with him, so he can
+// (named by centre colour, as the cube reports them) play on the case and it's held the way his cube is, so he can
 // show how he solves a case without first scrambling his cube into it.
 //
 // The gyro only measures turning, so his grip needs a starting point: the grip saved by "reset orientation" if
@@ -14,8 +14,11 @@ import { getCase } from "@/cube";
 import type { Move } from "@/cube/types";
 import { TakeStore, type TakeView } from "./take";
 
-/** The gyro gets this long after the goal turn to report a final slice's or wide move's rotation. */
-export const SETTLE_MS = 300;
+/**
+ * The gyro gets this long after the goal turn to report a final slice's or wide move's rotation: a wide move near
+ * the end (r' F) is a tip, read once held for five reports (gyro.ts GYRO_TUNING.tipDwellReports).
+ */
+export const SETTLE_MS = 600;
 
 export type GhostOptions = {
   /** The cube on screen: the ghost shows the case on it and plays every turn and regrip. */
@@ -29,8 +32,6 @@ export type GhostOptions = {
   active: boolean;
   /** Each of his turns, after it played on screen (centre frame, as the cube reported it). */
   onTurn?: (move: Move, take: TakeView) => void;
-  /** Each regrip the gyro confirmed, as the cube on screen turned with him. */
-  onRotation?: (rotations: readonly string[]) => void;
 };
 
 export type GhostCube = {
@@ -48,7 +49,7 @@ function startingGrip(report: Quaternion | null): GridOrientation | null {
   return report ? startOrientation(smartCube.orientationReference, report) : null;
 }
 
-export function useGhostCube({ cube, caseId, active, onTurn, onRotation }: GhostOptions): GhostCube {
+export function useGhostCube({ cube, caseId, active, onTurn }: GhostOptions): GhostCube {
   const [store] = useState(() => new TakeStore());
   const take = useSyncExternalStore(store.subscribe, store.view);
   // Seeded with the cube's latest report, so the very first take can already use the grip saved by Reorient.
@@ -56,12 +57,12 @@ export function useGhostCube({ cube, caseId, active, onTurn, onRotation }: Ghost
   /** Reset asked for his grip to be read afresh. */
   const forget = useRef(false);
   const live = useRef(active);
-  const callbacks = useRef({ onTurn, onRotation });
+  const callbacks = useRef({ onTurn });
   const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
     live.current = active;
-    callbacks.current = { onTurn, onRotation };
+    callbacks.current = { onTurn };
   });
 
   const animate = useCallback(
@@ -71,24 +72,22 @@ export function useGhostCube({ cube, caseId, active, onTurn, onRotation }: Ghost
     [cube],
   );
 
-  // A fresh take on the case as drawn, turned to face him.
+  // A fresh take on the case as drawn, held the way he holds his cube (upright until that's known).
   useEffect(() => {
     if (!active) return;
     const grip = forget.current ? null : (store.grip ?? startingGrip(report.current));
     forget.current = false;
     cube.current?.setTempo(3);
     cube.current?.show(`z2 ${getCase(caseId).setup}`);
-    animate(store.startAsDrawn(caseId, report.current, grip));
-  }, [active, animate, caseId, cube, generation, store]);
+    cube.current?.setAttitude(store.startAsDrawn(caseId, report.current, grip), true);
+  }, [active, caseId, cube, generation, store]);
 
   useEffect(() => {
     const off = [
       smartCube.onGyro((q, hostT) => {
         report.current = q;
-        const shown = store.gyro(q, hostT);
-        if (!live.current || shown.length === 0) return;
-        animate(shown);
-        callbacks.current.onRotation?.(shown);
+        const attitude = store.gyro(q, hostT);
+        if (live.current && attitude) cube.current?.setAttitude(attitude);
       }),
       smartCube.onMove((move, hostT, cubeT) => {
         if (!live.current) return;
@@ -97,7 +96,7 @@ export function useGhostCube({ cube, caseId, active, onTurn, onRotation }: Ghost
       }),
     ];
     return () => off.forEach((unsubscribe) => unsubscribe());
-  }, [animate, store]);
+  }, [animate, cube, store]);
 
   useEffect(() => {
     if (take.phase !== "reached" || take.sealed) return;

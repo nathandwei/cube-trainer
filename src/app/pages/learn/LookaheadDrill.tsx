@@ -20,7 +20,6 @@ import { analyzeSolve, applyAlg, createRng, isSolved, scrambledState, splitMoves
 import { analysisOptions } from "@/app/lib/method";
 import type { Move, RotationEvent, SolveAnalysis, SolveRecord, TimedMove } from "@/cube/types";
 import type { LookaheadRep } from "@/shared/learn";
-import { countTurns } from "./cross/attempt";
 import { BandFit } from "./cross/BandFit";
 import { useCubeScramble } from "./cross/cubeScramble";
 import { useCubeFollower } from "./follow";
@@ -29,6 +28,7 @@ import { BPM_STEP, clampBpm, isClean, isMessy, startingBpm, suggestBpm } from ".
 import { Metronome } from "./lookahead/metronome";
 import { beatMs, findPauses, pauseThresholdMs, type Gap } from "./lookahead/pauses";
 import { simulateSolve } from "./lookahead/simulate";
+import { DETOUR_MOVES, bpmResult, findDetours, findFiller, stallsOf } from "./lookahead/stalls";
 import { readStoredBpm, storeBpm } from "./lookahead/storage";
 import "./drills.css";
 
@@ -51,11 +51,13 @@ type Outcome = {
   /** Every reported turn, host ms. */
   times: number[];
   solveMs: number;
-  moveCount: number;
   solve: Recorded;
 };
 
-type Result = { rep: LookaheadRep; pauses: Gap[]; times: number[]; solveMs: number; moveCount: number; nextBpm: number; solve: SolveRecord };
+/** The pauses, filler and detours, as stretches of the solve (host ms) for the timeline. */
+type Stalls = { pauses: Gap[]; filler: Gap[]; detours: Gap[] };
+
+type Result = { rep: LookaheadRep; stalls: Stalls; times: number[]; solveMs: number; moveCount: number; nextBpm: number; solve: SolveRecord };
 
 const REVIEW_BACK = "/learn/lookahead";
 /** How long a finished run waits for the cube session's solve (it settles ~300 ms after the last turn). */
@@ -126,18 +128,24 @@ function beatStyle(bpm: number): CSSProperties {
   return { "--beat": `${beatMs(bpm)}ms` } as CSSProperties;
 }
 
-function toneOfPauses(pauses: number): "good" | "ok" | "bad" {
-  if (isClean(pauses)) return "good";
-  return isMessy(pauses) ? "bad" : "ok";
+function toneOfStalls(stalls: number): "good" | "ok" | "bad" {
+  if (isClean(stalls)) return "good";
+  return isMessy(stalls) ? "bad" : "ok";
 }
 
 function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
+function stallParts(pauses: number, filler: number, detours: number): string {
+  return [pauses > 0 ? plural(pauses, "pause") : "", filler > 0 ? `${filler} filler` : "", detours > 0 ? plural(detours, "detour") : ""].filter(Boolean).join(", ");
+}
+
 /**
  * Slow solving without stopping, to a beat, on a smart cube: a pause is any gap between turns longer than 1.5 beats.
- * The bpm rises by 5 after three clean solves in a row and drops by 5 after three messy ones. The beat is a pulsing
+ * Turning just to keep the beat doesn't count as looking ahead, so filler (turns that undo each other) and detours
+ * (a cross or pair far longer than it needed) are stalls too, like pauses (see lookahead/stalls.ts). The bpm rises
+ * by 5 after three clean solves in a row and drops by 5 after three messy ones. The beat is a pulsing
  * dot; the click is opt-in. Without a cube, Start opens the connect sheet; Test plays a pretend slow solve (kept on
  * this page only, never saved).
  */
@@ -154,7 +162,7 @@ export function LookaheadDrill() {
   const [chosenBpm, setChosenBpm] = useState<number | null>(readStoredBpm);
   // Test solves show in the history but never steer the tempo.
   const history = useMemo(() => reps.filter((rep) => rep.test !== true), [reps]);
-  const bpm = chosenBpm ?? startingBpm(history);
+  const bpm = chosenBpm ?? startingBpm(history.map(bpmResult));
   const [click, setClick] = useState(readClick);
   const [running, setRunning] = useState<Running | null>(null);
   const [result, setResult] = useState<Result | null>(null);
@@ -205,6 +213,20 @@ export function LookaheadDrill() {
   const finish = useCallback(
     (setup: Setup, outcome: Outcome) => {
       const pauses = findPauses(outcome.times, setup.bpm);
+      const analysis = outcome.solve.analysis ?? analysisOf(setup.scramble, outcome.solve.moves);
+      const recorded: Recorded = { ...outcome.solve, ...(analysis ? { analysis } : {}) };
+      const filler = findFiller(recorded.moves.map((m) => m.move));
+      const detours = findDetours(analysis, filler);
+      // Turns on the timeline's clock: a turn's time in the solve is from the first turn.
+      const at = (index: number) => (outcome.times[0] ?? 0) + (recorded.moves[index]?.t ?? 0);
+      const stalls: Stalls = {
+        pauses,
+        filler: filler.map((run) => ({ from: at(run.start), to: at(run.end) })),
+        detours: detours.map((stage) => ({ from: at(stage.startMove), to: at(stage.endMove - 1) })),
+      };
+      // Moves as he'd count them: a slice or wide move is one.
+      const source = setup.test ? "demo" : "smartcube";
+      const moveCount = displayTokens({ ...recorded, source }, analysis).filter((token) => token.kind === "turn").length;
       const rep: LookaheadRep = {
         kind: "lookahead",
         id: newRepId(),
@@ -212,18 +234,20 @@ export function LookaheadDrill() {
         item: "lookahead",
         bpm: setup.bpm,
         pauses: pauses.length,
+        filler: filler.length,
+        detours: detours.length,
         source: "smartcube",
         solveMs: Math.round(outcome.solveMs),
-        moveCount: outcome.moveCount,
+        moveCount,
         scramble: setup.scramble,
         longestGapMs: Math.round(Math.max(0, ...outcome.times.slice(1).map((t, i) => t - outcome.times[i]!))),
-        moves: outcome.solve.moves,
-        rotations: outcome.solve.rotations,
+        moves: recorded.moves,
+        rotations: recorded.rotations,
         ...(setup.test ? { test: true } : {}),
       };
-      const nextBpm = suggestBpm([...history, rep], setup.bpm);
+      const nextBpm = suggestBpm([...history, rep].map(bpmResult), setup.bpm);
       if (!setup.test) chooseBpm(nextBpm, true);
-      setResult({ rep, pauses, times: outcome.times, solveMs: outcome.solveMs, moveCount: outcome.moveCount, nextBpm, solve: solveRecord(rep, outcome.solve) });
+      setResult({ rep, stalls, times: outcome.times, solveMs: outcome.solveMs, moveCount, nextBpm, solve: solveRecord(rep, recorded) });
       if (setup.test) {
         setTestReps((current) => [...current, rep]);
         return;
@@ -361,6 +385,7 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [stoppedAt, setStoppedAt] = useState<number | null>(null);
   const [closedPauses, setClosedPauses] = useState(0);
+  const [fillerRuns, setFillerRuns] = useState(0);
   const [lastTurnAt, setLastTurnAt] = useState<number | null>(null);
   const [testProgress, setTestProgress] = useState(0);
   // The real cube: the scramble tracker follows the whole solve (gyro rotations included) and hands it over at the end.
@@ -398,15 +423,16 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
       run.times.push(t);
       if (previous !== undefined && t - previous > threshold) setClosedPauses((count) => count + 1);
       setLastTurnAt(t);
-      if (animate) for (const shown of follower.turn(move)) cube.current?.turn(shown);
+      if (animate) cube.current?.turn(move);
       run.turns.push(move);
+      setFillerRuns(findFiller(run.turns).length);
       run.state = applyAlg(run.state, [move]);
       if (!isSolved(run.state)) return;
       run.done = true;
       setStoppedAt(t);
       setPhase("done");
       const firstAt = run.firstAt;
-      const outcome = (recorded: Recorded) => ({ times: [...run.times], solveMs: t - firstAt, moveCount: countTurns(run.turns), solve: recorded });
+      const outcome = (recorded: Recorded) => ({ times: [...run.times], solveMs: t - firstAt, solve: recorded });
       if (simulated.current) {
         onDone(outcome(simulated.current));
         return;
@@ -429,7 +455,7 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
         onDone(outcome(finished.current ? fromSession(finished.current) : fallback));
       };
     },
-    [attempt, follower, onDone, threshold],
+    [attempt, onDone, threshold],
   );
 
   // The session saw the cube solved: hand its solve to a run that's waiting for it, or finish a run that missed a turn
@@ -446,7 +472,7 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
       const end = run.firstAt + solve.totalMs;
       setStoppedAt(end);
       setPhase("done");
-      onDone({ times: [...run.times], solveMs: solve.totalMs, moveCount: countTurns(solve.moves.map((m) => m.move)), solve: { moves: solve.moves, rotations: solve.rotations, analysis: solve.analysis } });
+      onDone({ times: [...run.times], solveMs: solve.totalMs, solve: { moves: solve.moves, rotations: solve.rotations, analysis: solve.analysis } });
     };
   }, [onDone]);
 
@@ -481,11 +507,14 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
     return () => window.clearTimeout(timer);
   }, [onClose, phase]);
 
-  // A smart cube at the scramble: the cube on screen turns as it's turned.
+  // A smart cube at the scramble: the cube on screen is held as it is.
   useEffect(() => {
     if (setup.test || readyAt === null || !hold) return;
-    for (const rotation of follower.hold(hold)) cube.current?.turn(rotation);
-    return smartCube.onMove((move, hostT) => turnNow.current(move, hostT));
+    follower.hold(hold);
+    return smartCube.onMove((move, hostT) => {
+      follower.turn(move, hostT);
+      turnNow.current(move, hostT);
+    });
   }, [follower, hold, readyAt, setup.test]);
 
   // The Test button: scramble a pretend cube, look for a moment, then a slow solve re-timed to the beat.
@@ -532,7 +561,8 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
 
   const solving = shownPhase === "solve";
   const openPause = solving && lastTurnAt !== null && now - lastTurnAt > threshold ? 1 : 0;
-  const pauses = closedPauses + openPause;
+  // Detours are only known once the solve is analysed; pauses and filler show as they happen.
+  const stalls = closedPauses + openPause + fillerRuns;
   const elapsed = startedAt === null ? 0 : solving ? Math.max(0, now - startedAt) : (stoppedAt ?? startedAt) - startedAt;
   const scrambleMoves = splitMoves(setup.scramble).length;
   const band =
@@ -557,9 +587,9 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
         <CubeView ref={cube} className="cube" setup={setup.test ? "z2" : `${setup.scramble} z2`} />
       </div>
       <span className="beat-dot big" style={beatStyle(setup.bpm)} aria-hidden="true" />
-      <div className={`drill-pauses ${pauses > 0 ? "some" : ""} ${shownPhase === "scramble" ? "hidden" : ""}`}>
-        <span className="count">{pauses}</span>
-        <span className="label">{pauses === 1 ? "Pause" : "Pauses"}</span>
+      <div className={`drill-pauses ${stalls > 0 ? "some" : ""} ${shownPhase === "scramble" ? "hidden" : ""}`}>
+        <span className="count">{stalls}</span>
+        <span className="label">{stalls === 1 ? "Stall" : "Stalls"}</span>
       </div>
       <p className="drill-foot">
         {setup.test ? (
@@ -578,13 +608,14 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
   );
 }
 
-function Timeline({ times, pauses, endMs }: { times: readonly number[]; pauses: readonly Gap[]; endMs: number }) {
+function Timeline({ times, stalls, endMs }: { times: readonly number[]; stalls: Stalls; endMs: number }) {
+  const { pauses, filler, detours } = stalls;
   const width = 1000;
   const start = times[0] ?? 0;
   const span = Math.max(1, endMs - start);
   const x = (t: number) => ((t - start) / span) * width;
   return (
-    <svg className="drill-timeline" viewBox={`0 0 ${width} 20`} preserveAspectRatio="none" role="img" aria-label={plural(pauses.length, "pause")}>
+    <svg className="drill-timeline" viewBox={`0 0 ${width} 20`} preserveAspectRatio="none" role="img" aria-label={stallParts(pauses.length, filler.length, detours.length) || "No stalls"}>
       <line className="base" x1={0} x2={width} y1={10} y2={10} />
       {times.map((t, i) => (
         <line key={i} className="turn" x1={x(t)} x2={x(t)} y1={5} y2={15} />
@@ -592,17 +623,31 @@ function Timeline({ times, pauses, endMs }: { times: readonly number[]; pauses: 
       {pauses.map((gap) => (
         <line key={gap.from} className="pause" x1={x(gap.from)} x2={x(gap.to)} y1={10} y2={10} />
       ))}
+      {filler.map((gap) => (
+        <line key={`filler-${gap.from}`} className="filler" x1={x(gap.from)} x2={x(gap.to)} y1={10} y2={10} />
+      ))}
+      {detours.map((gap) => (
+        <line key={`detour-${gap.from}`} className="detour" x1={x(gap.from)} x2={x(gap.to)} y1={19} y2={19} />
+      ))}
     </svg>
   );
 }
 
 function LookaheadResult({ result }: { result: Result }) {
-  const { rep, pauses, times, solveMs, moveCount, nextBpm, solve } = result;
+  const { rep, stalls, times, solveMs, moveCount, nextBpm, solve } = result;
   const change = nextBpm - rep.bpm;
+  const total = stallsOf(rep);
   return (
     <section className="lookahead-result">
       <div className="lookahead-summary">
-        <span className={`hero tone-${toneOfPauses(rep.pauses)}`}>{plural(rep.pauses, "pause")}</span>
+        <span className={`hero tone-${toneOfStalls(total)}`}>{plural(total, "stall")}</span>
+        {total > 0 && (
+          <span className="why">
+            {stalls.pauses.length > 0 && <span>{plural(stalls.pauses.length, "pause")}</span>}
+            {stalls.filler.length > 0 && <span data-tip="Turns that undid each other: U U U U, R R'">{stalls.filler.length} filler</span>}
+            {stalls.detours.length > 0 && <span data-tip={`A cross or pair ${DETOUR_MOVES}+ moves longer than it needed`}>{plural(stalls.detours.length, "detour")}</span>}
+          </span>
+        )}
         <span className="meta">
           {formatMs(solveMs)} · {moveCount} moves · {rep.bpm} bpm
         </span>
@@ -612,7 +657,7 @@ function LookaheadResult({ result }: { result: Result }) {
         </span>
         {solve.analysis && <IconButton icon={Search} label="Review" variant="soft" className="lookahead-review" onClick={() => openReview(solve)} />}
       </div>
-      <Timeline times={times} pauses={pauses} endMs={(times[0] ?? 0) + solveMs} />
+      <Timeline times={times} stalls={stalls} endMs={(times[0] ?? 0) + solveMs} />
     </section>
   );
 }
@@ -628,9 +673,9 @@ function LookaheadHistory({ reps }: { reps: readonly LookaheadRep[] }) {
           const recorded = recordedOf(rep);
           return (
             <li key={rep.id}>
-              <span className={`drill-dot tone-${toneOfPauses(rep.pauses)}`} />
+              <span className={`drill-dot tone-${toneOfStalls(stallsOf(rep))}`} />
               <span className="moves">{rep.bpm} bpm</span>
-              <span className="time">{plural(rep.pauses, "pause")}</span>
+              <span className="time">{plural(stallsOf(rep), "stall")}</span>
               <span className="verdict">{typeof rep.solveMs === "number" ? formatMs(rep.solveMs) : ""}</span>
               <span className="note">{rep.test === true ? "Test" : ""}</span>
               {recorded && <IconButton icon={Search} label="Review" size="sm" className="row-review" onClick={() => openReview(solveRecord(rep, recorded))} />}

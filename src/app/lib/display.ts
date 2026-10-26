@@ -1,24 +1,28 @@
 import { FrameTracker, humanize, type DisplayToken } from "@/cube";
-import type { RotationEvent, Slot, SolveAnalysis, TimedMove } from "@/cube/types";
+import type { RotationEvent, Slot, SolveAnalysis, SolveSource, TimedMove } from "@/cube/types";
 import { stageAt } from "@/app/lib/review";
 
-/** Two turns this close together are one move on a smart cube: a slice (R L') or a half turn (R R). */
+/**
+ * Two turns this close together are one move on a smart cube when nothing else says so: a slice (R L') read without
+ * the gyro. A half turn (R R) is one move however slowly its two quarters came (as csTimer counts it).
+ */
 const TOGETHER_MS = 60;
 
 /** A display token with the moment it happened, for playback in real time. */
 export type TimedToken = DisplayToken & { t: number };
 
-type Solve = { moves: readonly TimedMove[]; rotations?: readonly RotationEvent[] };
+/** `source`: a smart cube's rotations come from its gyro, which reads a slice whose turns arrived apart. */
+type Solve = { moves: readonly TimedMove[]; rotations?: readonly RotationEvent[]; source?: SolveSource };
 
 /** The solve as the solver saw it: slices, wide moves and rotations, each with its time. */
 export function displayTokens(solve: Solve, analysis: SolveAnalysis | undefined): TimedToken[] {
   const { moves } = solve;
   const rotations = solve.rotations ?? [];
   const tokens = humanize(moves, rotations, (i) => {
-    const gap = (moves[i + 1]?.t ?? Infinity) - (moves[i]?.t ?? 0);
-    const sameStage = !analysis || stageAt(analysis, i) === stageAt(analysis, i + 1);
-    return gap <= TOGETHER_MS && sameStage;
-  });
+    const next = moves[i + 1];
+    if (!next || (analysis && stageAt(analysis, i) !== stageAt(analysis, i + 1))) return false;
+    return next.move.charAt(0) === moves[i]!.move.charAt(0) || next.t - moves[i]!.t <= TOGETHER_MS;
+  }, { slicesApart: solve.source === "smartcube" });
   let nextRotation = 0;
   return tokens.map((token) => {
     if (token.kind === "turn") return { ...token, t: moves[token.end - 1]?.t ?? 0 };

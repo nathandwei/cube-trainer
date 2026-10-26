@@ -1,5 +1,5 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
-import type { CubeRenderer } from "@/app/cube3d/renderer";
+import type { Attitude, CubeRenderer } from "@/app/cube3d/renderer";
 import { animatedTurn, reverseOf, TurnAnimator } from "@/app/lib/animation";
 import { useSettings } from "@/app/lib/settings";
 
@@ -13,6 +13,8 @@ export type CubeHandle = {
   /** Show `setup`, then animate `alg` one turn every `stepMs`. The next show() or play() cuts it short. */
   play(setup: string, alg: string, stepMs?: number): void;
   setTempo(scale: number): void;
+  /** Tilt the whole cube the way a smart cube is held (null: upright), gliding there unless `jump`. */
+  setAttitude(attitude: Attitude | null, jump?: boolean): void;
   /** The usual view again after he has dragged the cube round. */
   resetView(): void;
 };
@@ -46,16 +48,16 @@ function loadRenderer(): Promise<typeof import("@/app/cube3d/renderer")> {
 }
 
 /**
- * What the cube should show once it has loaded: a state, and the tempo it plays at. `dead` once it never will (no
- * WebGL), so turns stop piling up.
+ * What the cube should show once it has loaded: a state, the tempo it plays at and its tilt. `dead` once it never
+ * will (no WebGL), so turns stop piling up.
  */
-type Waiting = { moves: string[]; tempo: number; dead: boolean };
+type Waiting = { moves: string[]; tempo: number; attitude: Attitude | null; dead: boolean };
 
 export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const player = useRef<CubeRenderer | null>(null);
   const timers = useRef<number[]>([]);
-  const waiting = useRef<Waiting>({ moves: movesOf(setup), tempo: DEFAULT_TEMPO, dead: false });
+  const waiting = useRef<Waiting>({ moves: movesOf(setup), tempo: DEFAULT_TEMPO, attitude: null, dead: false });
   const { cubeLook } = useSettings();
   const look = useRef(cubeLook);
   // Which way each hand last turned since the last show(), so R2 / L2 spin the way fingers would.
@@ -73,11 +75,12 @@ export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
         } catch (error) {
           // No WebGL (switched off, or too many cubes open at once): the page works without its cube.
           console.error("CubeView: could not start the 3D cube", error);
-          waiting.current = { moves: [], tempo: waiting.current.tempo, dead: true };
+          waiting.current = { ...waiting.current, moves: [], dead: true };
           return;
         }
         cube.setTempo(waiting.current.tempo);
         cube.show(waiting.current.moves);
+        cube.setAttitude(waiting.current.attitude, true);
         player.current = cube;
       })
       .catch((error: unknown) => console.error("CubeView: could not load the 3D cube", error));
@@ -140,6 +143,10 @@ export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
     setTempo(scale) {
       waiting.current.tempo = scale;
       player.current?.setTempo(scale);
+    },
+    setAttitude(attitude, jump = false) {
+      waiting.current.attitude = attitude;
+      player.current?.setAttitude(attitude, jump);
     },
     resetView() {
       player.current?.resetView();

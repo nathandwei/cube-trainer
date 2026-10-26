@@ -9,6 +9,7 @@ import type { LookaheadRep, Rep } from "@/shared/learn";
 import { itemLabel, LEARN_ITEMS, learnItem, type LearnItem } from "./items";
 import { clearCalibration, requestCalibration } from "./calibrateRequest";
 import { currentBpm } from "./lookahead/storage";
+import { bpmResult } from "./lookahead/stalls";
 
 function count(id: string, algs: Record<string, string>): string {
   const item = learnItem(id);
@@ -21,7 +22,7 @@ function count(id: string, algs: Record<string, string>): string {
 function drillValues(reps: readonly Rep[], crossRating: number | null): Record<string, string> {
   const rating = crossRating === null ? "" : String(Math.round(crossRating));
   const lookahead = reps.filter((rep): rep is LookaheadRep => rep.kind === "lookahead");
-  return { cross: rating, xcross: rating, lookahead: `${currentBpm(lookahead)} bpm` };
+  return { cross: rating, xcross: rating, lookahead: `${currentBpm(lookahead.map(bpmResult))} bpm` };
 }
 
 /** Learning it or not: unticking only takes it off the list; its algs and reps stay, so ticking it brings them back. */

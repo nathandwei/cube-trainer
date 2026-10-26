@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { clampBpm, DEFAULT_BPM, MAX_BPM, MIN_BPM, startingBpm, suggestBpm, type BpmResult } from "./bpm";
 
-const at = (bpm: number, ...pauses: number[]): BpmResult[] => pauses.map((p) => ({ bpm, pauses: p }));
+const at = (bpm: number, ...stalls: number[]): BpmResult[] => stalls.map((stall) => ({ bpm, stalls: stall }));
 
 describe("suggestBpm", () => {
   it.each([

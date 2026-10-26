@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { GRID, multiply, type Quaternion } from "@/app/smartcube/gyro";
-import { FrameTracker, caseScramble, caseState, createRng, getCase, scrambledState } from "@/cube";
+import { GRID, multiply, snap, type Quaternion } from "@/app/smartcube/gyro";
+import { FrameTracker, applyAlg, caseScramble, caseState, createRng, getCase, isGoalReached, scrambledState } from "@/cube";
 import type { Rotation } from "@/cube/types";
+import { SETTLE_MS } from "./ghost";
 import { SCRAMBLE_GRIP, SOLVER_GRIP, gridOf } from "./grip";
 import { testLine, tidy } from "./notation";
 import { MAX_MOVES, Recorder } from "./recorder";
@@ -15,17 +16,40 @@ function report(...rotations: Rotation[]): Quaternion {
   return { w: q.w, x: -q.x, y: -q.z, z: -q.y };
 }
 
-/** A cube that reports like a GAN: quarter turns only (a half turn is two, 40 ms apart), with the cube's clock. */
+/** The orientation an attitude holds the cube on screen at, as rotations from the solver's grip ("" upright). */
+function shownAs(attitude: Quaternion | null): string | null {
+  if (!attitude) return null;
+  const { orientation, degrees } = snap(attitude);
+  return degrees < 1 ? orientation.rotations.join(" ") : `${degrees.toFixed(1)}° from ${orientation.rotations.join(" ")}`;
+}
+
+/**
+ * A cube that reports like a GAN: quarter turns only (a half turn is two, 40 ms apart), with the cube's clock, and,
+ * once it has been held at all (it has a gyro), where it's held every 90 ms as time passes.
+ */
 class Hand {
   t = 1000;
+  /** Between one move's turns and the next (ms): 160 is a steady pace, 90 about 11 turns a second. */
+  pace = 160;
+  #held: Rotation[] | null = null;
+  #next = 0;
+  #attitude: Quaternion | null = null;
   constructor(readonly recorder: Recorder) {}
+
+  /** Time passes; the attitude the cube on screen was last given. */
+  wait(ms: number): Quaternion | null {
+    const until = this.t + ms;
+    if (this.#held) for (; this.#next <= until; this.#next += 90) this.#attitude = this.recorder.gyro(report(...this.#held), this.#next);
+    this.t = until;
+    return this.#attitude;
+  }
 
   /** Centre-frame turns; returns what the screen animates. */
   turn(...moves: string[]): string[] {
     return moves.flatMap((move) => {
       const quarters = move.endsWith("2") ? [move.charAt(0), move.charAt(0)] : [move];
       return quarters.flatMap((quarter, i) => {
-        this.t += i === 0 ? 160 : 40;
+        this.wait(i === 0 ? this.pace : 40);
         return this.recorder.turn(quarter, this.t, this.t);
       });
     });
@@ -36,21 +60,28 @@ class Hand {
     const quarters = moves.map((move) => (move.endsWith("2") ? [move.charAt(0), move.charAt(0)] : [move]));
     const order = [0, 1].flatMap((k) => quarters.flatMap((list) => (list[k] ? [list[k]] : [])));
     return order.flatMap((quarter, i) => {
-      this.t += i === 0 ? 160 : 15;
+      this.wait(i === 0 ? this.pace : 15);
       return this.recorder.turn(quarter, this.t, this.t);
     });
   }
 
-  /** Holds the cube at `rotations` from the solver's grip for three gyro reports. */
-  hold(...rotations: Rotation[]): string[] {
-    return [0, 1, 2].flatMap(() => {
-      this.t += 90;
-      return this.recorder.gyro(report(...rotations), this.t);
-    });
+  /**
+   * Holds the cube at `rotations` from the solver's grip from now on, long enough for even a tip (x, z) to read as
+   * held: six reports. The attitude shown after the last.
+   */
+  hold(...rotations: Rotation[]): Quaternion | null {
+    if (!this.#held) this.#next = this.t + 90;
+    this.#held = rotations;
+    return this.wait(540);
+  }
+
+  /** The core is at `rotations` from now on: a slice or wide move just turned it with its last turn. */
+  turned(...rotations: Rotation[]): void {
+    this.#held = rotations;
   }
 }
 
-/** Moves in his view done on a cube with a gyro: each wide move, slice or regrip turns the core a moment after its turns. */
+/** Moves in his view done on a cube with a gyro: each wide move or slice turns the core with its turns; a regrip is held. */
 function perform(hand: Hand, tokens: readonly string[], grip: Rotation[] = []): Rotation[] {
   const view = new FrameTracker();
   for (const rotation of grip) view.rotate(rotation);
@@ -61,9 +92,8 @@ function perform(hand: Hand, tokens: readonly string[], grip: Rotation[] = []): 
     else hand.turn(...step.turns);
     if (!step.rotation) continue;
     held = [...held, step.rotation];
-    // The gyro sees the core settle just after the move's last turn.
-    if (step.turns.length > 0) hand.t -= 50;
-    hand.hold(...held);
+    if (step.turns.length > 0) hand.turned(...held);
+    else hand.hold(...held);
   }
   return held;
 }
@@ -99,9 +129,30 @@ describe("Recorder", () => {
     hand.hold();
     perform(hand, testLine(caseId, scrambledState(scramble)) ?? []);
     expect(recorder.phase).toBe("reached");
+    // As the slide does: the take stands once the gyro has had a moment to settle.
+    hand.wait(SETTLE_MS);
     recorder.seal();
     const alg = words(getCase(caseId).algs[0]!);
     expect(recorder.alg()).toBe(tidy(/^[xyz]/.test(alg.at(-1) ?? "") ? alg.slice(0, -1) : alg).join(" "));
+  });
+
+  it("records an A perm's wide T perm done fast, r and r' and all", () => {
+    const alg = "R U R' F' r U R' U' r' F R2 U' R'";
+    const start = caseState("PLL-Aa");
+    // The angle the case is drawn from may need a U first.
+    const line = ["", "U", "U'", "U2"].map((auf) => words(`${auf} ${alg}`)).find((tokens) => isGoalReached("PLL", applyAlg(start, centre(tokens.join(" ")))));
+    expect(line).toBeDefined();
+    const recorder = new Recorder("PLL-Aa", start);
+    recorder.hold(report(), SOLVER_GRIP);
+    const hand = new Hand(recorder);
+    hand.hold();
+    hand.pace = 90;
+    perform(hand, line ?? []);
+    expect(recorder.phase).toBe("reached");
+    hand.wait(SETTLE_MS);
+    recorder.seal();
+    // Too quick for the tip reading (r' comes 0.4 s after r): CoreWatch reads the pair from the core's own turns.
+    expect(recorder.alg()).toBe((line ?? []).join(" "));
   });
 
   it("ignores turns until the cube is in the case", async () => {
@@ -134,12 +185,13 @@ describe("Recorder", () => {
     const { recorder } = await onCase("OLL-27");
     recorder.hold(report("z2"));
     const hand = new Hand(recorder);
-    expect(hand.hold("z2")).toEqual([]);
-    expect(hand.hold()).toEqual([]);
-    // He turns the case round with a y: the cube on screen follows.
-    expect(hand.hold("y")).toEqual(["y"]);
-    // His R is the old back face now; the screen turns its own right face.
-    expect(hand.turn("B", "U", "B'")).toEqual(["R", "U", "R'"]);
+    // The cube on screen is held as his is: white on top, then turned over.
+    expect(shownAs(hand.hold("z2"))).toBe("z2");
+    expect(shownAs(hand.hold())).toBe("");
+    // He turns the case round with a y: the cube on screen turns with him.
+    expect(shownAs(hand.hold("y"))).toBe("y");
+    // His R is the old back face now; the screen turns that layer, which the y has put on the right.
+    expect(hand.turn("B", "U", "B'")).toEqual(["B", "U", "B'"]);
     expect(recorder.tokens()).toEqual(["y", "R", "U", "R'"]);
   });
 
@@ -149,7 +201,7 @@ describe("Recorder", () => {
     const hand = new Hand(recorder);
     hand.hold("z2");
     // Flipped with x2 from white on top: blue in front, which is y2 from the solver's grip.
-    expect(hand.hold("y2")).toEqual(["y2"]);
+    expect(shownAs(hand.hold("y2"))).toBe("y2");
     hand.turn("L");
     expect(recorder.tokens()).toEqual(["y2", "R"]);
   });
@@ -158,7 +210,7 @@ describe("Recorder", () => {
     const { recorder } = await onCase("OLL-27");
     recorder.hold(report(), SOLVER_GRIP);
     const hand = new Hand(recorder);
-    expect(hand.hold()).toEqual([]);
+    expect(shownAs(hand.hold())).toBe("");
     hand.turn("R");
     expect(recorder.tokens()).toEqual(["R"]);
   });
@@ -171,7 +223,7 @@ describe("Recorder", () => {
     expect(hand.turn("L")).toEqual(["L"]);
     hand.t -= 100;
     // The core turns like x a moment after the turn arrives: that's r, and the screen turns with it.
-    expect(hand.hold("x")).toEqual(["x"]);
+    expect(shownAs(hand.hold("x"))).toBe("x");
     expect(recorder.tokens()).toEqual(["r"]);
   });
 
@@ -192,7 +244,7 @@ describe("Recorder", () => {
     hand.t -= 50;
     hand.hold(...held, ...(step.rotation ? [step.rotation] : []));
     recorder.seal();
-    expect(hand.hold()).toEqual([]);
+    hand.hold();
     expect(recorder.alg()).toBe(getCase("EPLL-Ua").algs[0]);
   });
 
@@ -212,29 +264,29 @@ describe("Recorder", () => {
   describe("ghost takes (the case on screen, his cube in any state)", () => {
     it("reads an unknown grip as the screen's at his first turn, then follows his regrips", () => {
       const recorder = new Recorder("OLL-27", caseState("OLL-27"));
-      expect(recorder.hold(report("y'"), null)).toEqual([]);
+      expect(recorder.hold(report("y'"), null)).toBeNull();
       const hand = new Hand(recorder);
       // Before his first turn there's nothing to measure his grip against.
-      expect(hand.hold("y'", "x")).toEqual([]);
-      expect(hand.hold("y'")).toEqual([]);
+      expect(hand.hold("y'", "x")).toBeNull();
+      expect(hand.hold("y'")).toBeNull();
       hand.turn("R");
-      expect(hand.hold("y'", "y")).toEqual(["y"]);
+      expect(shownAs(hand.hold("y'", "y"))).toBe("y");
       hand.turn("B");
       expect(recorder.tokens()).toEqual(["R", "y", "R"]);
     });
 
-    it("faces the screen to a grip carried over from the last take, and names his turns in it", () => {
+    it("holds the screen at a grip carried over from the last take, and names his turns in it", () => {
       const recorder = new Recorder("OLL-27", caseState("OLL-27"));
-      expect(recorder.hold(report("y"), gridOf("y"))).toEqual(["y"]);
+      expect(shownAs(recorder.hold(report("y"), gridOf("y")))).toBe("y");
       const hand = new Hand(recorder);
-      expect(hand.turn("B", "U", "B'")).toEqual(["R", "U", "R'"]);
+      expect(hand.turn("B", "U", "B'")).toEqual(["B", "U", "B'"]);
       expect(recorder.tokens()).toEqual(["y", "R", "U", "R'"]);
     });
 
     it("reads the grip from the cube's first report when the hold had none", () => {
       const recorder = new Recorder("OLL-27", caseState("OLL-27"));
       recorder.hold(null, gridOf("y2"));
-      expect(new Hand(recorder).hold("y2")).toEqual(["y2"]);
+      expect(shownAs(new Hand(recorder).hold("y2"))).toBe("y2");
       expect(recorder.grip).toBe(gridOf("y2"));
     });
 
@@ -250,7 +302,7 @@ describe("Recorder", () => {
       recorder.play("R'", 900);
       expect(recorder.phase).toBe("reached");
       recorder.seal();
-      expect(new Hand(recorder).hold("y")).toEqual([]);
+      expect(shownAs(new Hand(recorder).hold("y"))).toBe("y");
       expect(recorder.grip).toBe(gridOf("y"));
     });
 

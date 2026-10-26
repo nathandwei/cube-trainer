@@ -9,10 +9,13 @@
 
 import { displayTokens } from "@/app/lib/display";
 import { FrameTracker, algMoveCount, applyAlg, caseState, getCase, isGoalReached, normalizeStream, type CaseDef, type CubeState } from "@/cube";
-import type { RotationEvent, TimedMove } from "@/cube/types";
+import type { RotationEvent, SolveSource, TimedMove } from "@/cube/types";
 
-/** Turns on the take's clock (ms from the first turn) and the rotations between them, as a solve stores them. */
-export type Take = { moves: readonly TimedMove[]; rotations: readonly RotationEvent[] };
+/**
+ * Turns on the take's clock (ms from the first turn) and the rotations between them, as a solve stores them;
+ * `source` "smartcube" when turned on the cube (its rotations from the gyro), not played by Test.
+ */
+export type Take = { moves: readonly TimedMove[]; rotations: readonly RotationEvent[]; source?: SolveSource };
 
 const TOKEN = /^([URFDLBMESurfdlbxyz])(2|')?$/;
 const SUFFIX = ["", "", "2", "'"] as const;
@@ -46,7 +49,7 @@ export function tidy(tokens: readonly string[]): string[] {
 /** The take as he did it: half turns, slices, wide moves and rotations, each named in his view at the time. */
 export function takeTokens(take: Take): string[] {
   const merged = normalizeStream(take.moves, take.rotations);
-  return tidy(displayTokens(merged, undefined).map((token) => token.text));
+  return tidy(displayTokens({ ...merged, source: take.source }, undefined).map((token) => token.text));
 }
 
 /** Moves in the slice turn metric, as the catalog counts them (rotations are free). */

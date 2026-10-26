@@ -1,5 +1,6 @@
 // One take of one case, recorded from the smart cube: what he turned, how he held it, and when the case was done.
-// No React and no Bluetooth: the slide feeds it turns and gyro reports and animates what it hands back.
+// No React and no Bluetooth: the slide feeds it turns and gyro reports, animates the turns it hands back and holds
+// the cube on screen at the attitude it hands back (see follow.ts).
 //
 //   waiting ──first turn──▶ turning ──goal reached──▶ reached ──seal()──▶ (the take stands)
 //   turning ──back to the case──▶ waiting          turning ──too many moves──▶ over
@@ -9,10 +10,20 @@
 // starts from names his turns even when he regripped before the first one; while turning, each detected rotation is
 // placed between turns the way the timer places them, so a wide move or slice reads as one move.
 
-import { FrameTracker, applyAlg, applyMove, fitCubeClock, getCase, isGoalReached, stateKey, type CaseDef, type CubeState } from "@/cube";
-import type { Move, Rotation, RotationEvent } from "@/cube/types";
-import { rotationsBetween, wideMoveEnd, type GridOrientation, type Quaternion, type RotationDetector } from "@/app/smartcube/gyro";
-import { SCRAMBLE_GRIP, SOLVER_GRIP, detectorAt, keepsYellowUp, leadRotations } from "./grip";
+import { applyAlg, applyMove, fitCubeClock, getCase, isGoalReached, stateKey, type CaseDef, type CubeState } from "@/cube";
+import type { Move, RotationEvent } from "@/cube/types";
+import {
+  CoreWatch,
+  newPlacement,
+  placeCoreTurn,
+  placeRotation,
+  type GridOrientation,
+  type Placement,
+  type Quaternion,
+  type RotationDetector,
+} from "@/app/smartcube/gyro";
+import { CubeFollower } from "../follow";
+import { SCRAMBLE_GRIP, SOLVER_GRIP, detectorAt, leadRotations } from "./grip";
 import { asAlg, moveCount, takeTokens, type Take } from "./notation";
 
 const ROTATION = /^[xyz](2|')?$/;
@@ -23,7 +34,6 @@ export const MAX_MOVES = 30;
 export type RecorderPhase = "waiting" | "turning" | "reached" | "over";
 
 type Turn = { move: Move; hostT: number; cubeT: number | null };
-type Placed = { rotation: Rotation; after: number; hostT: number; turn: number | null };
 
 export class Recorder {
   readonly #caseDef: CaseDef;
@@ -34,18 +44,20 @@ export class Recorder {
   #holding = false;
   #sealed = false;
   #turns: Turn[] = [];
-  #placed: Placed[] = [];
-  #lead: Rotation[] = [];
-  /** His view since the first turn: the lead rotations and every placed one. */
-  #view = new FrameTracker();
-  #lastAfter = 0;
+  /** The rotations among the turns since the first, and his view: the lead rotations and every placed one. */
+  #placement: Placement = newPlacement(this.#turns, []);
+  /** Reads wide moves and slices from the core's own turn. */
+  #core = new CoreWatch();
+  /** Bumped whenever a rotation is placed or replaced, so the take's tokens are read again. */
+  #revision = 0;
+  /** The take was played by Test, its rotations typed rather than read from the gyro. */
+  #played = false;
   #detector: RotationDetector | null = null;
   /** The cube's latest gyro report, and the grip the take was held in (null: read it at the first turn). */
   #report: Quaternion | null = null;
   #grip: GridOrientation | null = null;
-  /** Where the cube on screen faces, relative to the solver's grip, and the names its faces have. */
-  #shown: GridOrientation = SOLVER_GRIP;
-  #screen = new FrameTracker();
+  /** The cube on screen's attitude, measured from the same grip as the detector. */
+  readonly #follower = new CubeFollower();
 
   /** `start`: the case on the cube, centre frame (scrambledState of its scramble). */
   constructor(caseId: string, start: CubeState) {
@@ -68,22 +80,26 @@ export class Recorder {
     return this.#turns.length;
   }
 
+  /** Changes whenever a gyro report changes the take (a rotation placed, or a slice read in place of one). */
+  get revision(): number {
+    return this.#revision;
+  }
+
   /**
    * Turns count from now: the case is on the cube (or on screen, for a ghost take). `grip` is how he holds the cube
    * relative to the solver's grip: as it was scrambled (white on top) after following the band, a grip carried over
    * from the take before, or null when unknown, in which case he's taken to hold it the way the screen shows the case
    * when he makes his first turn. `report` is the cube's latest gyro report; null for a cube without a gyro (or a test
-   * take), whose turns are then read in the solver's grip. Returns the rotations that turn the cube on screen to face
-   * like his.
+   * take), whose turns are then read in the solver's grip. Returns the cube on screen's attitude, once known.
    */
-  hold(report: Quaternion | null, grip: GridOrientation | null = SCRAMBLE_GRIP): string[] {
+  hold(report: Quaternion | null, grip: GridOrientation | null = SCRAMBLE_GRIP): Quaternion | null {
     this.#holding = true;
     this.#report = report;
     this.#grip = grip;
     this.#detector = null;
-    if (!report || !grip) return [];
-    this.#anchor(report, grip);
-    return keepsYellowUp(grip) ? this.#face(grip) : [];
+    this.#follower.reset();
+    if (!report || !grip) return null;
+    return this.#anchor(report, grip);
   }
 
   /** From now on the cube is `grip` away from the solver's grip (it was just read some other way). */
@@ -98,37 +114,37 @@ export class Recorder {
     return this.#detector?.orientation ?? null;
   }
 
-  /** A gyro report: the rotations to animate on screen, if the cube on screen should turn with him. */
-  gyro(q: Quaternion, hostT: number): string[] {
+  /** A gyro report: the cube on screen's attitude, once known. */
+  gyro(q: Quaternion, hostT: number): Quaternion | null {
     this.#report = q;
     if (!this.#detector) {
       // The cube's first report since the hold: the grip it was held in can be read from now.
-      if (!this.#holding || !this.#grip || this.#phase !== "waiting") return [];
-      this.#anchor(q, this.#grip);
-      return keepsYellowUp(this.#grip) ? this.#face(this.#grip) : [];
+      if (!this.#holding || !this.#grip || this.#phase !== "waiting") return null;
+      return this.#anchor(q, this.#grip);
     }
     const detector = this.#detector;
     // Sampled even once the take stands, so his grip is still known when the next take starts.
     const found = detector.sample(q, hostT);
-    if (!found || this.#sealed) return [];
-    if (this.#phase === "waiting") {
-      // Turning the cube over from scrambling isn't part of his alg, so until the first turn the cube on screen
-      // only follows him round the last layer.
-      return keepsYellowUp(detector.orientation) ? this.#face(detector.orientation) : [];
+    const cores = this.#core.sample(q, hostT);
+    // Turning the cube over from scrambling isn't part of his alg: rotations count from the first turn.
+    if (!this.#sealed && (this.#phase === "turning" || this.#phase === "reached")) {
+      if (found) for (const rotation of found.rotations) placeRotation(this.#placement, rotation, found.since, found.rotations.length === 1);
+      for (const core of cores) placeCoreTurn(this.#placement, detector, core);
+      if (found || cores.length > 0) this.#revision++;
     }
-    if (this.#phase !== "over") for (const rotation of found.rotations) this.#place(rotation, found.since, found.rotations.length === 1);
-    return this.#face(detector.orientation);
+    return this.#follower.gyro(q, hostT);
   }
 
-  /** A centre-frame turn from the cube: the moves to animate on screen. */
+  /** A centre-frame turn from the cube: the moves to animate on screen (the turn itself, named as reported). */
   turn(move: Move, hostT: number, cubeT: number | null): string[] {
+    if (this.#holding) this.#follower.turn(move, hostT);
     if (!this.#holding || this.#phase === "reached" || this.#phase === "over") return [];
-    const shown = this.#phase === "waiting" ? this.#begin() : [];
+    if (this.#phase === "waiting") this.#begin();
     this.#turns.push({ move, hostT, cubeT });
+    this.#core.turn(this.#turns.length - 1, move, hostT);
     this.#state = applyMove(this.#state, move);
-    shown.push(this.#screen.name(move));
     this.#judge();
-    return shown;
+    return [move];
   }
 
   /** Test takes: one move as he would write it ("R", "M'", "y"), done at `t` as if on the cube. */
@@ -137,19 +153,19 @@ export class Recorder {
     if (this.#phase === "reached") {
       // A rotation after the goal (Aa's closing x') still turns the cube on screen; it isn't part of the take.
       if (this.#sealed || !ROTATION.test(token)) return [];
-      this.#screen.apply(token);
       return [token];
     }
     if (this.#phase === "waiting") this.#begin();
-    const step = this.#view.apply(token);
+    this.#played = true;
+    const placement = this.#placement;
+    const step = placement.view.apply(token);
     for (const move of step.turns) this.#turns.push({ move, hostT: t, cubeT: null });
     if (step.rotation) {
       const after = this.#turns.length;
-      this.#placed.push({ rotation: step.rotation, after, hostT: t, turn: step.turns.length > 0 ? after - 1 : null });
-      this.#lastAfter = after;
+      placement.placed.push({ rotation: step.rotation, after, hostT: t, turn: step.turns.length > 0 ? after - 1 : null });
+      placement.lastAfter = after;
     }
     this.#state = applyAlg(this.#state, step.turns);
-    this.#screen.apply(token);
     this.#judge();
     return [token];
   }
@@ -181,64 +197,43 @@ export class Recorder {
     const moves = fitted.map(({ move, t }) => ({ move, t: t - t0 }));
     const end = moves.at(-1)?.t ?? 0;
     const rotations: RotationEvent[] = [
-      ...this.#lead.map((rotation) => ({ rotation, after: 0, t: 0 })),
-      ...this.#placed.map(({ rotation, after, hostT, turn }) => ({
+      ...this.#placement.lead.map((rotation) => ({ rotation, after: 0, t: 0 })),
+      ...this.#placement.placed.map(({ rotation, after, hostT, turn }) => ({
         rotation,
         after,
         t: turn !== null ? moves[turn]!.t : Math.min(end, Math.max(0, Math.round(hostT - t0))),
       })),
     ];
-    return { moves, rotations };
+    return { moves, rotations, source: this.#played ? "demo" : "smartcube" };
   }
 
   /** The first turn: the grip he holds now is where his alg starts from. */
-  #begin(): string[] {
+  #begin(): void {
     if (!this.#detector && this.#report) this.#anchor(this.#report, this.#grip ?? SOLVER_GRIP);
     const grip = this.#detector?.orientation ?? SOLVER_GRIP;
     this.#phase = "turning";
-    this.#lead = leadRotations(grip);
-    this.#view = new FrameTracker();
-    for (const rotation of this.#lead) this.#view.rotate(rotation);
-    this.#lastAfter = 0;
-    return this.#face(grip);
+    this.#placement = newPlacement(this.#turns, leadRotations(grip));
   }
 
-  #anchor(report: Quaternion, grip: GridOrientation): void {
+  /** Reads the cube as held `grip` away from the solver's grip from `report` on; the cube on screen's attitude. */
+  #anchor(report: Quaternion, grip: GridOrientation): Quaternion | null {
     this.#detector = detectorAt(report, grip);
-  }
-
-  /** Turns the cube on screen to face like his. */
-  #face(target: GridOrientation): string[] {
-    if (target === this.#shown) return [];
-    // A copy: the list belongs to gyro.ts's shared orientation grid, and callers append turns to what this returns.
-    const rotations = [...rotationsBetween(this.#shown, target)];
-    this.#shown = target;
-    for (const rotation of rotations) this.#screen.rotate(rotation);
-    return rotations;
-  }
-
-  /** Puts a detected rotation after the turn it belongs to: a wide move's or slice's last turn, else when it began. */
-  #place(rotation: Rotation, since: number, single: boolean): void {
-    const turns = this.#turns;
-    const wideEnd = single ? wideMoveEnd(rotation, turns, this.#lastAfter, this.#view, since) : null;
-    const before = turns.filter((turn) => turn.hostT <= since).length;
-    const after = wideEnd !== null ? wideEnd + 1 : Math.max(this.#lastAfter, before);
-    this.#placed.push({ rotation, after, hostT: since, turn: wideEnd });
-    this.#view.rotate(rotation);
-    this.#lastAfter = after;
+    return this.#follower.hold({ report, grip });
   }
 
   #judge(): void {
     if (isGoalReached(this.#caseDef.set, this.#state)) {
       this.#phase = "reached";
+      // No more turns count: the last move's core turn can be read as soon as its report is in.
+      this.#core.close();
       return;
     }
     if (this.#turns.length > 0 && stateKey(this.#state) === this.#startKey) {
       // He turned it back to the case: the next turn starts the take afresh. (A regrip alone changes nothing.)
       this.#phase = "waiting";
       this.#turns = [];
-      this.#placed = [];
-      this.#lead = [];
+      this.#placement = newPlacement(this.#turns, []);
+      this.#core = new CoreWatch();
       this.#state = this.#start;
       return;
     }

@@ -4,21 +4,24 @@ export const DEFAULT_BPM = 60;
 export const BPM_STEP = 5;
 /** Solves in a row at one bpm before it changes (docs/research/01: add 5 bpm after 3 clean solves). */
 export const STREAK = 3;
-/** A solve with at least this many pauses is messy; between clean (none) and messy it leaves the bpm alone. */
-export const MESSY_PAUSES = 3;
+/**
+ * A solve with at least this many stalls (pauses, filler, detours: see stalls.ts) is messy; between clean (none) and
+ * messy it leaves the bpm alone.
+ */
+export const MESSY_STALLS = 3;
 
-export type BpmResult = { bpm: number; pauses: number };
+export type BpmResult = { bpm: number; stalls: number };
 
 export function clampBpm(bpm: number): number {
   return Math.max(MIN_BPM, Math.min(MAX_BPM, Math.round(bpm)));
 }
 
-export function isClean(pauses: number): boolean {
-  return pauses === 0;
+export function isClean(stalls: number): boolean {
+  return stalls === 0;
 }
 
-export function isMessy(pauses: number): boolean {
-  return pauses >= MESSY_PAUSES;
+export function isMessy(stalls: number): boolean {
+  return stalls >= MESSY_STALLS;
 }
 
 /**
@@ -34,8 +37,8 @@ export function suggestBpm(history: readonly BpmResult[], bpm: number): number {
     run.push(result);
   }
   if (run.length < STREAK) return bpm;
-  if (run.every((r) => isClean(r.pauses))) return clampBpm(bpm + BPM_STEP);
-  if (run.every((r) => isMessy(r.pauses))) return clampBpm(bpm - BPM_STEP);
+  if (run.every((r) => isClean(r.stalls))) return clampBpm(bpm + BPM_STEP);
+  if (run.every((r) => isMessy(r.stalls))) return clampBpm(bpm - BPM_STEP);
   return bpm;
 }
 

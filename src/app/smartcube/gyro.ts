@@ -7,6 +7,11 @@
 // front: the start of a solve, or "reset orientation"), snapped to the nearest of the 24 cube orientations, and a
 // change counts only once it is close to a new orientation and stays there (hysteresis plus dwell).
 //
+// That absolute reading wanders, though: a fast slice reads short (an M2 as 140° rather than 180°) and the error
+// stays, so by the last layer a real solve can sit 50° from every orientation and nothing more is recognised. Slices
+// are read another way too (CoreWatch): how far the core turned across just that slice's own turns, which a GAN cube
+// measures to within about 10°. A slice read that way also sets the detector's reading straight.
+//
 // Tuning once the cube arrives: GYRO_TUNING below, and GYRO_INVERTED if a y regrip shows up as y'.
 
 import { FrameTracker, parseRotation } from "@/cube";
@@ -17,17 +22,41 @@ export type Quaternion = { w: number; x: number; y: number; z: number };
 export const GYRO_TUNING = {
   /** A new 90° orientation counts once the cube is within this many degrees of it. Lower is stricter. */
   enterDegrees: 25,
-  /**
-   * ...for this many reports in a row (~90 ms apart, faster in bursts). Two rejects a single noisy report and still
-   * catches an M2 followed by an M a quarter second later; raise it if tilts show up as rotations.
-   */
+  /** ...for this many reports in a row (~90 ms apart, faster in bursts). Two rejects a single noisy report. */
   dwellReports: 2,
+  /**
+   * A tip (x, z: the last layer no longer on top) needs more: a hand tilts the cube that way all through a solve, for
+   * a wrist turn or a look at the back, and comes back, whereas a y regrip is held. Replaying 17 real solves, these
+   * cut the rotations found from 44 to 14, nearly all of the dropped ones tips that came back; the solves read as
+   * CFOP should after it (a third or more of the turns U), where before 5 of them read mostly sideways.
+   */
+  tipEnterDegrees: 15,
+  tipDwellReports: 5,
   /** A rotation detected this soon after a face turn (ms) may be that turn's wide move or slice. */
   lookbackMs: 450,
   /** The two turns of a slice arrive this close together (ms). */
   slicePairMs: 50,
   /** Two equal quarter turns this close together (ms) are one half turn (matches src/cube HALF_TURN_MS). */
   halfTurnMs: 80,
+  /**
+   * CoreWatch: a slice's core rotation reads as that slice when it's within this many degrees of the slice's rotation
+   * and at least `coreTurnDegrees` from no rotation at all. From 17 real solves: 56 of 64 opposite pairs read as
+   * slices this way; the rest barely moved the core (two hands turning together).
+   */
+  coreMatchDegrees: 45,
+  coreTurnDegrees: 55,
+  /**
+   * Same-axis turns this close together (ms) are one move: a slow M2's two halves, a wide half turn's quarters. A
+   * slice's two turns can arrive further apart still (4–377 ms measured on a GAN by the Cubalyze project), but a
+   * longer window swallows a turn and the wide move after it (F f in an OLL, read as nothing): replaying 17 real
+   * solves, 400 ms found 3 more slices and lost 6 wide moves.
+   */
+  moveGapMs: 200,
+  /**
+   * A wide move CoreWatch reads (a lone turn with the core turning) counts when the core turns back with a turn of
+   * its own within this long (ms): r ... r', f ... f', or M' ... r'. Held longer, the detector's tip reading has it.
+   */
+  widePairMs: 1500,
 };
 
 /**
@@ -71,6 +100,15 @@ function cubeAxesToSolver(q: Quaternion): Quaternion {
   return { w: q.w, x: -q.x, y: -q.z, z: -q.y };
 }
 
+/**
+ * The reference that reads `report` as `reading` (an attitude in the solver's view): rotationSince(result, report)
+ * is `reading`.
+ */
+export function referenceFor(report: Quaternion, reading: Quaternion): Quaternion {
+  const offset = cubeAxesToSolver(reading);
+  return GYRO_INVERTED ? multiply(offset, report) : multiply(report, conjugate(offset));
+}
+
 /** How the cube has turned in the solver's view since `reference` was read. */
 export function rotationSince(reference: Quaternion, current: Quaternion): Quaternion {
   const ref = normalize(reference);
@@ -87,7 +125,7 @@ const QUARTER: Record<"x" | "y" | "z", Quaternion> = {
   z: { w: S, x: 0, y: 0, z: -S },
 };
 
-function rotationQuaternion(rotation: Rotation): Quaternion {
+export function rotationQuaternion(rotation: Rotation): Quaternion {
   const [axis, amount] = parseRotation(rotation);
   let q = IDENTITY;
   for (let i = 0; i < amount; i++) q = multiply(QUARTER[axis], q);
@@ -146,8 +184,8 @@ export type Detection = { rotations: Rotation[]; since: number };
  * grip (identity when unknown).
  */
 export class RotationDetector {
-  readonly #reference: Quaternion;
-  readonly #initial: Quaternion;
+  #reference: Quaternion;
+  #initial: Quaternion;
   #current: GridOrientation;
   #candidate: { orientation: GridOrientation; since: number; reports: number } | null = null;
 
@@ -161,18 +199,33 @@ export class RotationDetector {
     return this.#current;
   }
 
-  sample(q: Quaternion, t: number): Detection | null {
+  /** How `q` reads: the cube's attitude from the solver's grip, in the solver's view. */
+  reading(q: Quaternion): Quaternion {
     // The regrip is measured about the cube's axes at the start, which sit `initial` away from the solver's grip, so
     // it applies after `initial`: initial · since (the other order misreads e.g. an x from a y start as z').
-    const { orientation, degrees } = snap(multiply(this.#initial, rotationSince(this.#reference, q)));
-    if (orientation === this.#current || degrees > GYRO_TUNING.enterDegrees) {
+    return multiply(this.#initial, rotationSince(this.#reference, q));
+  }
+
+  /** From now on `report` reads as `reading`, and the cube is held at the orientation nearest it. */
+  rebase(report: Quaternion, reading: Quaternion): void {
+    this.#reference = referenceFor(report, reading);
+    this.#initial = IDENTITY;
+    this.#current = snap(reading).orientation;
+    this.#candidate = null;
+  }
+
+  sample(q: Quaternion, t: number): Detection | null {
+    const { orientation, degrees } = snap(this.reading(q));
+    const rotations = rotationsBetween(this.#current, orientation);
+    const tip = rotations.some((rotation) => !rotation.startsWith("y"));
+    if (orientation === this.#current || degrees > (tip ? GYRO_TUNING.tipEnterDegrees : GYRO_TUNING.enterDegrees)) {
       this.#candidate = null;
       return null;
     }
     if (this.#candidate?.orientation === orientation) this.#candidate.reports++;
     else this.#candidate = { orientation, since: t, reports: 1 };
-    if (this.#candidate.reports < GYRO_TUNING.dwellReports) return null;
-    const detection = { rotations: rotationsBetween(this.#current, orientation), since: this.#candidate.since };
+    if (this.#candidate.reports < (tip ? GYRO_TUNING.tipDwellReports : GYRO_TUNING.dwellReports)) return null;
+    const detection = { rotations, since: this.#candidate.since };
     this.#current = orientation;
     this.#candidate = null;
     return detection;
@@ -254,4 +307,203 @@ function isQuarteredSliceHalf(turns: readonly Turn[], i: number, named: (i: numb
   const pairs = names.filter((name) => name === first).length === 2 && names.filter((name) => name === second).length === 2;
   const span = turns[i]!.hostT - turns[i - 3]!.hostT;
   return pairs && span <= GYRO_TUNING.halfTurnMs + GYRO_TUNING.slicePairMs;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Wide moves and slices from the core's own turn
+
+/** Net same-axis turns (sorted, centre frame) → the rotation their wide move or slice carries ("L2 R2" → x2). */
+const CORE_TURNS: ReadonlyMap<string, Rotation> = new Map(
+  ["r", "l", "u", "d", "f", "b", "M", "E", "S"].flatMap((family) =>
+    ["", "2", "'"].map((suffix): [string, Rotation] => {
+      const { turns, rotation } = new FrameTracker().apply(family + suffix);
+      if (!rotation) throw new Error(`${family}${suffix} should carry a rotation`);
+      return [turnsKey(turns), rotation];
+    }),
+  ),
+);
+
+const AXIS_OF: Readonly<Record<string, "x" | "y" | "z">> = { R: "x", L: "x", U: "y", D: "y", F: "z", B: "z" };
+
+function quartersOf(move: Move): number {
+  return move.endsWith("2") ? 2 : move.endsWith("'") ? 3 : 1;
+}
+
+/** A gyro report a move's turns are measured between, this long (ms) before the first and after the last... */
+const CORE_BEFORE_MS = 20;
+const CORE_AFTER_MS = 40;
+/** ...but no further off than this (ms): an older report could take in a regrip as well. */
+const CORE_REACH_MS = 300;
+/** Reports kept for measuring moves (ms). */
+const CORE_KEEP_MS = 3000;
+
+type Sample = { q: Quaternion; t: number };
+
+type Group = { start: number; end: number; firstT: number; lastT: number; axis: string; quarters: Map<string, number>; closed: boolean };
+
+/** A slice read from how far the core turned across its turns. */
+export type CoreTurn = {
+  /** Its turns, by index among the turns fed in: start..end. */
+  start: number;
+  end: number;
+  /** The rotation the slice carries, in the cube's own (centre) frame. */
+  rotation: Rotation;
+  /** The gyro reports either side of it, and when its last turn arrived (host ms). */
+  before: Sample;
+  after: Sample;
+  t: number;
+};
+
+/**
+ * Groups turns into moves (same-axis turns close together) and, once a gyro report from just after a move is in,
+ * reports the moves whose core turned like the wide move or slice their turns would make: R and L' with the core
+ * turning like x' is M, L with it turning like x is r. Two hands turning R and L' together barely move the core, nor
+ * does a plain turn, so they never match.
+ *
+ * A slice counts as soon as it's read. A wide move needs more: in real solves a hard flick can make the gyro read a
+ * quick 90° on a plain turn that drifts back, over a second or more, with no turn at all, and a wide move read wrongly
+ * names every turn after it. So a wide move counts only when it's balanced: the core turns back with a turn of its
+ * own soon after (r U R' U' r', the A perm's wide T perm shape) or had just turned that way (M' U R U' r'). A wide
+ * move held on its own (l' U R' D2 ...) is left to the detector, which reads it once the tip is held.
+ */
+export class CoreWatch {
+  #samples: Sample[] = [];
+  #groups: Group[] = [];
+  /** Moves already reported, for balancing a wide move against one just before it. */
+  #recent: CoreTurn[] = [];
+
+  /** Turn `index` (counting every turn fed in), centre frame, as the cube reported it. */
+  turn(index: number, move: Move, hostT: number): void {
+    const axis = AXIS_OF[move.charAt(0)];
+    if (!axis) throw new Error(`Not an outer turn: ${move}`);
+    const open = this.#groups.at(-1);
+    if (open && !open.closed && open.axis === axis && open.end === index - 1 && hostT - open.lastT <= GYRO_TUNING.moveGapMs) {
+      open.end = index;
+      open.lastT = hostT;
+      open.quarters.set(move.charAt(0), (open.quarters.get(move.charAt(0)) ?? 0) + quartersOf(move));
+      return;
+    }
+    if (open) open.closed = true;
+    this.#groups.push({ start: index, end: index, firstT: hostT, lastT: hostT, axis, quarters: new Map([[move.charAt(0), quartersOf(move)]]), closed: false });
+  }
+
+  /** No more turns are coming (the solve or take is done): the last move can be read as soon as its report is in. */
+  close(): void {
+    const open = this.#groups.at(-1);
+    if (open) open.closed = true;
+  }
+
+  /** A gyro report: the slices it settles, oldest first. */
+  sample(q: Quaternion, hostT: number): CoreTurn[] {
+    this.#samples.push({ q, t: hostT });
+    const found: CoreTurn[] = [];
+    while (this.#groups.length > 0) {
+      const group = this.#groups[0]!;
+      if (!group.closed && hostT - group.lastT > GYRO_TUNING.moveGapMs) group.closed = true;
+      if (!group.closed) break;
+      const after = this.#samples.find((s) => s.t >= group.lastT + CORE_AFTER_MS);
+      if (!after && hostT - group.lastT <= CORE_REACH_MS) break;
+      const core = this.#read(group, after);
+      const balance = core && group.quarters.size === 1 ? this.#balance(group, core, hostT) : "counts";
+      if (balance === "wait") break;
+      this.#groups.shift();
+      if (!core || balance === "spike") continue;
+      found.push(core);
+      this.#recent.push(core);
+    }
+    this.#recent = this.#recent.filter((core) => hostT - core.t <= 2 * GYRO_TUNING.widePairMs);
+    const oldest = Math.min(hostT, ...this.#groups.map((group) => group.firstT)) - CORE_KEEP_MS;
+    while (this.#samples.length > 1 && this.#samples[1]!.t < oldest) this.#samples.shift();
+    return found;
+  }
+
+  /**
+   * Whether a wide move's core turn is balanced by an opposite one, a turn's own, just before it or within
+   * GYRO_TUNING.widePairMs after: "counts"; "spike" when it can't be; "wait" while a later move may still say.
+   */
+  #balance(group: Group, core: CoreTurn, hostT: number): "counts" | "spike" | "wait" {
+    const back = conjugate(rotationQuaternion(core.rotation));
+    const undoes = (other: CoreTurn | null) => other !== null && angleBetween(rotationQuaternion(other.rotation), back) < 1;
+    if (this.#recent.some((earlier) => undoes(earlier) && core.before.t - earlier.t <= GYRO_TUNING.widePairMs)) return "counts";
+    for (const later of this.#groups.slice(1)) {
+      if (later.firstT > group.lastT + GYRO_TUNING.widePairMs) return "spike";
+      const after = this.#samples.find((s) => s.t >= later.lastT + CORE_AFTER_MS);
+      const closed = later.closed || hostT - later.lastT > GYRO_TUNING.moveGapMs;
+      if (!closed || (!after && hostT - later.lastT <= CORE_REACH_MS)) return "wait";
+      if (undoes(this.#read(later, after))) return "counts";
+    }
+    return hostT - group.lastT > GYRO_TUNING.widePairMs ? "spike" : "wait";
+  }
+
+  #read(group: Group, after: Sample | undefined): CoreTurn | null {
+    const net = [...group.quarters].flatMap(([face, quarters]) => (quarters % 4 === 0 ? [] : [`${face}${["", "2", "'"][(quarters % 4) - 1]}`]));
+    const rotation = CORE_TURNS.get(turnsKey(net));
+    if (!rotation || !after || after.t > group.lastT + CORE_REACH_MS) return null;
+    const before = this.#samples.findLast((s) => s.t <= group.firstT - CORE_BEFORE_MS);
+    if (!before || before.t < group.firstT - CORE_REACH_MS) return null;
+    const turned = rotationSince(before.q, after.q);
+    const fits = angleBetween(turned, rotationQuaternion(rotation)) < GYRO_TUNING.coreMatchDegrees;
+    if (!fits || angleBetween(turned, IDENTITY) < GYRO_TUNING.coreTurnDegrees) return null;
+    return { start: group.start, end: group.end, rotation, before, after, t: group.lastT };
+  }
+}
+
+/** A whole-cube rotation placed among the turns: after `after` of them; `turn` is the turn it belongs to (r, M). */
+export type PlacedRotation = { rotation: Rotation; after: number; hostT: number; turn: number | null };
+
+/** Where an attempt's rotations fall among its turns, and the view they leave the solver in. */
+export type Placement = {
+  readonly turns: readonly Turn[];
+  /** How the cube was held at the first turn, as rotations from the solver's grip. */
+  readonly lead: readonly Rotation[];
+  readonly placed: PlacedRotation[];
+  /** Names reported turns as the solver saw them: the lead, then every placed rotation. */
+  view: FrameTracker;
+  /** Rotations go no earlier than this many turns (the last one placed). */
+  lastAfter: number;
+};
+
+export function newPlacement(turns: readonly Turn[], lead: readonly Rotation[]): Placement {
+  const view = new FrameTracker();
+  for (const rotation of lead) view.rotate(rotation);
+  return { turns, lead, placed: [], view, lastAfter: 0 };
+}
+
+/** Puts a detected rotation after the turn it belongs to: a wide move's or slice's last turn, else when it began. */
+export function placeRotation(placement: Placement, rotation: Rotation, since: number, single: boolean): void {
+  const { turns, placed } = placement;
+  const wideEnd = single ? wideMoveEnd(rotation, turns, placement.lastAfter, placement.view, since) : null;
+  const before = turns.filter((turn) => turn.hostT <= since).length;
+  const after = wideEnd !== null ? wideEnd + 1 : Math.max(placement.lastAfter, before);
+  placed.push({ rotation, after, hostT: since, turn: wideEnd });
+  placement.view.rotate(rotation);
+  placement.lastAfter = after;
+}
+
+function attitudeOf(rotations: readonly Rotation[]): Quaternion {
+  return rotations.reduce((total, rotation) => multiply(rotationQuaternion(rotation), total), IDENTITY);
+}
+
+/**
+ * Places a slice CoreWatch read, unless the detector already placed it with its turns. Whatever else the detector
+ * made of that core turn meanwhile (a regrip, from a reading that had wandered) gives way to it, and the detector's
+ * reading is set straight: the core turned exactly the slice's rotation.
+ */
+export function placeCoreTurn(placement: Placement, detector: RotationDetector, core: CoreTurn): void {
+  const { placed } = placement;
+  if (placed.some((rotation) => rotation.turn !== null && rotation.turn >= core.start && rotation.turn <= core.end)) return;
+  const kept = placed.filter((rotation) => rotation.turn !== null || rotation.hostT < core.before.t);
+  const after = core.end + 1;
+  if (kept.some((rotation) => rotation.after > after)) return;
+  // The move's rotation in the solver's view: its centre-frame rotation, seen from how the cube was held.
+  const held = attitudeOf([...placement.lead, ...kept.map((rotation) => rotation.rotation)]);
+  const inView = snap(multiply(multiply(held, rotationQuaternion(core.rotation)), conjugate(held))).orientation.rotations;
+  const rotation = inView[0];
+  if (inView.length !== 1 || !rotation) throw new Error(`${core.rotation} doesn't stay one rotation in the solver's view`);
+  placed.splice(0, placed.length, ...kept, { rotation, after, hostT: core.t, turn: core.end });
+  placement.view = new FrameTracker();
+  for (const lead of placement.lead) placement.view.rotate(lead);
+  for (const event of placed) placement.view.rotate(event.rotation);
+  placement.lastAfter = Math.max(...placed.map((event) => event.after), 0);
+  detector.rebase(core.after.q, multiply(detector.reading(core.before.q), rotationQuaternion(core.rotation)));
 }

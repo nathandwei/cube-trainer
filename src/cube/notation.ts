@@ -24,6 +24,12 @@ export type DisplayToken = { kind: "turn" | "rotation"; text: string; start: num
 export const ROTATION_MERGE_MS = 100;
 /** The two outer turns of a slice arrive within this many ms of each other (a smart cube sends them ~10–30 ms apart). */
 export const SLICE_PAIR_MS = 50;
+/**
+ * Same-axis turns this close together (ms) can be one wide move or slice when a rotation event closes them: a slow
+ * M2's two halves (R' L, then R' L again), a slice whose two turns arrived apart, or a wide half turn's quarters
+ * (matches gyro.ts moveGapMs).
+ */
+export const RUN_GAP_MS = 200;
 
 type Combined = { text: string; rotation: Rotation };
 
@@ -59,6 +65,24 @@ function isQuarter(move: Move): boolean {
   return move.length === 1 || move.endsWith("'");
 }
 
+const AXIS_OF_FACE: Readonly<Record<string, number>> = { R: 0, L: 0, U: 1, D: 1, F: 2, B: 2 };
+
+function quartersOf(move: Move): number {
+  return move.endsWith("2") ? 2 : move.endsWith("'") ? 3 : 1;
+}
+
+/** What view-named turns on one axis add up to, face by face (R' L R' L → R2 L2); null when they span axes. */
+function netTurns(names: readonly Move[]): Move[] | null {
+  const axis = AXIS_OF_FACE[names[0]?.charAt(0) ?? ""];
+  const quarters = new Map<Face, number>();
+  for (const name of names) {
+    const face = name.charAt(0) as Face;
+    if (AXIS_OF_FACE[face] !== axis) return null;
+    quarters.set(face, (quarters.get(face) ?? 0) + quartersOf(name));
+  }
+  return [...quarters].filter(([, amount]) => amount % 4 !== 0).map(([face, amount]) => faceTurnName(face, amount));
+}
+
 function turnToken(text: string, start: number, end: number): DisplayToken {
   return { kind: "turn", text, start, end };
 }
@@ -83,13 +107,23 @@ function validate(moves: readonly TimedMove[], rotations: readonly RotationEvent
  * Either way two equal quarter turns that `mergeable(i)` allows become a half turn (R R → R2).
  * `mergeable(i)` is asked about reported turns i and i + 1 (e.g. "they arrived within 60 ms, in one stage").
  */
+export type HumanizeOptions = {
+  /**
+   * The rotations come from a smart cube's gyro, which read the core turning with the turns: two opposite turns a
+   * slice's rotation closes are that slice however far apart they arrived (a GAN reports a slice's two turns anywhere
+   * from 4 to ~400 ms apart). Typed rotations (keyboard, demo) are exact, so F' then f stays F' f there.
+   */
+  slicesApart?: boolean;
+};
+
 export function humanize(
   moves: readonly TimedMove[],
   rotations: readonly RotationEvent[],
   mergeable: (i: number) => boolean,
+  options: HumanizeOptions = {},
 ): DisplayToken[] {
   validate(moves, rotations);
-  return rotations.length === 0 ? humanizeTurns(moves, mergeable) : humanizeWithRotations(moves, rotations, mergeable);
+  return rotations.length === 0 ? humanizeTurns(moves, mergeable) : humanizeWithRotations(moves, rotations, mergeable, options);
 }
 
 function humanizeTurns(moves: readonly TimedMove[], mergeable: (i: number) => boolean): DisplayToken[] {
@@ -126,6 +160,7 @@ function humanizeWithRotations(
   moves: readonly TimedMove[],
   rotations: readonly RotationEvent[],
   mergeable: (i: number) => boolean,
+  { slicesApart = false }: HumanizeOptions,
 ): DisplayToken[] {
   const view = new FrameTracker();
   const out: DisplayToken[] = [];
@@ -150,6 +185,28 @@ function humanizeWithRotations(
     return true;
   };
 
+  // Whether the rotation closing turn `end` - 1 makes a wide move or slice of that turn, or of it and the one before.
+  const closesTail = (pending: RotationEvent, end: number): boolean => {
+    const last = view.name(moves[end - 1]!.move);
+    if (COMBINED.has(`${last}|${pending.rotation}`)) return true;
+    if (end - 2 < 0) return false;
+    const before = view.name(moves[end - 2]!.move);
+    const pairKey = turnsKey([before, last]);
+    if (moves[end - 1]!.t - moves[end - 2]!.t <= SLICE_PAIR_MS && COMBINED.has(`${pairKey}|${pending.rotation}`)) return true;
+    return before === last && isQuarter(last) && mergeable(end - 2) && COMBINED.has(`${last.charAt(0)}2|${pending.rotation}`);
+  };
+  // Failing that, turns i up to the pending rotation, all on one axis and close together, that it makes one wide move
+  // or slice of: a slow M2 reported as R' L, then R' L again. With slicesApart a slice always reads as one.
+  const runOf = (pending: RotationEvent): Combined | null => {
+    const end = pending.after;
+    if (end - i < 2 || Math.abs(pending.t - moves[end - 1]!.t) > ROTATION_MERGE_MS) return null;
+    for (let k = i + 1; k < end; k++) if (moves[k]!.t - moves[k - 1]!.t > RUN_GAP_MS) return null;
+    const net = netTurns(moves.slice(i, end).map(({ move }) => view.name(move)));
+    const combined = net && net.length > 0 ? (COMBINED.get(`${turnsKey(net)}|${pending.rotation}`) ?? null) : null;
+    if (!combined) return null;
+    return (slicesApart && SLICE_FAMILIES.includes(combined.text.charAt(0))) || !closesTail(pending, end) ? combined : null;
+  };
+
   let i = 0;
   while (i < moves.length || pendingIndex < rotations.length) {
     const pending = rotations[pendingIndex];
@@ -157,6 +214,14 @@ function humanizeWithRotations(
       pushRotation(out, pending);
       view.rotate(pending.rotation);
       pendingIndex++;
+      continue;
+    }
+    const run = pending ? runOf(pending) : null;
+    if (pending && run) {
+      out.push(turnToken(run.text, i, pending.after));
+      view.rotate(pending.rotation);
+      pendingIndex++;
+      i = pending.after;
       continue;
     }
     const first = unitAt(i, pending);

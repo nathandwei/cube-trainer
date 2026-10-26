@@ -250,7 +250,8 @@ function usePhysicalTake({ cube, caseId, active, scramble, onHeld }: PhysicalOpt
         if (phase !== "ready" || !store.started || store.holding) return;
         // Already in the case (a blip after he'd turned it over, say): he holds it as he solves, not white on top.
         const grip = followedBand.current ? SCRAMBLE_GRIP : SOLVER_GRIP;
-        animate(store.hold(lastGyro.current, grip));
+        const attitude = store.hold(lastGyro.current, grip);
+        if (attitude) cube.current?.setAttitude(attitude);
         held.current(grip);
       }),
       smartCube.onMove((move, hostT, cubeT) => {
@@ -262,19 +263,21 @@ function usePhysicalTake({ cube, caseId, active, scramble, onHeld }: PhysicalOpt
       smartCube.onGyro((q, hostT) => {
         lastGyro.current = q;
         cubeSession.gyro(q, hostT);
-        animate(store.gyro(q, hostT));
+        const attitude = store.gyro(q, hostT);
+        if (attitude) cube.current?.setAttitude(attitude);
       }),
       smartCube.onFacelets((state, hostT) => cubeSession.facelets(state, hostT)),
       smartCube.onLost(() => cubeSession.connectionLost()),
     ];
     return () => off.forEach((unsubscribe) => unsubscribe());
-  }, [active, animate, cubeSession, store]);
+  }, [active, animate, cube, cubeSession, store]);
 
   // A take: on the case's scramble, and again after Reset. Back to the case from wherever the cube is.
   useEffect(() => {
     if (!current) return;
     cube.current?.setTempo(3);
     cube.current?.show(`${current} z2`);
+    cube.current?.setAttitude(null, true);
     cubeSession.cancel();
     store.start(caseId, current);
     followedBand.current = false;

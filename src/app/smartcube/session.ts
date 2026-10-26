@@ -9,7 +9,6 @@
 // scramble prefix counts, and a half turn done as two quarters in either direction counts too.
 
 import {
-  FrameTracker,
   SOLVED,
   analyzeSolve,
   applyMove,
@@ -24,11 +23,11 @@ import {
   type CubeState,
   type ReportedMove,
 } from "@/cube";
-import type { GyroSample, Move, Rotation, RotationEvent, SolveAnalysis, TimedMove } from "@/cube/types";
+import type { GyroSample, Move, RotationEvent, SolveAnalysis, TimedMove } from "@/cube/types";
 import { toSolverFrame } from "@/app/lib/frame";
 import { analysisOptions } from "@/app/lib/method";
 import { MAX_GYRO_SAMPLES } from "@/shared/schema";
-import { RotationDetector, startOrientation, wideMoveEnd, type Quaternion } from "./gyro";
+import { CoreWatch, RotationDetector, newPlacement, placeCoreTurn, placeRotation, startOrientation, type Placement, type Quaternion } from "./gyro";
 import { inspectionPenalty, type Penalty } from "./inspection";
 
 /** A correction this long is replaced by cubing.js's shortest-ish solution (a random state needs about 20). */
@@ -108,19 +107,16 @@ type Plan = {
   thinking: boolean;
 };
 
-type PendingRotation = { rotation: Rotation; after: number; hostT: number; turn: number | null };
-
 type Attempt = {
   startedAt: number;
   stoppedAt: number | null;
   penalty: Penalty;
   raw: ReportedMove[];
-  rotations: PendingRotation[];
+  /** The rotations among `raw`, and the view they leave the solver in. */
+  placement: Placement;
   gyro: [number, Quaternion][];
   detector: RotationDetector | null;
-  view: FrameTracker;
-  lastAfter: number;
-  initial: Rotation[];
+  core: CoreWatch;
 };
 
 const quarterOf = (half: Move) => [half.charAt(0), `${half.charAt(0)}'`];
@@ -168,6 +164,7 @@ export class CubeSession {
   #inspectionStart: number | null = null;
   #attempt: Attempt | null = null;
   #lastGyro: Quaternion | null = null;
+  #lastGyroT = 0;
   #desynced = false;
   #view: SessionView;
 
@@ -244,12 +241,15 @@ export class CubeSession {
 
   gyro(q: Quaternion, hostT: number): void {
     this.#lastGyro = q;
+    this.#lastGyroT = hostT;
     const attempt = this.#attempt;
     if (this.#phase !== "solving" || !attempt) return;
     attempt.gyro.push([hostT, q]);
-    const found = attempt.detector?.sample(q, hostT);
-    if (!found) return;
-    for (const rotation of found.rotations) this.#placeRotation(attempt, rotation, found.since, found.rotations.length === 1);
+    const detector = attempt.detector;
+    if (!detector) return;
+    const found = detector.sample(q, hostT);
+    if (found) for (const rotation of found.rotations) placeRotation(attempt.placement, rotation, found.since, found.rotations.length === 1);
+    for (const core of attempt.core.sample(q, hostT)) placeCoreTurn(attempt.placement, detector, core);
   }
 
   /** The cube was solved by hand (or the tracked state drifted): treat it as solved now. */
@@ -387,37 +387,29 @@ export class CubeSession {
     const penalty = this.#phase === "inspecting" && this.#inspectionStart !== null ? inspectionPenalty(hostT - this.#inspectionStart) : "none";
     const gyroAtStart = this.#lastGyro;
     const initial = gyroAtStart ? startOrientation(this.#options.orientationReference(), gyroAtStart) : null;
-    const view = new FrameTracker();
-    for (const rotation of initial?.rotations ?? []) view.rotate(rotation);
+    const raw: ReportedMove[] = [];
+    const core = new CoreWatch();
+    // The report from just before the first turn: what a slice as the first move is measured from.
+    if (gyroAtStart) core.sample(gyroAtStart, this.#lastGyroT);
     this.#attempt = {
       startedAt: hostT,
       stoppedAt: null,
       penalty,
-      raw: [],
-      rotations: [],
+      raw,
+      placement: newPlacement(raw, initial?.rotations ?? []),
       gyro: gyroAtStart ? [[hostT, gyroAtStart]] : [],
       detector: gyroAtStart ? new RotationDetector(gyroAtStart, initial ?? undefined) : null,
-      view,
-      lastAfter: 0,
-      initial: initial?.rotations ?? [],
+      core,
     };
     this.#desynced = false;
     this.#phase = "solving";
   }
 
   #record(move: Move, hostT: number, cubeT: number | null): void {
-    this.#attempt?.raw.push({ move, hostT, cubeT });
-  }
-
-  /** Puts a detected rotation after the turn it belongs to: a wide move's or slice's last turn, else when it began. */
-  #placeRotation(attempt: Attempt, rotation: Rotation, since: number, single: boolean): void {
-    const turns = attempt.raw;
-    const wideEnd = single ? wideMoveEnd(rotation, turns, attempt.lastAfter, attempt.view, since) : null;
-    const before = turns.filter((turn) => turn.hostT <= since).length;
-    const after = wideEnd !== null ? wideEnd + 1 : Math.max(attempt.lastAfter, before);
-    attempt.rotations.push({ rotation, after, hostT: since, turn: wideEnd });
-    attempt.view.rotate(rotation);
-    attempt.lastAfter = after;
+    const attempt = this.#attempt;
+    if (!attempt) return;
+    attempt.raw.push({ move, hostT, cubeT });
+    attempt.core.turn(attempt.raw.length - 1, move, hostT);
   }
 
   /** The attempt's turns and rotations on the solve clock (ms from the first turn), normalised. */
@@ -427,8 +419,8 @@ export class CubeSession {
     const moves = fitted.map(({ move, t }) => ({ move, t: t - t0 }));
     const end = moves.at(-1)?.t ?? 0;
     const rotations: RotationEvent[] = [
-      ...attempt.initial.map((rotation) => ({ rotation, after: 0, t: 0 })),
-      ...attempt.rotations.map(({ rotation, after, hostT, turn }) => ({
+      ...attempt.placement.lead.map((rotation) => ({ rotation, after: 0, t: 0 })),
+      ...attempt.placement.placed.map(({ rotation, after, hostT, turn }) => ({
         rotation,
         after,
         t: turn !== null ? moves[turn]!.t : Math.min(end, Math.max(0, Math.round(hostT - t0))),
@@ -442,6 +434,8 @@ export class CubeSession {
     const attempt = this.#attempt;
     if (!attempt) return;
     attempt.stoppedAt = hostT;
+    // No more turns: the last move's core turn can be read as soon as its report is in.
+    attempt.core.close();
     const settleMs = this.#options.settleMs ?? SETTLE_MS;
     if (settleMs <= 0) return this.#finish();
     this.#changed();

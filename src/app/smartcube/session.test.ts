@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   SOLVED,
   applyAlg,
@@ -15,7 +15,7 @@ import type { Move } from "@/cube/types";
 import { splitAlg, toSolverFrame } from "@/app/lib/frame";
 import { MAX_GYRO_SAMPLES, MAX_SOLVE_BYTES, solveRecordSchema } from "@/shared/schema";
 import { CubeSession, type FinishedSolve, type SessionOptions } from "./session";
-import { multiply, type Quaternion } from "./gyro";
+import { GYRO_TUNING, multiply, type Quaternion } from "./gyro";
 
 const SCRAMBLE = randomScramble(createRng(7));
 
@@ -243,7 +243,8 @@ describe("CubeSession gyro", () => {
     const solve = solveWith((h, i, move) => {
       if (i !== 4) return;
       h.session.move(toSolverFrame("R"), h.clock.t + 100, Math.round(3_000 + (h.clock.t + 85) * 0.995));
-      for (const dt of [150, 240, 330]) h.session.gyro(X, h.clock.t + dt);
+      // An x is a tip: it reads once held for five reports.
+      for (const dt of [150, 240, 330, 420, 510]) h.session.gyro(X, h.clock.t + dt);
       h.session.move(toSolverFrame("R'"), h.clock.t + 400, Math.round(3_000 + (h.clock.t + 385) * 0.995));
       void move;
     });
@@ -308,8 +309,13 @@ describe("CubeSession over simulated CFOP solves", () => {
   }
 
   // The demo generator plays realistic solves: y regrips, z rotations, wide moves and slices (M2 included), each
-  // as a smart cube reports them. Gyro reports every 90 ms follow its rotations.
+  // as a smart cube reports them. Gyro reports every 90 ms follow its rotations. Its last-layer algs fire wide moves
+  // faster than a tip is held to count (GYRO_TUNING.tipDwellReports, tuned on real solves, where hand tilts were the
+  // bigger problem); where each rotation lands is what's tested here, so tips read like y regrips.
   it.each([1, 2, 3, 4, 5, 6])("puts every rotation of demo solve %i after the right turn", async (seed) => {
+    const tuning = { ...GYRO_TUNING };
+    Object.assign(GYRO_TUNING, { tipDwellReports: GYRO_TUNING.dwellReports, tipEnterDegrees: GYRO_TUNING.enterDegrees });
+    onTestFinished(() => void Object.assign(GYRO_TUNING, tuning));
     const scramble = randomScramble(createRng(seed));
     const demo = generateDemoSolve(scramble, seed);
     const finished: FinishedSolve[] = [];

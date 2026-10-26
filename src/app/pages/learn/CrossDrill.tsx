@@ -321,7 +321,7 @@ function CrossRun({ variant, setup, cubeName, onDone, onClose }: RunProps) {
         setSolveStart(t);
         setPhase("solve");
       }
-      for (const shown of follower.turn(move)) cube.current?.turn(shown);
+      cube.current?.turn(move);
       run.turns.push(move);
       run.state = applyAlg(run.state, [move]);
       if (isGoal(variant, run.state)) {
@@ -341,7 +341,7 @@ function CrossRun({ variant, setup, cubeName, onDone, onClose }: RunProps) {
       }
       if (run.turns.length > MAX_TURNS) onClose();
     },
-    [attempt, follower, onClose, onDone, setup.optimal, variant],
+    [attempt, onClose, onDone, setup.optimal, variant],
   );
 
   // The latest `turn` for timers set up once per attempt.
@@ -360,12 +360,15 @@ function CrossRun({ variant, setup, cubeName, onDone, onClose }: RunProps) {
     return () => window.clearTimeout(timer);
   }, [onClose, phase]);
 
-  // A smart cube at the scramble: its turns are the attempt, and the cube on screen turns as it's turned.
+  // A smart cube at the scramble: its turns are the attempt, and the cube on screen is held as it is.
   useEffect(() => {
     if (setup.test || readyAt === null || !hold) return;
     attempt().shownAt = readyAt;
-    for (const rotation of follower.hold(hold)) cube.current?.turn(rotation);
-    return smartCube.onMove((move, hostT) => turnNow.current(move, hostT));
+    follower.hold(hold);
+    return smartCube.onMove((move, hostT) => {
+      follower.turn(move, hostT);
+      turnNow.current(move, hostT);
+    });
   }, [attempt, follower, hold, readyAt, setup.test]);
 
   // The Test button: scramble a pretend cube, plan for a while, then turn a good cross with human timing.

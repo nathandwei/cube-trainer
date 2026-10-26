@@ -2,16 +2,22 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { FrameTracker } from "@/cube";
 import type { Rotation } from "@/cube/types";
+import { humanize } from "@/cube";
 import {
+  CoreWatch,
   GRID,
   GYRO_TUNING,
   RotationDetector,
   angleBetween,
   multiply,
+  newPlacement,
+  placeCoreTurn,
+  rotationQuaternion,
   rotationSince,
   snap,
   startOrientation,
   wideMoveEnd,
+  type CoreTurn,
   type Quaternion,
 } from "./gyro";
 
@@ -193,5 +199,130 @@ describe("wideMoveEnd", () => {
 
   it("does not look before the previous rotation", () => {
     expect(wideMoveEnd("x", turns("L@400 U@410"), 1, new FrameTracker(), 450)).toBeNull();
+  });
+});
+
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+
+describe("CoreWatch", () => {
+  /** Reports every 90 ms of the core at `at(t)` (solver's view) and the turns at their times, in time order. */
+  function watch(turns: readonly (readonly [string, number])[], at: (t: number) => Quaternion, every = 90): CoreTurn[] {
+    const core = new CoreWatch();
+    const found: CoreTurn[] = [];
+    const events = [
+      ...turns.map(([move, t], i) => ({ t, run: () => core.turn(i, move, t) })),
+      ...Array.from({ length: Math.floor(1500 / every) + 1 }, (_, k) => k * every).map((t) => ({
+        t,
+        run: () => found.push(...core.sample(reportAfter(RESTING, at(t)), t)),
+      })),
+    ].sort((a, b) => a.t - b.t);
+    for (const event of events) event.run();
+    return found;
+  }
+
+  /** The core turning `degrees` about `axis` over `ms` from `from` (signed like the x/y/z moves at 90). */
+  const turning = (axis: "x" | "y" | "z", degrees: number, from: number, ms = 100) => (t: number) => solverTurn(axis, degrees * clamp01((t - from) / ms));
+
+  it.each([
+    { name: "M: R and L' together, the core turning like x'", turns: [["R", 500], ["L'", 510]], at: turning("x", -90, 480), expected: ["x'"] },
+    { name: "M2 as four interleaved quarters", turns: [["R", 500], ["L'", 510], ["R", 560], ["L'", 570]], at: turning("x", 180, 480, 120), expected: ["x2"] },
+    { name: "a fast M2 the gyro reads as 140°", turns: [["R", 500], ["L'", 510], ["R", 540], ["L'", 550]], at: turning("x", 140, 480, 90), expected: ["x2"] },
+    {
+      name: "a slow M2: two M halves 150 ms apart",
+      turns: [["R", 500], ["L'", 510], ["R", 650], ["L'", 660]],
+      at: (t: number) => solverTurn("x", -90 * clamp01((t - 480) / 100) - 90 * clamp01((t - 630) / 100)),
+      expected: ["x2"],
+    },
+    { name: "S2 from F2 and B2", turns: [["F2", 500], ["B2", 505]], at: turning("z", 180, 480), expected: ["z2"] },
+    { name: "R and L' turned by two hands, the core still", turns: [["R", 500], ["L'", 510]], at: turning("x", 0, 480), expected: [] },
+    { name: "a plain turn while the hand tilts the cube", turns: [["R", 500], ["L'", 510]], at: turning("x", -30, 480), expected: [] },
+    { name: "a lone L with the core turning (left to the detector: it may be a gyro spike)", turns: [["L", 500]], at: turning("x", 90, 480), expected: [] },
+    {
+      name: "r U R' U' r' done fast (the A perm's wide T perm shape)",
+      turns: [["L", 500], ["U", 590], ["R'", 680], ["U'", 770], ["L'", 860]],
+      at: (t: number) => solverTurn("x", 90 * clamp01((t - 480) / 90) - 90 * clamp01((t - 840) / 90)),
+      expected: ["x", "x'"],
+    },
+    {
+      name: "M' U R U' r': a wide move balancing a slice",
+      turns: [["R'", 500], ["L", 505], ["U", 600], ["R", 690], ["U'", 780], ["L'", 870]],
+      at: (t: number) => solverTurn("x", 90 * clamp01((t - 480) / 90) - 90 * clamp01((t - 850) / 90)),
+      expected: ["x", "x'"],
+    },
+    {
+      name: "a plain R the gyro reads as a 90° spike that drifts back with no turn",
+      turns: [["R", 500], ["U", 900], ["R'", 1300]],
+      at: (t: number) => solverTurn("x", -90 * clamp01((t - 480) / 90) + 90 * clamp01((t - 700) / 1000)),
+      expected: [],
+    },
+  ] as const)("reads $name", ({ turns, at, expected }) => {
+    expect(watch(turns, at).map((core) => core.rotation)).toEqual(expected);
+  });
+
+  it("won't measure across a report too old to rule out a regrip", () => {
+    expect(watch([["R", 700], ["L'", 710]], turning("x", -90, 680), 600)).toEqual([]);
+  });
+
+  it("reads a final slice once told no more turns are coming, without waiting for the move gap", () => {
+    const core = new CoreWatch();
+    core.sample(RESTING, 400);
+    core.turn(0, "R", 500);
+    core.turn(1, "L'", 510);
+    core.close();
+    expect(core.sample(reportAfter(RESTING, solverTurn("x", -90)), 560).map((found) => found.rotation)).toEqual(["x'"]);
+  });
+});
+
+describe("placeCoreTurn", () => {
+  const still: Quaternion = { w: 1, x: 0, y: 0, z: 0 };
+  /** A slice CoreWatch read from these centre-frame turns, carrying `rotation` (centre frame). */
+  const coreTurn = (turns: readonly string[], rotation: Rotation, after: Quaternion = still): CoreTurn => ({
+    start: 0,
+    end: turns.length - 1,
+    rotation,
+    before: { q: still, t: 900 },
+    after: { q: after, t: 1100 },
+    t: 1000 + (turns.length - 1) * 10,
+  });
+
+  it.each([
+    { lead: [], move: "M" },
+    { lead: ["y"], move: "M" },
+    { lead: ["y'"], move: "M2" },
+    { lead: ["y2"], move: "S'" },
+    { lead: ["x"], move: "E" },
+    { lead: ["x", "y"], move: "S2" },
+    { lead: ["z'"], move: "M'" },
+  ] as { lead: Rotation[]; move: string }[])("reads $move held $lead away from the solver's grip as $move", ({ lead, move }) => {
+    // The turns the cube reports for the move, and the core's own rotation, from a tracker in the cube's frame.
+    const view = new FrameTracker();
+    for (const rotation of lead) view.rotate(rotation);
+    const step = view.apply(move);
+    const centre = ["M", "M'", "M2", "E", "E'", "E2", "S", "S'", "S2"].map((slice) => new FrameTracker().apply(slice)).find((found) => [...found.turns].sort().join() === [...step.turns].sort().join())!;
+    const turns = step.turns.map((m, i) => ({ move: m, hostT: 1000 + i * 10 }));
+    const placement = newPlacement(turns, lead);
+    placeCoreTurn(placement, new RotationDetector(still), coreTurn(step.turns, centre.rotation!));
+    const events = [
+      ...lead.map((rotation) => ({ rotation, after: 0, t: 0 })),
+      ...placement.placed.map((p) => ({ rotation: p.rotation, after: p.after, t: turns[p.turn!]!.hostT })),
+    ];
+    const texts = humanize(turns.map((turn) => ({ move: turn.move, t: turn.hostT })), events, () => false).map((token) => token.text);
+    expect(texts.filter((text) => !/^[xyz]/.test(text))).toEqual([move]);
+  });
+
+  it("takes the place of a regrip the detector made of the slice's core turn", () => {
+    const turns = [{ move: "R", hostT: 1000 }, { move: "L'", hostT: 1010 }];
+    const placement = newPlacement(turns, []);
+    placement.placed.push({ rotation: "x'", after: 2, hostT: 1050, turn: null });
+    placeCoreTurn(placement, new RotationDetector(still), coreTurn(["R", "L'"], "x'"));
+    expect(placement.placed).toEqual([{ rotation: "x'", after: 2, hostT: 1010, turn: 1 }]);
+  });
+
+  it("sets the detector's reading straight: a slice the gyro read short turned exactly its rotation", () => {
+    const short = reportAfter(still, solverTurn("x", -60));
+    const detector = new RotationDetector(still);
+    placeCoreTurn(newPlacement([{ move: "R", hostT: 1000 }, { move: "L'", hostT: 1010 }], []), detector, coreTurn(["R", "L'"], "x'", short));
+    expect(angleBetween(detector.reading(short), rotationQuaternion("x'"))).toBeLessThan(0.01);
+    expect(detector.orientation.rotations).toEqual(["x'"]);
   });
 });

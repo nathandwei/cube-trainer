@@ -3,6 +3,9 @@
 //
 // Turns queue up; while more are waiting the one in progress speeds up, so a fast run of smart-cube turns stays
 // live rather than falling behind. show() drops whatever is queued and jumps straight to a state.
+//
+// The cubies sit in one body that can be tilted as a whole (setAttitude), so the cube on screen can be held the way a
+// smart cube is: its gyro reports a few times a second, and the body glides from one report to the next.
 
 import {
   BufferGeometry,
@@ -16,6 +19,7 @@ import {
   NeutralToneMapping,
   PMREMGenerator,
   PerspectiveCamera,
+  Quaternion,
   Scene,
   Shape,
   SRGBColorSpace,
@@ -67,6 +71,19 @@ const NORMALS: readonly { normal: Vector3; face: FaceName }[] = [
 ];
 
 const FORWARD = new Vector3(0, 0, 1);
+
+/**
+ * Gliding to a new attitude takes about as long as the gyro's reports are apart (ms), so the body moves steadily
+ * rather than jumping at each report; a big swing (turning the cube over) takes at least this long per degree.
+ */
+const TILT_MIN_MS = 30;
+const TILT_MAX_MS = 160;
+const TILT_MS_PER_DEGREE = 1.2;
+
+/** A whole-cube rotation as a smart cube's gyro reads it, in three.js's axes (+x R, +y U, +z F). */
+export type Attitude = { w: number; x: number; y: number; z: number };
+
+type Tilt = { from: Quaternion; to: Quaternion; start: number; duration: number };
 
 function ease(t: number): number {
   return 0.5 - Math.cos(Math.PI * t) / 2;
@@ -178,6 +195,10 @@ export class CubeRenderer {
   readonly #camera = new PerspectiveCamera(FIELD_OF_VIEW, 1, 0.1, 100);
   readonly #environment: Texture;
   readonly #resize: ResizeObserver;
+  /** Every cubie, and each turn's pivot while it turns: tilting it tilts the whole cube. */
+  readonly #body = new Group();
+  #tilt: Tilt | null = null;
+  #lastAttitudeAt = 0;
   #cubies: Group[] = [];
   #look: CubeLook;
   #parts: LookParts | null = null;
@@ -219,6 +240,7 @@ export class CubeRenderer {
     this.#placeCamera();
     this.#listenForDrags(this.#renderer.domElement);
 
+    this.#scene.add(this.#body);
     this.#build();
     this.#resize = new ResizeObserver(() => this.#fit());
     this.#resize.observe(host);
@@ -246,6 +268,27 @@ export class CubeRenderer {
     const turn = this.#parse(move);
     if (!turn) return;
     this.#queue.push(turn);
+    this.#invalidate();
+  }
+
+  /**
+   * Tilts the whole cube to `attitude` (null: upright), gliding there from wherever it is unless `jump`. The turns it
+   * shows are unaffected: they turn its layers, wherever the tilt has put them.
+   */
+  setAttitude(attitude: Attitude | null, jump = false): void {
+    const to = attitude ? new Quaternion(attitude.x, attitude.y, attitude.z, attitude.w).normalize() : new Quaternion();
+    const now = performance.now();
+    const since = now - this.#lastAttitudeAt;
+    this.#lastAttitudeAt = now;
+    if (jump) {
+      this.#tilt = null;
+      this.#body.quaternion.copy(to);
+    } else {
+      const from = this.#body.quaternion.clone();
+      const degrees = (from.angleTo(to) * 180) / Math.PI;
+      const duration = Math.max(Math.min(Math.max(since, TILT_MIN_MS), TILT_MAX_MS), degrees * TILT_MS_PER_DEGREE);
+      this.#tilt = { from, to, start: now, duration };
+    }
     this.#invalidate();
   }
 
@@ -356,7 +399,7 @@ export class CubeRenderer {
     if (this.#active) this.#finish(this.#active);
     this.#active = null;
     const placed = this.#cubies.map((cubie) => ({ position: cubie.position.clone(), quaternion: cubie.quaternion.clone() }));
-    for (const cubie of this.#cubies) this.#scene.remove(cubie);
+    for (const cubie of this.#cubies) this.#body.remove(cubie);
     const previous = this.#parts;
     const parts = buildParts(this.#look);
     const cubies: Group[] = [];
@@ -369,7 +412,7 @@ export class CubeRenderer {
         cubie.position.copy(was.position);
         cubie.quaternion.copy(was.quaternion);
       }
-      this.#scene.add(cubie);
+      this.#body.add(cubie);
     });
     this.#cubies = cubies;
     this.#parts = parts;
@@ -392,7 +435,7 @@ export class CubeRenderer {
 
   #begin(turn: LayerTurn): Active {
     const pivot = new Group();
-    this.#scene.add(pivot);
+    this.#body.add(pivot);
     for (const cubie of this.#cubies) if (inLayers(cubie.position, turn)) pivot.attach(cubie);
     const duration = (QUARTER_MS * (Math.abs(turn.quarters) >= 2 ? HALF_TURN_FACTOR : 1)) / this.#tempo;
     return { turn, pivot, elapsed: 0, duration };
@@ -402,10 +445,10 @@ export class CubeRenderer {
     turnRotation(active.turn, 1, active.pivot.quaternion);
     active.pivot.updateMatrixWorld(true);
     for (const cubie of [...active.pivot.children] as Group[]) {
-      this.#scene.attach(cubie);
+      this.#body.attach(cubie);
       snap(cubie);
     }
-    this.#scene.remove(active.pivot);
+    this.#body.remove(active.pivot);
   }
 
   /** Lands the turn in progress where it would end and drops the queue. */
@@ -448,9 +491,21 @@ export class CubeRenderer {
       const { turn, pivot, elapsed, duration } = this.#active;
       turnRotation(turn, ease(elapsed / duration), pivot.quaternion);
     }
+    const tilting = this.#stepTilt(now);
     this.#renderer.render(this.#scene, this.#camera);
-    if (this.#active || this.#queue.length > 0) {
+    if (this.#active || this.#queue.length > 0 || tilting) {
       this.#frame = requestAnimationFrame((next) => this.#draw(next));
     }
+  }
+
+  /** The body's tilt at `now`, gliding at a steady pace (an eased glide would pulse at every report); whether it's still moving. */
+  #stepTilt(now: number): boolean {
+    const tilt = this.#tilt;
+    if (!tilt) return false;
+    const fraction = Math.min(1, Math.max(0, (now - tilt.start) / tilt.duration));
+    this.#body.quaternion.slerpQuaternions(tilt.from, tilt.to, fraction);
+    if (fraction < 1) return true;
+    this.#tilt = null;
+    return false;
   }
 }

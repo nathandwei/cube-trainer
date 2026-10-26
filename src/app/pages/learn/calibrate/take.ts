@@ -63,13 +63,13 @@ export class TakeStore {
   }
 
   /** A fresh ghost take: the case as the catalog draws it, recording at once (see Recorder.hold for the rest). */
-  startAsDrawn(caseId: string, report: Quaternion | null, grip: GridOrientation | null): string[] {
+  startAsDrawn(caseId: string, report: Quaternion | null, grip: GridOrientation | null): Quaternion | null {
     this.#recorder = new Recorder(caseId, caseState(caseId));
     this.#scramble = null;
     this.#sealed = false;
-    const shown = this.#recorder.hold(report, grip);
+    const attitude = this.#recorder.hold(report, grip);
     this.#changed();
-    return shown;
+    return attitude;
   }
 
   /** No take: the next case is loading. */
@@ -80,11 +80,11 @@ export class TakeStore {
     this.#changed();
   }
 
-  hold(report: Quaternion | null, grip?: GridOrientation | null): string[] {
-    if (!this.#recorder || this.#recorder.holding) return [];
-    const shown = this.#recorder.hold(report, grip);
+  hold(report: Quaternion | null, grip?: GridOrientation | null): Quaternion | null {
+    if (!this.#recorder || this.#recorder.holding) return null;
+    const attitude = this.#recorder.hold(report, grip);
     this.#changed();
-    return shown;
+    return attitude;
   }
 
   anchor(report: Quaternion, grip: GridOrientation): void {
@@ -97,10 +97,13 @@ export class TakeStore {
     return shown;
   }
 
-  gyro(q: Quaternion, hostT: number): string[] {
-    const shown = this.#recorder?.gyro(q, hostT) ?? [];
-    if (shown.length > 0) this.#changed();
-    return shown;
+  gyro(q: Quaternion, hostT: number): Quaternion | null {
+    const recorder = this.#recorder;
+    if (!recorder) return null;
+    const revision = recorder.revision;
+    const attitude = recorder.gyro(q, hostT);
+    if (recorder.revision !== revision) this.#changed();
+    return attitude;
   }
 
   play(token: string, t: number): string[] {

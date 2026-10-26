@@ -201,12 +201,9 @@ export function Session({ caseIds, input, onExit }: Props) {
     [alg, caseId, cubeSession, input, setup],
   );
 
-  /**
-   * One turn on the case: `turns` in the solver's centre frame, `shown` as it animates on screen (a test rep's
-   * token); a smart cube's turn shows on the face it was turned, the way the cube is held.
-   */
+  /** One turn on the case: `turns` in the solver's centre frame, `shown` as it animates on screen. */
   const drillTurn = useCallback(
-    (turns_: readonly string[], shown?: string) => {
+    (turns_: readonly string[], shown: string) => {
       if (!caseDef || !state.current || recorded.current) return;
       if (phase === "ready") {
         firstTurnAt.current = performance.now();
@@ -217,14 +214,14 @@ export function Session({ caseIds, input, onExit }: Props) {
       }
       turns.current = [...turns.current, ...turns_];
       state.current = applyAlg(state.current, turns_);
-      for (const token of shown === undefined ? turns_.flatMap((move) => follower.turn(move)) : [shown]) cube.current?.turn(token);
+      cube.current?.turn(shown);
       if (isGoalReached(caseDef.set, state.current)) {
         record(true, firstTurnAt.current - shownAt.current, performance.now() - firstTurnAt.current);
         return;
       }
       if (countTurns(turns.current) > turnBudget) record(false, firstTurnAt.current - shownAt.current, performance.now() - firstTurnAt.current);
     },
-    [caseDef, follower, input, phase, record, tick, turnBudget],
+    [caseDef, input, phase, record, tick, turnBudget],
   );
 
   // The smart cube: its own scramble tracker brings the cube to the case, then its turns drive the drill.
@@ -244,15 +241,16 @@ export function Session({ caseIds, input, onExit }: Props) {
       cubeSession.subscribe(() => {
         const { phase: cubePhase } = cubeSession.view();
         if (cubePhase === "scrambling") followedBand.current = true;
-        // In the case: the cube on screen follows the cube from the grip it's held in now.
+        // In the case: the cube on screen is held as the cube is, from the grip it's in now.
         if (cubePhase !== "ready" || follower.holding) return;
-        for (const rotation of follower.hold(heldAtScramble(followedBand.current))) cube.current?.turn(rotation);
+        follower.hold(heldAtScramble(followedBand.current));
       }),
       smartCube.onMove((move, hostT, cubeT) => {
         const before = cubeSession.view().phase;
         cubeSession.move(move, hostT, cubeT);
+        follower.turn(move, hostT);
         const live = phaseRef.current === "ready" || phaseRef.current === "running";
-        if (live && (before === "ready" || before === "solving")) drillTurnRef.current([move]);
+        if (live && (before === "ready" || before === "solving")) drillTurnRef.current([move], move);
       }),
       smartCube.onGyro((q, hostT) => cubeSession.gyro(q, hostT)),
       smartCube.onFacelets((cubeState, hostT) => cubeSession.facelets(cubeState, hostT)),

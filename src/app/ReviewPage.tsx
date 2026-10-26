@@ -32,7 +32,7 @@ import {
 import type { LineId, PairTag, Shown, StageView, ViewLine } from "@/app/review/parts";
 import { ReportPanel } from "@/app/review/ReportPanel";
 import { StepperPanel } from "@/app/review/StepperPanel";
-import { applyAlg, relabelLastLayer, scrambledState, type CubeState } from "@/cube";
+import { applyAlg, countDisplayTurns, relabelLastLayer, scrambledState, type CubeState } from "@/cube";
 import type { Slot, SolveAnalysis, SolveRecord } from "@/cube/types";
 import "@/app/review/review.css";
 
@@ -119,7 +119,8 @@ function Review({ solve, analysis, back }: { solve: SolveRecord; analysis: Solve
           name: stageName(stage.label),
           caseName: stage.caseName,
           verdict: stageVerdict(stage) ?? use?.verdict ?? null,
-          moves: stage.moveCount,
+          // As he'd count them: a slice or wide move is one, a half turn one however slowly its quarters came.
+          moves: countDisplayTurns(tokens, stage),
           best: bestPossibleMoves(stage),
           ms: stage.totalMs,
           pauseMs: index > 0 && stage.recognitionMs >= LONG_RECOGNITION_MS ? stage.recognitionMs : null,

@@ -1,19 +1,20 @@
-// The cube on screen held the way the smart cube is held, for the drills: a regrip turns it too, and each turn plays
-// on the face that was turned rather than the one with that centre colour in the solver's grip, so after a y the R
-// in hand is the R on screen.
+// The cube on screen held the way the smart cube is held: tilted, turned over and regripped with it, a few degrees at
+// a time, from the gyro's reports. Turns need no renaming for this: the cube reports them by centre colour, the
+// screen turns that colour's layer, and the tilt puts the layer where it really is. The gyro sits in the core, so a
+// slice or wide move turns the cube on screen too, as it should; but a fast one reads short (an M2 as 140°), so each
+// one CoreWatch recognises counts as exactly its turn, or the cube on screen would be left askew after it.
 //
 // The gyro only measures turning, so it needs a grip to start from. A drill has one when the cube reaches its
-// scramble: the band was followed white on top, green in front. Until the first turn the screen only follows round
-// the last layer, so turning the cube over to start isn't shown; from then on it follows every regrip. Goal checks
-// never need any of this: they run on the centre-frame state, which rotations don't change.
+// scramble: the band was followed white on top, green in front. However it's held then counts as that grip exactly,
+// so a hand's slight tilt at that moment stays out of the picture. Goal checks never need any of this: they run on
+// the centre-frame state, which rotations don't change.
 
 import { useEffect, useState, type RefObject } from "react";
 import type { CubeHandle } from "@/app/components/CubeView";
 import { smartCube } from "@/app/smartcube/connection";
-import { rotationsBetween, type GridOrientation, type Quaternion, type RotationDetector } from "@/app/smartcube/gyro";
-import { FrameTracker } from "@/cube";
+import { CoreWatch, multiply, referenceFor, rotationQuaternion, rotationSince, type GridOrientation, type Quaternion } from "@/app/smartcube/gyro";
 import type { Move } from "@/cube/types";
-import { SCRAMBLE_GRIP, SOLVER_GRIP, detectorAt, keepsYellowUp } from "./calibrate/grip";
+import { SCRAMBLE_GRIP, SOLVER_GRIP, solverGripReport } from "./calibrate/grip";
 
 /** How the cube is held at some moment: its gyro report then (null before its first, or without a gyro) and the grip. */
 export type Hold = { report: Quaternion | null; grip: GridOrientation };
@@ -26,82 +27,107 @@ export function heldAtScramble(followedBand: boolean): Hold {
   return { report: smartCube.lastGyro, grip: followedBand ? SCRAMBLE_GRIP : SOLVER_GRIP };
 }
 
+/** The cube's attitude from its gyro reports: how it's turned from the solver's grip, in the solver's axes. */
 export class CubeFollower {
-  #detector: RotationDetector | null = null;
+  /** The report the cube would give in the solver's grip. */
+  #reference: Quaternion | null = null;
   /** A grip from hold() that waits for the cube's first gyro report. */
   #pending: GridOrientation | null = null;
   #holding = false;
-  #turned = false;
-  /** Where the cube on screen faces, relative to the solver's grip, and the names its faces have. */
-  #shown: GridOrientation = SOLVER_GRIP;
-  #screen = new FrameTracker();
+  #core = new CoreWatch();
+  #turns = 0;
 
   /** Following since hold(), until reset(). */
   get holding(): boolean {
     return this.#holding;
   }
 
-  /** The cube on screen was just drawn in the solver's grip; nothing is followed until hold(). */
   reset(): void {
-    this.#detector = null;
+    this.#reference = null;
     this.#pending = null;
     this.#holding = false;
-    this.#turned = false;
-    this.#shown = SOLVER_GRIP;
-    this.#screen = new FrameTracker();
+    this.#core = new CoreWatch();
+    this.#turns = 0;
   }
 
-  /** Follow from `hold`. Returns the rotations that turn the cube on screen to face the same way. */
-  hold({ report, grip }: Hold): string[] {
+  /** Follow from `hold`: the attitude now, once there's a report to read it from. */
+  hold({ report, grip }: Hold): Quaternion | null {
     this.#holding = true;
-    this.#turned = false;
-    this.#detector = report ? detectorAt(report, grip) : null;
+    this.#reference = report ? solverGripReport(report, grip) : null;
     this.#pending = report ? null : grip;
-    return this.#detector ? this.#follow(this.#detector.orientation) : [];
+    return report ? grip.q : null;
   }
 
-  /** A gyro report: the rotations to animate, if the grip changed. */
-  gyro(q: Quaternion, hostT: number): string[] {
-    if (!this.#detector) {
-      if (!this.#pending) return [];
-      this.#detector = detectorAt(q, this.#pending);
+  /** One of the cube's turns (centre frame, as reported), for reading slices and wide moves. */
+  turn(move: Move, hostT: number): void {
+    this.#core.turn(this.#turns++, move, hostT);
+  }
+
+  /** A gyro report: the attitude to show, once following. */
+  gyro(q: Quaternion, hostT: number): Quaternion | null {
+    if (!this.#reference && this.#pending) {
+      this.#reference = solverGripReport(q, this.#pending);
       this.#pending = null;
-      return this.#follow(this.#detector.orientation);
     }
-    return this.#detector.sample(q, hostT) ? this.#follow(this.#detector.orientation) : [];
-  }
-
-  /** A centre-frame turn from the cube: what to animate. The first one also faces the screen fully the way it's held. */
-  turn(move: Move): string[] {
-    const shown = !this.#turned && this.#detector ? this.#face(this.#detector.orientation) : [];
-    this.#turned = true;
-    shown.push(this.#screen.name(move));
-    return shown;
-  }
-
-  #follow(orientation: GridOrientation): string[] {
-    return this.#turned || keepsYellowUp(orientation) ? this.#face(orientation) : [];
-  }
-
-  #face(target: GridOrientation): string[] {
-    if (target === this.#shown) return [];
-    // A copy: the list belongs to gyro.ts's shared orientation grid, and callers append turns to what this returns.
-    const rotations = [...rotationsBetween(this.#shown, target)];
-    this.#shown = target;
-    for (const rotation of rotations) this.#screen.rotate(rotation);
-    return rotations;
+    const cores = this.#core.sample(q, hostT);
+    if (!this.#reference) return null;
+    for (const core of cores) {
+      // The core turned exactly the move's rotation, from wherever it was just before.
+      const before = rotationSince(this.#reference, core.before.q);
+      this.#reference = referenceFor(core.after.q, multiply(before, rotationQuaternion(core.rotation)));
+    }
+    return rotationSince(this.#reference, q);
   }
 }
 
-/** A follower for the cube on screen, fed the smart cube's gyro while mounted. The drill resets it, holds it and turns with it. */
-export function useCubeFollower(cube: RefObject<CubeHandle | null>): CubeFollower {
-  const [follower] = useState(() => new CubeFollower());
-  useEffect(
-    () =>
-      smartCube.onGyro((q, hostT) => {
-        for (const rotation of follower.gyro(q, hostT)) cube.current?.turn(rotation);
-      }),
-    [cube, follower],
-  );
+
+/** The cube on screen following the smart cube: upright until hold(), then tilted with every gyro report. */
+export type FollowedCube = {
+  readonly holding: boolean;
+  /** Upright again at once (the screen just showed a fresh state), not following until hold(). */
+  reset(): void;
+  hold(hold: Hold): void;
+  /** One of the cube's turns while following (centre frame, as reported), so a slice leaves it square. */
+  turn(move: Move, hostT: number): void;
+};
+
+class ScreenFollower implements FollowedCube {
+  readonly #cube: RefObject<CubeHandle | null>;
+  readonly #follower = new CubeFollower();
+
+  constructor(cube: RefObject<CubeHandle | null>) {
+    this.#cube = cube;
+  }
+
+  get holding(): boolean {
+    return this.#follower.holding;
+  }
+
+  reset(): void {
+    this.#follower.reset();
+    this.#cube.current?.setAttitude(null, true);
+  }
+
+  hold(hold: Hold): void {
+    this.#show(this.#follower.hold(hold));
+  }
+
+  turn(move: Move, hostT: number): void {
+    if (this.#follower.holding) this.#follower.turn(move, hostT);
+  }
+
+  gyro(q: Quaternion, hostT: number): void {
+    this.#show(this.#follower.gyro(q, hostT));
+  }
+
+  #show(attitude: Quaternion | null): void {
+    if (attitude) this.#cube.current?.setAttitude(attitude);
+  }
+}
+
+/** The cube on screen following the smart cube's gyro while mounted. The drill resets it and holds it. */
+export function useCubeFollower(cube: RefObject<CubeHandle | null>): FollowedCube {
+  const [follower] = useState(() => new ScreenFollower(cube));
+  useEffect(() => smartCube.onGyro((q, hostT) => follower.gyro(q, hostT)), [follower]);
   return follower;
 }

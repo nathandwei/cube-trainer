@@ -21,7 +21,7 @@ export {
   type Frame,
 } from "./cubie";
 export { FrameTracker, parseRotation, splitMoves, type FrameStep } from "./frame";
-export { ROTATION_MERGE_MS, SLICE_PAIR_MS, countDisplayTurns, humanize, type DisplayToken } from "./notation";
+export { ROTATION_MERGE_MS, SLICE_PAIR_MS, countDisplayTurns, humanize, type DisplayToken, type HumanizeOptions } from "./notation";
 export { isCrossSolved, isSlotSolved, solvedSlots, SLOTS } from "./pieces";
 export {
   MAX_ENUMERATE_LENGTH,
