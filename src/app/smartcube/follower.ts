@@ -60,9 +60,26 @@ export class CubeFollower {
   #core = new CoreWatch();
   #turns = 0;
 
-  /** Following since hold(), until reset(). */
+  /** Following since hold() (or resume()), until reset(). */
   get holding(): boolean {
     return this.#holding;
+  }
+
+  /** The turn about the vertical the cube is faced by; null until held. */
+  get heading(): Quaternion | null {
+    return this.#heading;
+  }
+
+  /** Follow with a heading learnt before (a page load ago): the cube's reading against gravity does the rest. */
+  resume(heading: Quaternion): void {
+    this.#holding = true;
+    this.#pending = null;
+    this.#heading = heading;
+  }
+
+  /** The attitude `report` shows, without taking it as the latest report (one remembered from before); null until held. */
+  attitudeOf(report: Quaternion): Quaternion | null {
+    return this.#heading ? this.#attitude(report) : null;
   }
 
   reset(): void {

@@ -47,6 +47,12 @@ const SEAM_SHADE = 0.62;
 /** Where the camera looks from, as cubing.js put it (degrees): above the cube and round to the right. */
 const LATITUDE = 30;
 const LONGITUDE = 32;
+/**
+ * While the cube is held the way a smart cube is in his hands, the camera looks at it as he does: square at the
+ * front, a little from above (a cube is held below the eyes), so green held flat in front shows flat in front. Its
+ * other faces show as he turns it, so the view isn't dragged round meanwhile.
+ */
+const FOLLOW_LATITUDE = 20;
 const FIELD_OF_VIEW = 22;
 /**
  * How much room the cube gets, as the radius (in cubie widths; the cube spans 3) the view fits: about cubing.js's
@@ -209,8 +215,8 @@ export class CubeRenderer {
   #lastFrame = 0;
   #latitude = LATITUDE;
   #longitude = LONGITUDE;
-  /** The view can be dragged round (not while a smart cube's gyro tilts the cube instead). */
-  #draggable = true;
+  /** The cube is held like a smart cube (setFollowing): the camera looks square at it and can't be dragged round. */
+  #following = false;
 
   constructor(host: HTMLElement, look: CubeLook) {
     this.#host = host;
@@ -294,10 +300,10 @@ export class CubeRenderer {
     this.#invalidate();
   }
 
-  /** Back to the usual view (above the cube, round to the right), as after a double click. */
+  /** Back to the usual view (above the cube, round to the right; square in front while following), as after a double click. */
   resetView(): void {
-    this.#latitude = LATITUDE;
-    this.#longitude = LONGITUDE;
+    this.#latitude = this.#following ? FOLLOW_LATITUDE : LATITUDE;
+    this.#longitude = this.#following ? 0 : LONGITUDE;
     this.#placeCamera();
     this.#invalidate();
   }
@@ -306,12 +312,12 @@ export class CubeRenderer {
     this.#tempo = scale > 0 ? scale : 1;
   }
 
-  /** Whether the view can be dragged round; turning it off puts the usual view back. */
-  setDraggable(draggable: boolean): void {
-    if (draggable === this.#draggable) return;
-    this.#draggable = draggable;
-    this.#renderer.domElement.classList.toggle("fixed-view", !draggable);
-    if (!draggable) this.resetView();
+  /** Whether the cube is held like a smart cube (setAttitude): then the camera looks square at it and stays put. */
+  setFollowing(following: boolean): void {
+    if (following === this.#following) return;
+    this.#following = following;
+    this.#renderer.domElement.classList.toggle("fixed-view", following);
+    this.resetView();
   }
 
   setLook(look: CubeLook): void {
@@ -372,7 +378,7 @@ export class CubeRenderer {
   #listenForDrags(canvas: HTMLCanvasElement): void {
     let last: { x: number; y: number } | null = null;
     canvas.addEventListener("pointerdown", (event) => {
-      if (event.button !== 0 || !this.#draggable) return;
+      if (event.button !== 0 || this.#following) return;
       last = { x: event.clientX, y: event.clientY };
       canvas.setPointerCapture(event.pointerId);
       canvas.classList.add("dragging");
@@ -396,7 +402,7 @@ export class CubeRenderer {
     // Capture can go without either (a window switch mid-drag): the drag ends there too.
     canvas.addEventListener("lostpointercapture", stop);
     canvas.addEventListener("dblclick", () => {
-      if (this.#draggable) this.resetView();
+      if (!this.#following) this.resetView();
     });
   }
 

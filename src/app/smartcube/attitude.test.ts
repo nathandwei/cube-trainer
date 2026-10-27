@@ -31,7 +31,7 @@ function shownAs(attitude: Quaternion | null): string | null {
 /** A cube link that reports what the test tells it to. */
 class FakeLink implements AttitudeSource {
   orientationReference: Quaternion | null = null;
-  state = { hasGyro: true } as ConnectionState;
+  state = { hasGyro: true, status: "connected", deviceName: "GAN 16ui" } as ConnectionState;
   t = 1000;
   readonly #gyro = new Set<GyroListener>();
   readonly #moves = new Set<MoveListener>();
@@ -63,19 +63,25 @@ class FakeLink implements AttitudeSource {
   }
 
   loseGyro(): void {
-    this.state = { ...this.state, hasGyro: false };
+    this.state = { ...this.state, hasGyro: false, status: "reconnecting" };
+    for (const listener of this.#state) listener();
+  }
+
+  /** Connected (again), before the cube has reported. */
+  connect(deviceName = "GAN 16ui"): void {
+    this.state = { ...this.state, hasGyro: false, status: "connected", deviceName };
     for (const listener of this.#state) listener();
   }
 }
 
 describe("AmbientAttitude", () => {
   it("knows nothing until the cube reports", () => {
-    expect(new AmbientAttitude(new FakeLink()).current).toBeNull();
+    expect(new AmbientAttitude(new FakeLink(), null).current).toBeNull();
   });
 
   it("shows the cube's real tilt from its first report, and turns it round with the cube", () => {
     const link = new FakeLink();
-    const attitude = new AmbientAttitude(link);
+    const attitude = new AmbientAttitude(link, null);
     link.report(reportAfter(grid("x")));
     expect(shownAs(attitude.current)).toBe("x");
     link.report(reportAfter(grid("x"), grid("y")));
@@ -85,14 +91,14 @@ describe("AmbientAttitude", () => {
   it("stands upright from the grip saved by reset orientation", () => {
     const link = new FakeLink();
     link.orientationReference = reportAfter();
-    const attitude = new AmbientAttitude(link);
+    const attitude = new AmbientAttitude(link, null);
     link.report(reportAfter(grid("y'")));
     expect(shownAs(attitude.current)).toBe("y'");
   });
 
   it("follows from the grip a scramble left the cube in", () => {
     const link = new FakeLink();
-    const attitude = new AmbientAttitude(link);
+    const attitude = new AmbientAttitude(link, null);
     link.report(reportAfter(tilt("x", 40)));
     attitude.hold({ report: reportAfter(grid("z2")), grip: SCRAMBLE_GRIP });
     expect(shownAs(attitude.current)).toBe("z2");
@@ -103,7 +109,7 @@ describe("AmbientAttitude", () => {
 
   it("tells its listeners, and stops when the gyro goes, reading the grip afresh when it's back", () => {
     const link = new FakeLink();
-    const attitude = new AmbientAttitude(link);
+    const attitude = new AmbientAttitude(link, null);
     let heard = 0;
     attitude.subscribe(() => heard++);
     link.report(reportAfter());
@@ -123,7 +129,7 @@ describe("AmbientAttitude", () => {
   ])("knows which way round the cube faces only when $name: $anchored", ({ reference, hold, anchored }) => {
     const link = new FakeLink();
     if (reference) link.orientationReference = reportAfter();
-    const attitude = new AmbientAttitude(link);
+    const attitude = new AmbientAttitude(link, null);
     link.report(reportAfter(grid("y")));
     if (hold) attitude.hold({ report: reportAfter(grid("z2")), grip: SCRAMBLE_GRIP });
     expect(attitude.anchored).toBe(anchored);
@@ -134,11 +140,48 @@ describe("AmbientAttitude", () => {
 
   it("leaves the cube square after an E slice the gyro read short", () => {
     const link = new FakeLink();
-    const attitude = new AmbientAttitude(link);
+    const attitude = new AmbientAttitude(link, null);
     link.report(reportAfter(), 180);
     link.turn("U");
     link.turn("D'");
     link.report(reportAfter(tilt("y", 70)), 450);
     expect(angleBetween(attitude.current!, grid("y'"))).toBeLessThan(0.01);
+  });
+
+  describe("from one page load to the next", () => {
+    class MemoryStorage {
+      readonly items = new Map<string, string>();
+      getItem(key: string): string | null {
+        return this.items.get(key) ?? null;
+      }
+      setItem(key: string, value: string): void {
+        this.items.set(key, value);
+      }
+    }
+
+    /** A page load that lined the cube up from a scramble, then left it held at `pose`; when it ended (ms). */
+    function earlierLoad(storage: MemoryStorage, pose: Quaternion): number {
+      const link = new FakeLink();
+      const start = 1_000_000;
+      const attitude = new AmbientAttitude(link, storage, () => start + link.t);
+      link.report(reportAfter(grid("z2")));
+      attitude.hold({ report: reportAfter(grid("z2")), grip: SCRAMBLE_GRIP });
+      link.report(reportAt(pose), 1200);
+      return start + link.t;
+    }
+
+    it.each([
+      { name: "the same cube, soon after", device: "GAN 16ui", later: 60_000, resumes: true },
+      { name: "a cube left for half an hour", device: "GAN 16ui", later: 30 * 60_000, resumes: false },
+      { name: "another cube", device: "GAN 12 ui", later: 60_000, resumes: false },
+    ])("faces $name as it was left before it reports: $resumes", ({ device, later, resumes }) => {
+      const storage = new MemoryStorage();
+      const ended = earlierLoad(storage, multiply(WORLD, grid("y")));
+      const link = new FakeLink();
+      const attitude = new AmbientAttitude(link, storage, () => ended + later);
+      link.connect(device);
+      expect(attitude.anchored).toBe(resumes);
+      expect(resumes ? shownAs(attitude.current) : attitude.current).toBe(resumes ? "y" : null);
+    });
   });
 });

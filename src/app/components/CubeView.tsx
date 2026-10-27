@@ -47,10 +47,10 @@ function loadRenderer(): Promise<typeof import("@/app/cube3d/renderer")> {
 }
 
 /**
- * What the cube should show once it has loaded: a state, the tempo it plays at, its tilt and whether it can be
- * dragged. `dead` once it never will (no WebGL), so turns stop piling up.
+ * What the cube should show once it has loaded: a state, the tempo it plays at, and its tilt (null: not following a
+ * smart cube). `dead` once it never will (no WebGL), so turns stop piling up.
  */
-type Waiting = { moves: string[]; tempo: number; attitude: Attitude | null; draggable: boolean; dead: boolean };
+type Waiting = { moves: string[]; tempo: number; attitude: Attitude | null; dead: boolean };
 
 /**
  * The 3D cube. While a smart cube with a gyro is connected it's held the way that cube is, centres where its centres
@@ -60,7 +60,7 @@ export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const player = useRef<CubeRenderer | null>(null);
   const timers = useRef<number[]>([]);
-  const waiting = useRef<Waiting>({ moves: movesOf(setup), tempo: DEFAULT_TEMPO, attitude: null, draggable: true, dead: false });
+  const waiting = useRef<Waiting>({ moves: movesOf(setup), tempo: DEFAULT_TEMPO, attitude: null, dead: false });
   const { cubeLook } = useSettings();
   const look = useRef(cubeLook);
   // Which way each hand last turned since the last show(), so R2 / L2 spin the way fingers would.
@@ -83,8 +83,8 @@ export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
         }
         cube.setTempo(waiting.current.tempo);
         cube.show(waiting.current.moves);
+        cube.setFollowing(waiting.current.attitude !== null);
         cube.setAttitude(waiting.current.attitude, true);
-        cube.setDraggable(waiting.current.draggable);
         player.current = cube;
       })
       .catch((error: unknown) => console.error("CubeView: could not load the 3D cube", error));
@@ -107,18 +107,16 @@ export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
     const follow = () => {
       const attitude = ambientAttitude.current;
       waiting.current.attitude = attitude;
-      waiting.current.draggable = attitude === null;
+      player.current?.setFollowing(attitude !== null);
       player.current?.setAttitude(attitude);
-      player.current?.setDraggable(attitude === null);
     };
     follow();
     const off = ambientAttitude.subscribe(follow);
     return () => {
       off();
       waiting.current.attitude = null;
-      waiting.current.draggable = true;
+      player.current?.setFollowing(false);
       player.current?.setAttitude(null, true);
-      player.current?.setDraggable(true);
     };
   }, []);
 

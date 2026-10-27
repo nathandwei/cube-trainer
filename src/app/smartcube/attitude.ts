@@ -4,6 +4,10 @@
 // the cube is held a known way: "reset orientation" (white down, green front), or a scramble just followed on the
 // band (white on top, green front), in the timer, a drill or "Set up my cube". Until then the side facing him at the
 // first report is taken to be green.
+//
+// What's learnt outlives the page: which way round each cube faces and its last report are remembered, so after a
+// reload the cube on screen already faces as the cube does, before it has reported (a still cube may not), and
+// Line up isn't asked again.
 
 import { smartCube, type SmartCubeLink } from "./connection";
 import { CubeFollower, SCRAMBLE_GRIP, SOLVER_GRIP, type Hold } from "./follower";
@@ -20,26 +24,64 @@ export function heldAtScramble(followedBand: boolean): Hold {
 /** What the attitude follows: the app's cube link (or a stand-in in tests). */
 export type AttitudeSource = Pick<SmartCubeLink, "onGyro" | "onMove" | "subscribe" | "state" | "orientationReference">;
 
+type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
+
+/** Which way round a cube faced (learnt) and its last report, remembered for the next page load. */
+type Remembered = { device: string; heading: Quaternion; report: Quaternion; at: number };
+
+const STORAGE_KEY = "cube.attitude";
+/** A cube left this long (ms) may have slept and lost its own sense of direction: what's remembered is dropped. */
+const REMEMBER_MS = 20 * 60_000;
+/** The last report is written down at most this often (ms). */
+const SAVE_EVERY_MS = 1000;
+
+function browserStorage(): Storage | null {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch (error) {
+    console.warn("No storage to remember the cube's attitude in", error);
+    return null;
+  }
+}
+
+function isQuaternion(value: unknown): value is Quaternion {
+  const q = value as Quaternion | null;
+  return !!q && [q.w, q.x, q.y, q.z].every((v) => typeof v === "number" && Number.isFinite(v));
+}
+
 export class AmbientAttitude {
+  readonly #link: AttitudeSource;
+  readonly #storage: Storage | null;
+  readonly #now: () => number;
   readonly #follower = new CubeFollower();
   #current: Quaternion | null = null;
   /** Which way round the cube faces is known from a hold, not guessed. */
   #anchored = false;
+  #savedAt = 0;
   readonly #listeners = new Set<() => void>();
 
-  constructor(link: AttitudeSource) {
+  constructor(link: AttitudeSource, storage: Storage | null = browserStorage(), now: () => number = Date.now) {
+    this.#link = link;
+    this.#storage = storage;
+    this.#now = now;
     link.onGyro((q, hostT) => {
-      if (!this.#follower.holding) {
+      if (!this.#follower.holding && !this.#resume()) {
         const reference = link.orientationReference;
         if (reference) this.hold({ report: reference, grip: SOLVER_GRIP });
         else this.#follower.hold({ report: q, grip: SOLVER_GRIP });
       }
       this.#set(this.#follower.gyro(q, hostT));
+      if (this.#anchored && this.#now() - this.#savedAt >= SAVE_EVERY_MS) this.#save(q);
     });
     link.onMove((move, hostT) => this.#follower.turn(move, hostT));
-    // Gone (or a cube without a gyro): nothing to follow until it reports again, from a grip read afresh.
     link.subscribe(() => {
-      if (link.state.hasGyro || !this.#follower.holding) return;
+      // Connected again: face the cube as it was left, before it reports.
+      if (link.state.status === "connected") {
+        if (!this.#follower.holding) this.#resume();
+        return;
+      }
+      // Gone: nothing to follow until it's back.
+      if (!this.#follower.holding) return;
       this.#follower.reset();
       this.#anchored = false;
       this.#set(null);
@@ -77,7 +119,45 @@ export class AmbientAttitude {
     const learnt = !this.#anchored;
     this.#anchored = true;
     this.#set(this.#follower.hold(hold));
+    this.#save(hold.report);
     if (learnt) for (const listener of this.#listeners) listener();
+  }
+
+  /** Picks up where this cube was left on an earlier page load, if that's recent; whether it could. */
+  #resume(): boolean {
+    const device = this.#link.state.deviceName;
+    const remembered = this.#remembered();
+    if (!device || !remembered || remembered.device !== device || this.#now() - remembered.at > REMEMBER_MS) return false;
+    this.#follower.resume(remembered.heading);
+    this.#anchored = true;
+    this.#set(this.#follower.attitudeOf(remembered.report));
+    for (const listener of this.#listeners) listener();
+    return true;
+  }
+
+  #remembered(): Remembered | null {
+    try {
+      const raw = this.#storage?.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Partial<Remembered>;
+      const ok = typeof parsed.device === "string" && typeof parsed.at === "number" && isQuaternion(parsed.heading) && isQuaternion(parsed.report);
+      return ok ? (parsed as Remembered) : null;
+    } catch (error) {
+      console.warn("Could not read the cube's remembered attitude", error);
+      return null;
+    }
+  }
+
+  #save(report: Quaternion): void {
+    const device = this.#link.state.deviceName;
+    const heading = this.#follower.heading;
+    if (!this.#storage || !device || !heading) return;
+    this.#savedAt = this.#now();
+    try {
+      this.#storage.setItem(STORAGE_KEY, JSON.stringify({ device, heading, report, at: this.#savedAt } satisfies Remembered));
+    } catch (error) {
+      console.warn("Could not remember the cube's attitude", error);
+    }
   }
 
   #set(attitude: Quaternion | null): void {
