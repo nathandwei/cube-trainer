@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GRID, angleBetween, multiply, snap, type Quaternion } from "./gyro";
 import type { Rotation } from "@/cube/types";
-import { CubeFollower, SCRAMBLE_GRIP, SOLVER_GRIP, reportAt } from "./follower";
+import { CubeFollower, SCRAMBLE_GRIP, SOLVER_GRIP, reportAt, upFace } from "./follower";
 
 const IDENTITY: Quaternion = { w: 1, x: 0, y: 0, z: 0 };
 
@@ -115,5 +115,18 @@ describe("CubeFollower", () => {
     follower.reset();
     expect(follower.holding).toBe(false);
     expect(follower.gyro(reportAfter(grid("y")), tick())).toBeNull();
+  });
+
+  it.each([
+    { held: [], up: "U" },
+    { held: ["z2"], up: "D" },
+    { held: ["x"], up: "F" },
+    { held: ["x'"], up: "B" },
+    { held: ["z"], up: "L" },
+    { held: ["z'"], up: "R" },
+    { held: ["y", "x"], up: "R" },
+  ] as { held: Rotation[]; up: string }[])("reads $up on top, by gravity, when held $held", ({ held, up }) => {
+    // Leaning a little, at whatever heading the gyro's world has.
+    expect(upFace(reportAfter(...held.map(grid), tilt("x", 15)))).toBe(up);
   });
 });

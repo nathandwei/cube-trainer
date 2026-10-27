@@ -32,7 +32,13 @@ function movesOf(text: string): string[] {
   return text.replace(/[()[\]]/g, " ").trim().split(/\s+/).filter(Boolean);
 }
 
-type Props = { ref?: Ref<CubeHandle>; setup?: string; className?: string };
+type Props = {
+  ref?: Ref<CubeHandle>;
+  setup?: string;
+  className?: string;
+  /** Held the way the smart cube is (the default); off for a cube that shows his moves in his own view instead. */
+  follow?: boolean;
+};
 
 // three.js is most of the cube's weight, so it loads after the page shows; one load serves every cube.
 let rendererModule: Promise<typeof import("@/app/cube3d/renderer")> | undefined;
@@ -56,7 +62,7 @@ type Waiting = { moves: string[]; tempo: number; attitude: Attitude | null; dead
  * The 3D cube. While a smart cube with a gyro is connected it's held the way that cube is, centres where its centres
  * are (smartcube/attitude.ts), and can't be dragged round; otherwise dragging turns the view.
  */
-export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
+export function CubeView({ ref, setup = "z2", className = "cube", follow = true }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const player = useRef<CubeRenderer | null>(null);
   const timers = useRef<number[]>([]);
@@ -104,21 +110,22 @@ export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
 
   // Held like the smart cube while it reports where it points; dragged round otherwise.
   useEffect(() => {
-    const follow = () => {
+    if (!follow) return;
+    const hold = () => {
       const attitude = ambientAttitude.current;
       waiting.current.attitude = attitude;
       player.current?.setFollowing(attitude !== null);
       player.current?.setAttitude(attitude);
     };
-    follow();
-    const off = ambientAttitude.subscribe(follow);
+    hold();
+    const off = ambientAttitude.subscribe(hold);
     return () => {
       off();
       waiting.current.attitude = null;
       player.current?.setFollowing(false);
       player.current?.setAttitude(null, true);
     };
-  }, []);
+  }, [follow]);
 
   // Until the cube has loaded, what it's asked to do is kept as the state it should open on.
   function showMoves(moves: string[]) {

@@ -44,6 +44,33 @@ function aboutVertical(q: Quaternion): Quaternion {
   return length < 1e-9 ? IDENTITY : { w: q.w / length, x: 0, y: q.y / length, z: 0 };
 }
 
+/** The cube on screen's faces, by the direction each faces when it's upright (screen axes: +y up, +z front). */
+const FACE_DIRECTIONS: readonly (readonly [string, readonly [number, number, number]])[] = [
+  ["U", [0, 1, 0]],
+  ["D", [0, -1, 0]],
+  ["R", [1, 0, 0]],
+  ["L", [-1, 0, 0]],
+  ["F", [0, 0, 1]],
+  ["B", [0, 0, -1]],
+];
+
+/** How high a direction ends up once `q` turns it (its y in screen axes). */
+function heightAfter(q: Quaternion, [x, y, z]: readonly [number, number, number]): number {
+  const turned = multiply(multiply(q, { w: 0, x, y, z }), conjugate(q));
+  return turned.y;
+}
+
+/**
+ * The face whose centre is on top, read against gravity, named as the cube reports turns ("U" in the solver's grip,
+ * "D" held white up): which way round it faces doesn't come into it, so no hold is needed.
+ */
+export function upFace(report: Quaternion): string {
+  const attitude = unheaded(report);
+  let top = FACE_DIRECTIONS[0]!;
+  for (const face of FACE_DIRECTIONS) if (heightAfter(attitude, face[1]) > heightAfter(attitude, top[1])) top = face;
+  return top[0];
+}
+
 /** The report a cube held at `attitude` gives, at the world's own heading (for tests, and anything faking a cube). */
 export function reportAt(attitude: Quaternion): Quaternion {
   const cubeToWorld = multiply(multiply(conjugate(WORLD_TO_SCREEN), attitude), conjugate(SCREEN_TO_CUBE));
