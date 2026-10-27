@@ -14,8 +14,6 @@ export type CubeHandle = {
   /** Show `setup`, then animate `alg` one turn every `stepMs`. The next show() or play() cuts it short. */
   play(setup: string, alg: string, stepMs?: number): void;
   setTempo(scale: number): void;
-  /** Tilt the whole cube the way a smart cube is held (null: upright), gliding there unless `jump`. */
-  setAttitude(attitude: Attitude | null, jump?: boolean): void;
   /** The usual view again after he has dragged the cube round. */
   resetView(): void;
 };
@@ -34,16 +32,7 @@ function movesOf(text: string): string[] {
   return text.replace(/[()[\]]/g, " ").trim().split(/\s+/).filter(Boolean);
 }
 
-type Props = {
-  ref?: Ref<CubeHandle>;
-  setup?: string;
-  className?: string;
-  /**
-   * Tilt with the smart cube while one with a gyro is connected, in place of being dragged round (it drags again
-   * once there's none). Off for a cube a drill holds itself through setAttitude.
-   */
-  gyro?: boolean;
-};
+type Props = { ref?: Ref<CubeHandle>; setup?: string; className?: string };
 
 // three.js is most of the cube's weight, so it loads after the page shows; one load serves every cube.
 let rendererModule: Promise<typeof import("@/app/cube3d/renderer")> | undefined;
@@ -63,7 +52,11 @@ function loadRenderer(): Promise<typeof import("@/app/cube3d/renderer")> {
  */
 type Waiting = { moves: string[]; tempo: number; attitude: Attitude | null; draggable: boolean; dead: boolean };
 
-export function CubeView({ ref, setup = "z2", className = "cube", gyro = true }: Props) {
+/**
+ * The 3D cube. While a smart cube with a gyro is connected it's held the way that cube is, centres where its centres
+ * are (smartcube/attitude.ts), and can't be dragged round; otherwise dragging turns the view.
+ */
+export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const player = useRef<CubeRenderer | null>(null);
   const timers = useRef<number[]>([]);
@@ -111,7 +104,6 @@ export function CubeView({ ref, setup = "z2", className = "cube", gyro = true }:
 
   // Held like the smart cube while it reports where it points; dragged round otherwise.
   useEffect(() => {
-    if (!gyro) return;
     const follow = () => {
       const attitude = ambientAttitude.current;
       waiting.current.attitude = attitude;
@@ -128,7 +120,7 @@ export function CubeView({ ref, setup = "z2", className = "cube", gyro = true }:
       player.current?.setAttitude(null, true);
       player.current?.setDraggable(true);
     };
-  }, [gyro]);
+  }, []);
 
   // Until the cube has loaded, what it's asked to do is kept as the state it should open on.
   function showMoves(moves: string[]) {
@@ -175,10 +167,6 @@ export function CubeView({ ref, setup = "z2", className = "cube", gyro = true }:
     setTempo(scale) {
       waiting.current.tempo = scale;
       player.current?.setTempo(scale);
-    },
-    setAttitude(attitude, jump = false) {
-      waiting.current.attitude = attitude;
-      player.current?.setAttitude(attitude, jump);
     },
     resetView() {
       player.current?.resetView();

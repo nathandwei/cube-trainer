@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { smartCube } from "@/app/smartcube/connection";
 import { solveFix } from "@/app/smartcube/fixup";
 import { CubeSession, type FinishedSolve, type SessionView } from "@/app/smartcube/session";
-import { heldAtScramble, type Hold } from "../follow";
+import { heldAtScramble } from "@/app/smartcube/attitude";
+import type { Hold } from "@/app/smartcube/follower";
 
 /** Each session's current "solve finished" callback, so the session (made once) always calls the latest one. */
 const finishHandlers = new WeakMap<CubeSession, (solve: FinishedSolve) => void>();

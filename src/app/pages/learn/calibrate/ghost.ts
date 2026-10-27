@@ -2,14 +2,16 @@
 // (named by centre colour, as the cube reports them) play on the case and it's held the way his cube is, so he can
 // show how he solves a case without first scrambling his cube into it.
 //
-// The gyro only measures turning, so his grip needs a starting point: the grip saved by "reset orientation" if
-// there is one, else the way the screen shows the case (yellow up, green in front) at his first turn. From then on
-// it's followed from take to take, so a regrip before the first turn of a later take still counts.
+// The case on screen is held the way his cube is (the app's shared attitude), centres where his are. His grip, for
+// writing the take, is that same attitude once it has learnt which way round the cube faces; else the way the
+// screen shows the case (yellow up, green in front) at his first turn. From then on it's followed from take to take,
+// so a regrip before the first turn of a later take still counts.
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import type { CubeHandle } from "@/app/components/CubeView";
+import { ambientAttitude } from "@/app/smartcube/attitude";
 import { smartCube } from "@/app/smartcube/connection";
-import { startOrientation, type GridOrientation, type Quaternion } from "@/app/smartcube/gyro";
+import type { GridOrientation, Quaternion } from "@/app/smartcube/gyro";
 import { getCase } from "@/cube";
 import type { Move } from "@/cube/types";
 import { TakeStore, type TakeView } from "./take";
@@ -45,8 +47,9 @@ export type GhostCube = {
   anchor: (grip: GridOrientation) => void;
 };
 
-function startingGrip(report: Quaternion | null): GridOrientation | null {
-  return report ? startOrientation(smartCube.orientationReference, report) : null;
+/** How he holds the cube now, when it's known (the app's attitude has learnt which way round it faces). */
+function startingGrip(): GridOrientation | null {
+  return ambientAttitude.grip;
 }
 
 export function useGhostCube({ cube, caseId, active, onTurn }: GhostOptions): GhostCube {
@@ -72,22 +75,21 @@ export function useGhostCube({ cube, caseId, active, onTurn }: GhostOptions): Gh
     [cube],
   );
 
-  // A fresh take on the case as drawn, held the way he holds his cube (upright until that's known).
+  // A fresh take on the case as drawn, from the grip he holds his cube in (the cube on screen already faces that way).
   useEffect(() => {
     if (!active) return;
-    const grip = forget.current ? null : (store.grip ?? startingGrip(report.current));
+    const grip = startingGrip() ?? (forget.current ? null : store.grip);
     forget.current = false;
     cube.current?.setTempo(3);
     cube.current?.show(`z2 ${getCase(caseId).setup}`);
-    cube.current?.setAttitude(store.startAsDrawn(caseId, report.current, grip), true);
+    store.startAsDrawn(caseId, report.current, grip);
   }, [active, caseId, cube, generation, store]);
 
   useEffect(() => {
     const off = [
       smartCube.onGyro((q, hostT) => {
         report.current = q;
-        const attitude = store.gyro(q, hostT);
-        if (live.current && attitude) cube.current?.setAttitude(attitude);
+        store.gyro(q, hostT);
       }),
       smartCube.onMove((move, hostT, cubeT) => {
         if (!live.current) return;
@@ -96,7 +98,7 @@ export function useGhostCube({ cube, caseId, active, onTurn }: GhostOptions): Gh
       }),
     ];
     return () => off.forEach((unsubscribe) => unsubscribe());
-  }, [animate, cube, store]);
+  }, [animate, store]);
 
   useEffect(() => {
     if (take.phase !== "reached" || take.sealed) return;

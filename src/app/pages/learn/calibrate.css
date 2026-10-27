@@ -32,6 +32,13 @@
   gap: calc(12 * var(--u));
 }
 
+/* The cube's status, and Line up beside it until it's known which way round the cube faces. */
+.record-cube-status {
+  display: flex;
+  align-items: center;
+  gap: calc(16 * var(--u));
+}
+
 .record-corner .icon-btn {
   color: var(--muted);
 }

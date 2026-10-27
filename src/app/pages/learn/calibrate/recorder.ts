@@ -1,6 +1,6 @@
 // One take of one case, recorded from the smart cube: what he turned, how he held it, and when the case was done.
-// No React and no Bluetooth: the slide feeds it turns and gyro reports, animates the turns it hands back and holds
-// the cube on screen at the attitude it hands back (see follow.ts).
+// No React and no Bluetooth: the slide feeds it turns and gyro reports and animates the turns it hands back. (Where
+// the cube on screen points is the app's shared attitude, smartcube/attitude.ts, as everywhere.)
 //
 //   waiting ──first turn──▶ turning ──goal reached──▶ reached ──seal()──▶ (the take stands)
 //   turning ──back to the case──▶ waiting          turning ──too many moves──▶ over
@@ -22,7 +22,6 @@ import {
   type Quaternion,
   type RotationDetector,
 } from "@/app/smartcube/gyro";
-import { CubeFollower } from "@/app/smartcube/follower";
 import { SCRAMBLE_GRIP, SOLVER_GRIP, detectorAt, leadRotations } from "./grip";
 import { asAlg, moveCount, takeTokens, type Take } from "./notation";
 
@@ -56,8 +55,6 @@ export class Recorder {
   /** The cube's latest gyro report, and the grip the take was held in (null: read it at the first turn). */
   #report: Quaternion | null = null;
   #grip: GridOrientation | null = null;
-  /** The cube on screen's attitude, measured from the same grip as the detector. */
-  readonly #follower = new CubeFollower();
 
   /** `start`: the case on the cube, centre frame (scrambledState of its scramble). */
   constructor(caseId: string, start: CubeState) {
@@ -90,16 +87,14 @@ export class Recorder {
    * relative to the solver's grip: as it was scrambled (white on top) after following the band, a grip carried over
    * from the take before, or null when unknown, in which case he's taken to hold it the way the screen shows the case
    * when he makes his first turn. `report` is the cube's latest gyro report; null for a cube without a gyro (or a test
-   * take), whose turns are then read in the solver's grip. Returns the cube on screen's attitude, once known.
+   * take), whose turns are then read in the solver's grip.
    */
-  hold(report: Quaternion | null, grip: GridOrientation | null = SCRAMBLE_GRIP): Quaternion | null {
+  hold(report: Quaternion | null, grip: GridOrientation | null = SCRAMBLE_GRIP): void {
     this.#holding = true;
     this.#report = report;
     this.#grip = grip;
     this.#detector = null;
-    this.#follower.reset();
-    if (!report || !grip) return null;
-    return this.#anchor(report, grip);
+    if (report && grip) this.#anchor(report, grip);
   }
 
   /** From now on the cube is `grip` away from the solver's grip (it was just read some other way). */
@@ -114,13 +109,13 @@ export class Recorder {
     return this.#detector?.orientation ?? null;
   }
 
-  /** A gyro report: the cube on screen's attitude, once known. */
-  gyro(q: Quaternion, hostT: number): Quaternion | null {
+  /** A gyro report. */
+  gyro(q: Quaternion, hostT: number): void {
     this.#report = q;
     if (!this.#detector) {
       // The cube's first report since the hold: the grip it was held in can be read from now.
-      if (!this.#holding || !this.#grip || this.#phase !== "waiting") return null;
-      return this.#anchor(q, this.#grip);
+      if (this.#holding && this.#grip && this.#phase === "waiting") this.#anchor(q, this.#grip);
+      return;
     }
     const detector = this.#detector;
     // Sampled even once the take stands, so his grip is still known when the next take starts.
@@ -132,12 +127,10 @@ export class Recorder {
       for (const core of cores) placeCoreTurn(this.#placement, detector, core);
       if (found || cores.length > 0) this.#revision++;
     }
-    return this.#follower.gyro(q, hostT);
   }
 
   /** A centre-frame turn from the cube: the moves to animate on screen (the turn itself, named as reported). */
   turn(move: Move, hostT: number, cubeT: number | null): string[] {
-    if (this.#holding) this.#follower.turn(move, hostT);
     if (!this.#holding || this.#phase === "reached" || this.#phase === "over") return [];
     if (this.#phase === "waiting") this.#begin();
     this.#turns.push({ move, hostT, cubeT });
@@ -215,10 +208,9 @@ export class Recorder {
     this.#placement = newPlacement(this.#turns, leadRotations(grip));
   }
 
-  /** Reads the cube as held `grip` away from the solver's grip from `report` on; the cube on screen's attitude. */
-  #anchor(report: Quaternion, grip: GridOrientation): Quaternion | null {
+  /** Reads the cube as held `grip` away from the solver's grip from `report` on. */
+  #anchor(report: Quaternion, grip: GridOrientation): void {
     this.#detector = detectorAt(report, grip);
-    return this.#follower.hold({ report, grip });
   }
 
   #judge(): void {

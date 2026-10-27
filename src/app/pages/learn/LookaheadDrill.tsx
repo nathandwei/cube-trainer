@@ -12,6 +12,7 @@ import { addReps, newRepId, useReps } from "@/app/lib/learnStore";
 import { navigate } from "@/app/lib/router";
 import { addReviewSolve } from "@/app/lib/store";
 import { ConnectSheet } from "@/app/smartcube/ConnectSheet";
+import { ambientAttitude } from "@/app/smartcube/attitude";
 import { shortCubeName, smartCube, useSmartCube } from "@/app/smartcube/connection";
 import { ScrambleProgress } from "@/app/smartcube/ScrambleProgress";
 import type { FinishedSolve } from "@/app/smartcube/session";
@@ -22,7 +23,6 @@ import type { Move, RotationEvent, SolveAnalysis, SolveRecord, TimedMove } from 
 import type { LookaheadRep } from "@/shared/learn";
 import { BandFit } from "./cross/BandFit";
 import { useCubeScramble } from "./cross/cubeScramble";
-import { useCubeFollower } from "./follow";
 import { fromTextField, hasModifier, releaseFocus, takeSpace, useFrameClock } from "./cross/drill";
 import { BPM_STEP, clampBpm, isClean, isMessy, startingBpm, suggestBpm } from "./lookahead/bpm";
 import { Metronome } from "./lookahead/metronome";
@@ -399,7 +399,6 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
   }, []);
   const simulated = useRef<Recorded | null>(null);
   const { view, readyAt, hold } = useCubeScramble(setup.scramble, !setup.test, keepSolve);
-  const follower = useCubeFollower(cube);
   const now = useFrameClock(phase === "solve");
   const shownPhase: RunPhase = !setup.test && phase === "scramble" && readyAt !== null ? "ready" : phase;
   const threshold = pauseThresholdMs(setup.bpm);
@@ -510,12 +509,9 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
   // A smart cube at the scramble: the cube on screen is held as it is.
   useEffect(() => {
     if (setup.test || readyAt === null || !hold) return;
-    follower.hold(hold);
-    return smartCube.onMove((move, hostT) => {
-      follower.turn(move, hostT);
-      turnNow.current(move, hostT);
-    });
-  }, [follower, hold, readyAt, setup.test]);
+    ambientAttitude.hold(hold);
+    return smartCube.onMove((move, hostT) => turnNow.current(move, hostT));
+  }, [hold, readyAt, setup.test]);
 
   // The Test button: scramble a pretend cube, look for a moment, then a slow solve re-timed to the beat.
   useEffect(() => {
@@ -584,7 +580,7 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
     <>
       {band}
       <div className="cube-slot running">
-        <CubeView ref={cube} className="cube" setup={setup.test ? "z2" : `${setup.scramble} z2`} gyro={false} />
+        <CubeView ref={cube} className="cube" setup={setup.test ? "z2" : `${setup.scramble} z2`} />
       </div>
       <span className="beat-dot big" style={beatStyle(setup.bpm)} aria-hidden="true" />
       <div className={`drill-pauses ${stalls > 0 ? "some" : ""} ${shownPhase === "scramble" ? "hidden" : ""}`}>

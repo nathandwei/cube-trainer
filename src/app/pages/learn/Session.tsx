@@ -5,6 +5,7 @@ import { IconButton, Key } from "@/app/components/IconButton";
 import { formatSeconds } from "@/app/lib/format";
 import { median } from "@/app/lib/averages";
 import { addReps, newRepId, updateLearnSettings, useLearnSettings } from "@/app/lib/learnStore";
+import { ambientAttitude, heldAtScramble } from "@/app/smartcube/attitude";
 import { smartCube } from "@/app/smartcube/connection";
 import { solveFix } from "@/app/smartcube/fixup";
 import { ScrambleProgress } from "@/app/smartcube/ScrambleProgress";
@@ -26,7 +27,6 @@ import type { CaseRep } from "@/shared/learn";
 import { CaseDiagram } from "./CaseDiagram";
 import { CasePage } from "./CasePage";
 import { countTurns } from "./cross/attempt";
-import { heldAtScramble, useCubeFollower } from "./follow";
 import { LearnAlg } from "./LearnAlg";
 import { totalMs } from "./progress";
 
@@ -92,9 +92,10 @@ export function Session({ caseIds, input, onExit }: Props) {
   );
   /** Set the moment a rep is recorded, so turns still arriving (queued test turns, a fast hand) can't record it twice. */
   const recorded = useRef(false);
-  const follower = useCubeFollower(cube);
   /** The cube went through the scramble band on the way to this case, so it's held white on top. */
   const followedBand = useRef(false);
+  /** The cube reached this case, and the cubes on screen were told how it's held. */
+  const held = useRef(false);
   const subscribeCube = useCallback((listener: () => void) => cubeSession.subscribe(listener), [cubeSession]);
   const cubeView = useSyncExternalStore(subscribeCube, () => cubeSession.view());
   const onCube = input === "cube" && (cubeView.phase === "ready" || cubeView.phase === "solving");
@@ -150,8 +151,8 @@ export function Session({ caseIds, input, onExit }: Props) {
         turns.current = [];
         cube.current?.setTempo(3);
         cube.current?.show(`${next.scramble} z2`);
-        follower.reset();
         followedBand.current = false;
+        held.current = false;
         shownAt.current = performance.now();
         setElapsed(0);
         setPhase("ready");
@@ -166,7 +167,7 @@ export function Session({ caseIds, input, onExit }: Props) {
     return () => {
       stale = true;
     };
-  }, [caseId, cubeSession, follower, index, input, learning, needsAlg, scrambleFor, tick]);
+  }, [caseId, cubeSession, index, input, learning, needsAlg, scrambleFor, tick]);
 
   const record = useCallback(
     (correct: boolean, recognitionMs: number, executionMs: number) => {
@@ -241,14 +242,14 @@ export function Session({ caseIds, input, onExit }: Props) {
       cubeSession.subscribe(() => {
         const { phase: cubePhase } = cubeSession.view();
         if (cubePhase === "scrambling") followedBand.current = true;
-        // In the case: the cube on screen is held as the cube is, from the grip it's in now.
-        if (cubePhase !== "ready" || follower.holding) return;
-        follower.hold(heldAtScramble(followedBand.current));
+        // In the case: how the cube is held now is known, so the cube on screen faces as it does.
+        if (cubePhase !== "ready" || held.current) return;
+        held.current = true;
+        ambientAttitude.hold(heldAtScramble(followedBand.current));
       }),
       smartCube.onMove((move, hostT, cubeT) => {
         const before = cubeSession.view().phase;
         cubeSession.move(move, hostT, cubeT);
-        follower.turn(move, hostT);
         const live = phaseRef.current === "ready" || phaseRef.current === "running";
         if (live && (before === "ready" || before === "solving")) drillTurnRef.current([move], move);
       }),
@@ -257,7 +258,7 @@ export function Session({ caseIds, input, onExit }: Props) {
       smartCube.onLost(() => cubeSession.connectionLost()),
     ];
     return () => off.forEach((unsubscribe) => unsubscribe());
-  }, [cubeSession, follower, input]);
+  }, [cubeSession, input]);
 
   const next = useCallback(() => {
     if (index + 1 >= caseIds.length) {
@@ -349,7 +350,7 @@ export function Session({ caseIds, input, onExit }: Props) {
         {Math.min(index + 1, caseIds.length)} / {caseIds.length}
       </span>
       {input === "cube" && !onCube && phase === "ready" && !loading && (cubeView.plan ? <ScrambleProgress plan={cubeView.plan} /> : <span className="muted">{cubeView.hasState ? "" : "Reading the cube…"}</span>)}
-      <CubeView ref={cube} className="cube big" gyro={false} />
+      <CubeView ref={cube} className="cube big" />
       <div className={`session-time ${last ? (last.correct ? "good" : "bad") : ""}`}>
         {phase === "result" && last ? formatSeconds(totalMs(last)) : phase === "running" || (phase === "ready" && input === "test") ? formatSeconds(elapsed) : loading || (input === "cube" && !onCube) ? "" : "0.00"}
       </div>

@@ -10,6 +10,7 @@ import { addReps, newRepId, useReps } from "@/app/lib/learnStore";
 import { computeRatings, type PartRating } from "@/app/lib/ratings";
 import { useSolves } from "@/app/lib/store";
 import { ConnectSheet } from "@/app/smartcube/ConnectSheet";
+import { ambientAttitude } from "@/app/smartcube/attitude";
 import { shortCubeName, smartCube, useSmartCube } from "@/app/smartcube/connection";
 import { ScrambleProgress } from "@/app/smartcube/ScrambleProgress";
 import "@/app/smartcube/smartcube.css";
@@ -34,7 +35,6 @@ import { useCubeScramble } from "./cross/cubeScramble";
 import { fromTextField, hasModifier, releaseFocus, sentenceCase, takeSpace, useFrameClock } from "./cross/drill";
 import { comfortableLength, extraMoves, lengthAround, type CrossVariant } from "./cross/ladder";
 import { simulateAttempt } from "./cross/simulate";
-import { useCubeFollower } from "./follow";
 import "./drills.css";
 
 /** How long the finished time stays on the full page before the result. */
@@ -302,7 +302,6 @@ function CrossRun({ variant, setup, cubeName, onDone, onClose }: RunProps) {
   const [tone, setTone] = useState<Tone | null>(null);
   const [testProgress, setTestProgress] = useState(0);
   const { view, readyAt, hold } = useCubeScramble(setup.scramble, !setup.test);
-  const follower = useCubeFollower(cube);
   const now = useFrameClock(phase === "solve");
   const shownPhase: RunPhase = !setup.test && phase === "scramble" && readyAt !== null ? "plan" : phase;
 
@@ -364,12 +363,9 @@ function CrossRun({ variant, setup, cubeName, onDone, onClose }: RunProps) {
   useEffect(() => {
     if (setup.test || readyAt === null || !hold) return;
     attempt().shownAt = readyAt;
-    follower.hold(hold);
-    return smartCube.onMove((move, hostT) => {
-      follower.turn(move, hostT);
-      turnNow.current(move, hostT);
-    });
-  }, [attempt, follower, hold, readyAt, setup.test]);
+    ambientAttitude.hold(hold);
+    return smartCube.onMove((move, hostT) => turnNow.current(move, hostT));
+  }, [attempt, hold, readyAt, setup.test]);
 
   // The Test button: scramble a pretend cube, plan for a while, then turn a good cross with human timing.
   useEffect(() => {
@@ -425,7 +421,7 @@ function CrossRun({ variant, setup, cubeName, onDone, onClose }: RunProps) {
     <>
       {band}
       <div className="cube-slot running">
-        <CubeView ref={cube} className="cube" setup={setup.test ? "z2" : `${setup.scramble} z2`} gyro={false} />
+        <CubeView ref={cube} className="cube" setup={setup.test ? "z2" : `${setup.scramble} z2`} />
       </div>
       <div className={`drill-clock ${clockClass} ${shownPhase === "scramble" ? "hidden" : ""}`}>{formatSeconds(elapsed)}</div>
       <p className="drill-foot">

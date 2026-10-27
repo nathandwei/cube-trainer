@@ -116,6 +116,22 @@ describe("AmbientAttitude", () => {
     expect(shownAs(attitude.current)).toBe("y");
   });
 
+  it.each([
+    { name: "guessed from the first report", reference: false, hold: false, anchored: false },
+    { name: "saved by reset orientation", reference: true, hold: false, anchored: true },
+    { name: "learnt from a scramble", reference: false, hold: true, anchored: true },
+  ])("knows which way round the cube faces only when $name: $anchored", ({ reference, hold, anchored }) => {
+    const link = new FakeLink();
+    if (reference) link.orientationReference = reportAfter();
+    const attitude = new AmbientAttitude(link);
+    link.report(reportAfter(grid("y")));
+    if (hold) attitude.hold({ report: reportAfter(grid("z2")), grip: SCRAMBLE_GRIP });
+    expect(attitude.anchored).toBe(anchored);
+    expect(attitude.grip !== null).toBe(anchored);
+    link.loseGyro();
+    expect(attitude.anchored).toBe(false);
+  });
+
   it("leaves the cube square after an E slice the gyro read short", () => {
     const link = new FakeLink();
     const attitude = new AmbientAttitude(link);

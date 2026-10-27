@@ -4,7 +4,7 @@ import { CubeStatus } from "@/app/components/CubeStatus";
 import { CubeView, type CubeHandle } from "@/app/components/CubeView";
 import { IconButton } from "@/app/components/IconButton";
 import { ConnectSheet } from "@/app/smartcube/ConnectSheet";
-import { ambientAttitude } from "@/app/smartcube/attitude";
+import { ambientAttitude, lineUp } from "@/app/smartcube/attitude";
 import { smartCube, useSmartCube } from "@/app/smartcube/connection";
 import { solveFix } from "@/app/smartcube/fixup";
 import type { GridOrientation, Quaternion } from "@/app/smartcube/gyro";
@@ -129,6 +129,8 @@ export function RecordAlg({ caseId, onRecorded, onSkip, scramble, corner }: Prop
     return () => window.removeEventListener("keydown", onKey);
   }, [accept, runTest, take.sealed, testReady]);
 
+  // Until it's known which way round his cube faces, the case on screen can't face the same way: he lines it up.
+  const lined = useSyncExternalStore(ambientAttitude.subscribe, () => ambientAttitude.anchored);
   const playing = isTest && take.phase === "turning";
   const showReset = !playing && take.phase !== "waiting";
   const algState = take.sealed ? "done" : take.phase === "over" ? "over" : "live";
@@ -136,7 +138,14 @@ export function RecordAlg({ caseId, onRecorded, onSkip, scramble, corner }: Prop
   return (
     <div className="record" data-case={caseId}>
       <div className="record-top">
-        <CubeStatus onClick={() => setSheetOpen(true)} />
+        <div className="record-cube-status">
+          <CubeStatus onClick={() => setSheetOpen(true)} />
+          {connected && link.hasGyro && !lined && (
+            <button className="pill" data-tip="Hold white down, green in front, then press" onClick={lineUp}>
+              Line up
+            </button>
+          )}
+        </div>
         <div className="record-corner">
           <button className="pill" onClick={onSkip}>
             Skip
@@ -147,7 +156,7 @@ export function RecordAlg({ caseId, onRecorded, onSkip, scramble, corner }: Prop
       {sheetOpen && <ConnectSheet onClose={() => setSheetOpen(false)} />}
       <div className="record-stage">
         {settingUp && <div className="record-band">{physical.band}</div>}
-        <CubeView ref={cube} className="cube record-cube" setup={`z2 ${caseDef.setup}`} gyro={false} />
+        <CubeView ref={cube} className="cube record-cube" setup={`z2 ${caseDef.setup}`} />
         <h2 className="record-name">{caseDef.label}</h2>
         <div className={`record-alg ${algState}`}>
           {take.sealed && take.alg !== null ? (
@@ -251,8 +260,7 @@ function usePhysicalTake({ cube, caseId, active, scramble, onHeld }: PhysicalOpt
         if (phase !== "ready" || !store.started || store.holding) return;
         // Already in the case (a blip after he'd turned it over, say): he holds it as he solves, not white on top.
         const grip = followedBand.current ? SCRAMBLE_GRIP : SOLVER_GRIP;
-        const attitude = store.hold(lastGyro.current, grip);
-        if (attitude) cube.current?.setAttitude(attitude);
+        store.hold(lastGyro.current, grip);
         ambientAttitude.hold({ report: lastGyro.current, grip });
         held.current(grip);
       }),
@@ -265,8 +273,7 @@ function usePhysicalTake({ cube, caseId, active, scramble, onHeld }: PhysicalOpt
       smartCube.onGyro((q, hostT) => {
         lastGyro.current = q;
         cubeSession.gyro(q, hostT);
-        const attitude = store.gyro(q, hostT);
-        if (attitude) cube.current?.setAttitude(attitude);
+        store.gyro(q, hostT);
       }),
       smartCube.onFacelets((state, hostT) => cubeSession.facelets(state, hostT)),
       smartCube.onLost(() => cubeSession.connectionLost()),
@@ -279,7 +286,6 @@ function usePhysicalTake({ cube, caseId, active, scramble, onHeld }: PhysicalOpt
     if (!current) return;
     cube.current?.setTempo(3);
     cube.current?.show(`${current} z2`);
-    cube.current?.setAttitude(null, true);
     cubeSession.cancel();
     store.start(caseId, current);
     followedBand.current = false;
