@@ -15,6 +15,8 @@ const TEMPO = 0.9;
 const PRACTICE_TEMPO = 3;
 /** How long a finished rep's verdict shows before the case is back for the next. */
 const REP_PAUSE_MS = 900;
+/** Past this many moves to undo, starting the rep over is quicker (his cube's state doesn't matter, only its turns). */
+const LONG_UNDO = 2;
 
 const LL_SETS = new Set(["PLL", "OLL", "COLL", "EPLL", "EO"]);
 
@@ -102,6 +104,14 @@ export function LearnAlg({ caseId, alg, onDrill, onBack }: Props) {
 
   const coach = practice.view;
   const off = practising && coach !== null && coach.undo.length > 0;
+  const onAlg =
+    practice.verdict !== null
+      ? practice.verdict === 0
+        ? "Clean"
+        : `${practice.verdict} slip${practice.verdict === 1 ? "" : "s"}`
+      : practice.progress.learnt
+        ? "Learnt: keep it fresh, or drill it"
+        : "Do it on your cube";
   /** What shows of move `index` while practising: the stage's cues, what's done, and the move he missed. */
   const shows = (index: number, chunkStart: boolean): boolean => {
     if (!practising || practice.stage === "copy") return true;
@@ -166,7 +176,14 @@ export function LearnAlg({ caseId, alg, onDrill, onBack }: Props) {
       </div>
       {practising ? (
         <p className={`learn-coach-line ${off ? "bad" : practice.verdict === 0 ? "good" : ""}`} role="status">
-          {off ? `Undo: ${coach.undo.join(" ")}` : practice.verdict !== null ? (practice.verdict === 0 ? "Clean" : `${practice.verdict} slip${practice.verdict === 1 ? "" : "s"}`) : practice.progress.learnt ? "Learnt: keep it fresh, or drill it" : "Do it on your cube"}
+          {off ? (
+            <>
+              Undo: {coach.undo.join(" ")}
+              {coach.undo.length > LONG_UNDO && <span className="learn-coach-hint"> or Space to start over</span>}
+            </>
+          ) : (
+            onAlg
+          )}
         </p>
       ) : (
         <div className="learn-alg-legend" aria-hidden="true">

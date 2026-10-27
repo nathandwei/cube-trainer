@@ -79,6 +79,25 @@ describe("AlgCoach", () => {
     expect(coach.view()).toMatchObject({ done: true, slips: 1 });
   });
 
+  it("asks him to undo only what's left once his own back-and-forth cancels", () => {
+    const ePerm = "R' U' R' D' R U' R' D R U R' D' R U R' D R2";
+    const coach = new AlgCoach(words(ePerm));
+    // U where U' belongs, the next moves from memory, one of them undone, then U' U wiggled while working it out.
+    run(coach, [...words("R' U' R' D' R U R' D R U R' R"), ...Array.from({ length: 8 }, () => ["U'", "U"]).flat()], "U");
+    expect(coach.view()).toMatchObject({ next: 5, slips: 1, undo: words("U' R' D' R U'") });
+  });
+
+  it.each([
+    { name: "a wrong U put right with U2", turns: ["U", "U2"] },
+    { name: "U' done as three quarters", turns: ["U", "U", "U"] },
+  ])("carries on from further along the alg after $name", ({ turns }) => {
+    const coach = new AlgCoach(words("R U' R' F"));
+    run(coach, ["R", ...turns], "U");
+    expect(coach.view()).toMatchObject({ next: 2, slips: 1, undo: [] });
+    run(coach, ["R'", "F"], "U");
+    expect(coach.view()).toMatchObject({ done: true, slips: 1 });
+  });
+
   it.each([
     { name: "a quarter the wrong way", turns: ["R'"], slip: true },
     { name: "a half turn done the other way round", turns: ["U", "U"], slip: false },

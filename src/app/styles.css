@@ -769,8 +769,28 @@ a:focus-visible {
 }
 
 .cube {
+  position: relative;
   width: calc(340 * var(--u));
   height: calc(320 * var(--u));
+}
+
+/* Squares a gyro-followed cube up again, in its corner; the tooltip opens leftwards, over the cube. */
+.cube .cube-reset {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  color: var(--muted);
+}
+
+.cube .cube-reset:hover {
+  color: var(--ink);
+}
+
+.cube .cube-reset::after {
+  left: auto;
+  right: 0;
+  transform: none;
 }
 
 /* The 3D cube's canvas fills whatever box its page gives the cube; dragging it turns the view round the cube. */
@@ -1632,6 +1652,10 @@ a:focus-visible {
 
 .learn-coach-line.good {
   color: var(--good);
+}
+
+.learn-coach-line .learn-coach-hint {
+  color: var(--muted);
 }
 
 /* Typing his own alg: the box, a play button and Choose, which lights up once the alg solves the case. */

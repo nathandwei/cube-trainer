@@ -1,6 +1,7 @@
 // Coaching an alg on the smart cube: the case is on screen, he turns his own cube (in any state: only its turns
 // count), and each turn is checked against the alg as it comes. A turn that keeps to it plays on the case and moves
-// him on; one that doesn't plays too (so he sees what he did) and must be undone before he carries on.
+// him on; one that doesn't plays too (so he sees what he did), and he carries on once his turns put the case back
+// where he left the alg, or where it would be further on.
 //
 // His turns arrive named by the centre they turned. Which centre is his R depends on how he holds the cube, which is
 // read off the turns themselves: of the 24 ways to hold it, the ones whose reading of his turns keeps to the alg stay
@@ -8,7 +9,7 @@
 // is read from the gyro: a wide move, slice or rotation in the alg is known from the alg, and his turns after it are
 // named as they must be if he did it.
 
-import { FrameTracker, SOLVED, applyMove, stateKey, type CubeState } from "@/cube";
+import { FrameTracker, SOLVED, applyMove, invertAlg, simplifyMoves, stateKey, type CubeState } from "@/cube";
 import type { Move, Rotation } from "@/cube/types";
 import { GRID } from "@/app/smartcube/gyro";
 
@@ -16,8 +17,8 @@ function quarters(move: Move): number {
   return move.endsWith("2") ? 2 : move.endsWith("'") ? 3 : 1;
 }
 
-function invert(move: Move): Move {
-  return move.endsWith("2") ? move : move.endsWith("'") ? move.charAt(0) : `${move}'`;
+function turnOf(face: string, amount: number): Move {
+  return amount === 2 ? `${face}2` : amount === 3 ? `${face}'` : face;
 }
 
 /** One move of the alg as the cube reports it: per face, the quarter turns it adds up to; and the rotation it makes. */
@@ -63,7 +64,7 @@ function copy(reading: Reading): Reading {
 export type CoachView = {
   /** The alg's moves done: the next to do is moves[next]. */
   next: number;
-  /** Off the alg: what undoes it, in his view, in order ("U'", "R'"); empty while on it. */
+  /** Off the alg: the shortest way back by retracing, in his view, in order ("U'", "R'"); empty while on it. */
   undo: string[];
   /** Times this rep left the alg. */
   slips: number;
@@ -98,7 +99,9 @@ export class AlgCoach {
 
   view(): CoachView {
     const reading = this.#readings[0]!;
-    return { next: reading.next, undo: this.#off.map(invert).reverse().map((move) => reading.screen.name(move)), slips: this.#slips, done: this.#done() };
+    // Retracing turn by turn would have him undo his own wiggles (U U' U U'), so they cancel first.
+    const undo = invertAlg(simplifyMoves(this.#off)).map((move) => reading.screen.name(move));
+    return { next: reading.next, undo, slips: this.#slips, done: this.#done() };
   }
 
   /**
@@ -128,7 +131,8 @@ export class AlgCoach {
         return kept[0]!.shown;
       }
     }
-    // Off the alg: read the likeliest way, and back on it once the case is where he left it.
+    // Off the alg: read the likeliest way, and back on it once the case is where he left it, or where the alg would
+    // have it further on (a U' done as U U U, or a wrong U put right with U2).
     const reading = this.#readings[0]!;
     const move = reading.grip.name(reported);
     if (this.#off.length === 0) {
@@ -137,8 +141,16 @@ export class AlgCoach {
     }
     this.#off.push(move);
     this.#offState = applyMove(this.#offState, move);
-    if (stateKey(this.#offState) === stateKey(reading.state)) this.#off = [];
-    return [reading.screen.name(move)];
+    const shown = [reading.screen.name(move)];
+    if (stateKey(this.#offState) === stateKey(reading.state)) {
+      this.#off = [];
+      return shown;
+    }
+    const rejoined = this.#rejoin(reading, this.#offState);
+    if (!rejoined) return shown;
+    this.#readings = [reading];
+    this.#off = [];
+    return [...shown, ...rejoined];
   }
 
   #done(): boolean {
@@ -168,6 +180,34 @@ export class AlgCoach {
     if (!step.rotation) return [];
     reading.screen.rotate(step.rotation);
     return [step.rotation];
+  }
+
+  /**
+   * Whether `state` is where the alg would have the case some moves on from `reading`; if so, moves the reading there
+   * and returns the rotations it passed (to play), else null.
+   */
+  #rejoin(reading: Reading, state: CubeState): string[] | null {
+    const key = stateKey(state);
+    let ahead = reading.state;
+    for (let at = reading.next; at < this.#steps.length; at++) {
+      const progress = at === reading.next ? reading.progress : new Map<string, number>();
+      for (const [face, amount] of this.#steps[at]!.target) {
+        const left = (amount - (progress.get(face) ?? 0) + 4) % 4;
+        if (left > 0) ahead = applyMove(ahead, turnOf(face, left));
+      }
+      if (stateKey(ahead) !== key) continue;
+      const rotations: string[] = [];
+      for (const step of this.#steps.slice(reading.next, at + 1)) {
+        if (!step.rotation) continue;
+        rotations.push(step.rotation);
+        reading.screen.rotate(step.rotation);
+      }
+      reading.next = at + 1;
+      reading.progress = new Map();
+      reading.state = state;
+      return [...rotations, ...this.#passRotations(reading)];
+    }
+    return null;
   }
 
   /** Moves past rotations (a regrip in the alg): his turns after one are read as made in the new grip. */

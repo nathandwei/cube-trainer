@@ -1,6 +1,8 @@
-import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
+import { LocateFixed } from "lucide-react";
+import { useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore, type Ref } from "react";
 import type { Attitude, CubeRenderer } from "@/app/cube3d/renderer";
-import { ambientAttitude } from "@/app/smartcube/attitude";
+import { IconButton } from "@/app/components/IconButton";
+import { ambientAttitude, lineUp } from "@/app/smartcube/attitude";
 import { animatedTurn, reverseOf, TurnAnimator } from "@/app/lib/animation";
 import { useSettings } from "@/app/lib/settings";
 
@@ -60,7 +62,8 @@ type Waiting = { moves: string[]; tempo: number; attitude: Attitude | null; dead
 
 /**
  * The 3D cube. While a smart cube with a gyro is connected it's held the way that cube is, centres where its centres
- * are (smartcube/attitude.ts), and can't be dragged round; otherwise dragging turns the view.
+ * are (smartcube/attitude.ts), and can't be dragged round; otherwise dragging turns the view. The gyro's heading drifts
+ * (and is guessed until learnt), so a following cube carries its own reset: on any page he can square it up again.
  */
 export function CubeView({ ref, setup = "z2", className = "cube", follow = true }: Props) {
   const host = useRef<HTMLDivElement>(null);
@@ -71,6 +74,7 @@ export function CubeView({ ref, setup = "z2", className = "cube", follow = true 
   const look = useRef(cubeLook);
   // Which way each hand last turned since the last show(), so R2 / L2 spin the way fingers would.
   const [animator] = useState(() => new TurnAnimator());
+  const following = useSyncExternalStore(ambientAttitude.subscribe, () => follow && ambientAttitude.current !== null);
 
   useEffect(() => {
     let cube: CubeRenderer | null = null;
@@ -178,5 +182,9 @@ export function CubeView({ ref, setup = "z2", className = "cube", follow = true 
     },
   }));
 
-  return <div ref={host} className={className} />;
+  return (
+    <div ref={host} className={className}>
+      {following && <IconButton icon={LocateFixed} label="Reset gyro: hold white down, green in front" size="sm" className="cube-reset" onClick={lineUp} />}
+    </div>
+  );
 }
