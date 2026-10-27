@@ -40,7 +40,8 @@ const TEST_TURN_MS = 150;
 
 /** Give up on a rep after this many turns past the alg's length: something went wrong. */
 const SPARE_TURNS = 8;
-const RESULT_MS = 1100;
+/** A rep not done this long after the case showed (a mangled alg, or he's lost) is a DNF, not a clock running on. */
+const REP_LIMIT_MS = 10_000;
 
 /**
  * The alg's length in the turns a smart cube reports, counted like the rep's turns: a slice is two (R L'), and a half
@@ -242,12 +243,19 @@ export function Session({ caseIds, input, onExit }: Props) {
     );
   }, [alg, caseDef, input, phase]);
 
-  // After a result, move on by itself unless it was wrong (then wait, so the alg can be read).
+  // Out of time: a DNF, with the split as far as it got (no turn yet is all recognition).
   useEffect(() => {
-    if (phase !== "result" || !last?.correct) return;
-    const timer = window.setTimeout(next, RESULT_MS);
+    if (loading || (phase !== "ready" && phase !== "running")) return;
+    const timer = window.setTimeout(
+      () => {
+        const now = performance.now();
+        if (phase === "ready") record(false, now - shownAt.current, 0);
+        else record(false, firstTurnAt.current - shownAt.current, now - firstTurnAt.current);
+      },
+      Math.max(0, shownAt.current + REP_LIMIT_MS - performance.now()),
+    );
     return () => window.clearTimeout(timer);
-  }, [last, next, phase]);
+  }, [loading, phase, record]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -306,7 +314,7 @@ export function Session({ caseIds, input, onExit }: Props) {
       </span>
       <CubeView ref={cube} className="cube big" />
       <div className={`session-time ${last ? (last.correct ? "good" : "bad") : ""}`}>
-        {phase === "result" && last ? formatSeconds(totalMs(last)) : loading ? "" : formatSeconds(elapsed)}
+        {phase === "result" && last ? (last.correct ? formatSeconds(totalMs(last)) : "DNF") : loading ? "" : formatSeconds(elapsed)}
       </div>
       {/* One fixed slot under the time, so the cube and time never jump when a result or the Test button shows. */}
       <div className="session-below">
@@ -325,7 +333,7 @@ export function Session({ caseIds, input, onExit }: Props) {
                 <span className="tag">−{suggestion.currentMoves - suggestion.moves} moves</span>
               </span>
             )}
-            {!last.correct && <Key>Space</Key>}
+            <Key>Space</Key>
           </div>
         )}
         {input === "test" && phase === "ready" && !loading && <IconButton icon={Play} label="Test" variant="soft" size="lg" filled onClick={runTest} />}
