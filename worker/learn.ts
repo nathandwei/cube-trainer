@@ -146,3 +146,9 @@ export async function postReps({ request, env }: Context, user: User): Promise<R
   if (missing > 0) return errorResponse(507, ACCOUNT_FULL);
   return noContent();
 }
+
+/** Idempotent: deleting a rep that is already gone (or never arrived) still succeeds. */
+export async function deleteRep({ env, params }: Context, user: User): Promise<Response> {
+  await env.DB.prepare("DELETE FROM reps WHERE user_id = ? AND id = ?").bind(user.id, params.id).run();
+  return noContent();
+}

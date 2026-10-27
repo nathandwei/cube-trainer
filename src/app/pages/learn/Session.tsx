@@ -1,15 +1,11 @@
-import { Play, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Play, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CubeView, type CubeHandle } from "@/app/components/CubeView";
 import { IconButton, Key } from "@/app/components/IconButton";
 import { formatSeconds } from "@/app/lib/format";
-import { median } from "@/app/lib/averages";
+import { averageOf, formatAverage, median } from "@/app/lib/averages";
 import { addReps, newRepId, updateLearnSettings, useLearnSettings } from "@/app/lib/learnStore";
-import { ambientAttitude, heldAtScramble } from "@/app/smartcube/attitude";
 import { smartCube } from "@/app/smartcube/connection";
-import { solveFix } from "@/app/smartcube/fixup";
-import { ScrambleProgress } from "@/app/smartcube/ScrambleProgress";
-import { CubeSession } from "@/app/smartcube/session";
 import {
   applyAlg,
   caseScramble,
@@ -21,11 +17,11 @@ import {
   scrambledState,
   splitMoves,
   type CaseScramble,
-  type CubeState,
 } from "@/cube";
 import type { CaseRep } from "@/shared/learn";
 import { CaseDiagram } from "./CaseDiagram";
 import { CasePage } from "./CasePage";
+import { caseDone, readCase, turnCase, type CaseReadings } from "./caseTurns";
 import { countTurns } from "./cross/attempt";
 import { LearnAlg } from "./LearnAlg";
 import { totalMs } from "./progress";
@@ -60,10 +56,11 @@ type Props = { caseIds: readonly string[]; input: DrillInput; onExit: (done: Cas
 type Phase = "ready" | "running" | "result";
 
 /**
- * One drill session, full page and nothing else on screen (like solving). On the smart cube he scrambles into the
- * case, then his turns are checked until the case is done; recognition isn't timed there, since the case only
- * shows once he turns the cube over from scrambling. Without a cube, Test plays the alg on screen (like the
- * timer's test solve), so the flow can be tried; those reps are never saved.
+ * One drill session, full page and nothing else on screen (like solving). The case shows on screen and the clock runs
+ * from then (recognition, then execution from his first turn). On the smart cube he does it on his own cube in
+ * whatever state it's in, with no scrambling into the case: only its turns count, applied to the case on screen
+ * until it's done. Without a cube, Test plays the alg on screen (like the timer's test solve), so the flow can be
+ * tried; those reps are never saved.
  */
 export function Session({ caseIds, input, onExit }: Props) {
   const settings = useLearnSettings();
@@ -80,25 +77,16 @@ export function Session({ caseIds, input, onExit }: Props) {
   const cube = useRef<CubeHandle>(null);
   const shownAt = useRef(0);
   const firstTurnAt = useRef(0);
-  const state = useRef<CubeState | null>(null);
+  /** The case as his turns leave it (caseTurns.ts). */
+  const states = useRef<CaseReadings | null>(null);
   const testTimers = useRef<number[]>([]);
   const turns = useRef<string[]>([]);
   const frame = useRef<number | undefined>(undefined);
   // Seeded once per session from a random value so each session gets different scrambles.
   const [rng] = useState(() => createRng(Math.floor(Math.random() * 1_000_000)));
   const prefetched = useRef(new Map<number, Promise<CaseScramble>>());
-  const [cubeSession] = useState(
-    () => new CubeSession({ inspection: () => false, orientationReference: () => smartCube.orientationReference, solveFix, onFinish: () => undefined }),
-  );
   /** Set the moment a rep is recorded, so turns still arriving (queued test turns, a fast hand) can't record it twice. */
   const recorded = useRef(false);
-  /** The cube went through the scramble band on the way to this case, so it's held white on top. */
-  const followedBand = useRef(false);
-  /** The cube reached this case, and the cubes on screen were told how it's held. */
-  const held = useRef(false);
-  const subscribeCube = useCallback((listener: () => void) => cubeSession.subscribe(listener), [cubeSession]);
-  const cubeView = useSyncExternalStore(subscribeCube, () => cubeSession.view());
-  const onCube = input === "cube" && (cubeView.phase === "ready" || cubeView.phase === "solving");
 
   const caseId = caseIds[index];
   const caseDef = caseId ? getCase(caseId) : undefined;
@@ -144,30 +132,24 @@ export function Session({ caseIds, input, onExit }: Props) {
         if (stale) return;
         void scrambleFor(index + 1);
         setSetup(next);
-        state.current = scrambledState(next.scramble);
+        states.current = readCase(scrambledState(next.scramble));
         testTimers.current.forEach((timer) => window.clearTimeout(timer));
         testTimers.current = [];
         recorded.current = false;
         turns.current = [];
         cube.current?.setTempo(3);
         cube.current?.show(`${next.scramble} z2`);
-        followedBand.current = false;
-        held.current = false;
         shownAt.current = performance.now();
         setElapsed(0);
         setPhase("ready");
         setLoadedFor(index);
-        if (input === "test") tick();
-        if (input === "cube") {
-          cubeSession.cancel();
-          cubeSession.setScramble(next.scramble);
-        }
+        tick();
       })
       .catch((error: unknown) => console.error("Could not set up the case", error));
     return () => {
       stale = true;
     };
-  }, [caseId, cubeSession, index, input, learning, needsAlg, scrambleFor, tick]);
+  }, [caseId, index, learning, needsAlg, scrambleFor, tick]);
 
   const record = useCallback(
     (correct: boolean, recognitionMs: number, executionMs: number) => {
@@ -189,43 +171,35 @@ export function Session({ caseIds, input, onExit }: Props) {
         source: "smartcube",
         alg,
       };
-      if (input === "cube") {
-        // Drop the attempt and wait for the next case's scramble rather than steering back to this one.
-        cubeSession.cancel();
-        cubeSession.setScramble("");
-        addReps([rep]);
-      }
+      if (input === "cube") addReps([rep]);
       done.current = [...done.current, rep];
       setLast(rep);
       setPhase("result");
     },
-    [alg, caseId, cubeSession, input, setup],
+    [alg, caseId, input, setup],
   );
 
   /** One turn on the case: `turns` in the solver's centre frame, `shown` as it animates on screen. */
   const drillTurn = useCallback(
     (turns_: readonly string[], shown: string) => {
-      if (!caseDef || !state.current || recorded.current) return;
+      if (!caseDef || !states.current || recorded.current) return;
       if (phase === "ready") {
         firstTurnAt.current = performance.now();
-        // The smart cube's case only shows once he's turned it over, so its clock starts with the first turn.
-        if (input === "cube") shownAt.current = firstTurnAt.current;
         setPhase("running");
-        tick();
       }
       turns.current = [...turns.current, ...turns_];
-      state.current = applyAlg(state.current, turns_);
+      states.current = turnCase(states.current, turns_);
       cube.current?.turn(shown);
-      if (isGoalReached(caseDef.set, state.current)) {
+      if (caseDone(caseDef.set, states.current)) {
         record(true, firstTurnAt.current - shownAt.current, performance.now() - firstTurnAt.current);
         return;
       }
       if (countTurns(turns.current) > turnBudget) record(false, firstTurnAt.current - shownAt.current, performance.now() - firstTurnAt.current);
     },
-    [caseDef, input, phase, record, tick, turnBudget],
+    [caseDef, phase, record, turnBudget],
   );
 
-  // The smart cube: its own scramble tracker brings the cube to the case, then its turns drive the drill.
+  // The smart cube: its turns drive the drill while a case is up (not while a result shows).
   const drillTurnRef = useRef(drillTurn);
   useEffect(() => {
     drillTurnRef.current = drillTurn;
@@ -236,29 +210,10 @@ export function Session({ caseIds, input, onExit }: Props) {
   }, [phase]);
   useEffect(() => {
     if (input !== "cube") return;
-    const known = smartCube.state.cube;
-    if (known) cubeSession.facelets(known, performance.now());
-    const off = [
-      cubeSession.subscribe(() => {
-        const { phase: cubePhase } = cubeSession.view();
-        if (cubePhase === "scrambling") followedBand.current = true;
-        // In the case: how the cube is held now is known, so the cube on screen faces as it does.
-        if (cubePhase !== "ready" || held.current) return;
-        held.current = true;
-        ambientAttitude.hold(heldAtScramble(followedBand.current));
-      }),
-      smartCube.onMove((move, hostT, cubeT) => {
-        const before = cubeSession.view().phase;
-        cubeSession.move(move, hostT, cubeT);
-        const live = phaseRef.current === "ready" || phaseRef.current === "running";
-        if (live && (before === "ready" || before === "solving")) drillTurnRef.current([move], move);
-      }),
-      smartCube.onGyro((q, hostT) => cubeSession.gyro(q, hostT)),
-      smartCube.onFacelets((cubeState, hostT) => cubeSession.facelets(cubeState, hostT)),
-      smartCube.onLost(() => cubeSession.connectionLost()),
-    ];
-    return () => off.forEach((unsubscribe) => unsubscribe());
-  }, [cubeSession, input]);
+    return smartCube.onMove((move) => {
+      if (phaseRef.current === "ready" || phaseRef.current === "running") drillTurnRef.current([move], move);
+    });
+  }, [input]);
 
   const next = useCallback(() => {
     if (index + 1 >= caseIds.length) {
@@ -271,7 +226,7 @@ export function Session({ caseIds, input, onExit }: Props) {
 
   /** Plays the chosen alg (after whichever AUF the case needs) as if it were done on the cube. */
   const runTest = useCallback(() => {
-    const start = state.current;
+    const start = states.current?.[0];
     if (input !== "test" || phase !== "ready" || !caseDef || !start || !alg || testTimers.current.length > 0) return;
     const turnsOf = (line: string) => {
       const tracker = new FrameTracker();
@@ -349,10 +304,9 @@ export function Session({ caseIds, input, onExit }: Props) {
       <span className="session-count">
         {Math.min(index + 1, caseIds.length)} / {caseIds.length}
       </span>
-      {input === "cube" && !onCube && phase === "ready" && !loading && (cubeView.plan ? <ScrambleProgress plan={cubeView.plan} /> : <span className="muted">{cubeView.hasState ? "" : "Reading the cube…"}</span>)}
       <CubeView ref={cube} className="cube big" />
       <div className={`session-time ${last ? (last.correct ? "good" : "bad") : ""}`}>
-        {phase === "result" && last ? formatSeconds(totalMs(last)) : phase === "running" || (phase === "ready" && input === "test") ? formatSeconds(elapsed) : loading || (input === "cube" && !onCube) ? "" : "0.00"}
+        {phase === "result" && last ? formatSeconds(totalMs(last)) : loading ? "" : formatSeconds(elapsed)}
       </div>
       {/* One fixed slot under the time, so the cube and time never jump when a result or the Test button shows. */}
       <div className="session-below">
@@ -380,8 +334,20 @@ export function Session({ caseIds, input, onExit }: Props) {
   );
 }
 
-/** End of a session (round-8 12): the median against last time, every case with its time, the slow ones again. */
-export function Summary({ reps, previousMedian, onAgain, onSlow, onClose }: { reps: readonly CaseRep[]; previousMedian: number | null; onAgain: () => void; onSlow: (caseIds: string[]) => void; onClose: () => void }) {
+type SummaryProps = {
+  reps: readonly CaseRep[];
+  previousMedian: number | null;
+  onAgain: () => void;
+  onSlow: (caseIds: string[]) => void;
+  onDelete: (repId: string) => void;
+  onClose: () => void;
+};
+
+/**
+ * End of a session (round-8 12): the median against last time (and the session's ao5 and ao12 once it's long enough),
+ * every case with its time, the slow ones again. A rep can be deleted from here.
+ */
+export function Summary({ reps, previousMedian, onAgain, onSlow, onDelete, onClose }: SummaryProps) {
   const [show, setShow] = useState<"slow" | "all">("slow");
   const correct = reps.filter((r) => r.correct).map(totalMs).sort((a, b) => a - b);
   const middle = median(correct);
@@ -393,6 +359,9 @@ export function Summary({ reps, previousMedian, onAgain, onSlow, onClose }: { re
   const executionMs = reps.reduce((sum, r) => sum + r.executionMs, 0);
   const shown = show === "slow" && slow.length > 0 ? slow : reps;
   const first = reps[0];
+  // In the order they were done, newest first; a wrong one is a DNF.
+  const results = reps.map((rep) => (rep.correct ? totalMs(rep) : Number.POSITIVE_INFINITY)).reverse();
+  const averages = ([5, 12] as const).filter((n) => results.length >= n);
   return (
     <div className="learn-summary">
       <div className="summary-head">
@@ -416,6 +385,12 @@ export function Summary({ reps, previousMedian, onAgain, onSlow, onClose }: { re
           <span className="label">Slowest</span>
           <span className="value">{correct.length ? formatSeconds(correct.at(-1) ?? 0) : "–"}</span>
         </span>
+        {averages.map((n) => (
+          <span key={n} className="stat">
+            <span className="label">ao{n}</span>
+            <span className="value">{formatAverage(averageOf(results, n))}</span>
+          </span>
+        ))}
         <IconButton icon={X} label="Close" className="summary-close" onClick={onClose} />
       </div>
       <div className="tabs" role="tablist">
@@ -430,6 +405,7 @@ export function Summary({ reps, previousMedian, onAgain, onSlow, onClose }: { re
           <div key={rep.id} className={`summary-case ${isSlow(rep) ? "slow" : ""}`}>
             <CaseDiagram caseDef={getCase(rep.item)} size={66} view="top" alg={rep.alg} />
             <span>{rep.correct ? formatSeconds(totalMs(rep)) : "×"}</span>
+            <IconButton icon={Trash2} label="Delete" size="sm" className="rep-delete" onClick={() => onDelete(rep.id)} />
           </div>
         ))}
       </div>

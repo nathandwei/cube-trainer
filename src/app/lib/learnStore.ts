@@ -50,6 +50,8 @@ let loadPromise: Promise<void> = Promise.resolve();
 let nextCursor: string | null = null;
 /** Reps that could not be written to the outbox (storage full): kept here until the server has them. */
 const memoryOnly = new Map<string, Rep>();
+/** Ids deleted here whose DELETE has not finished, so a page fetched meanwhile cannot bring them back. */
+const deleting = new Set<string>();
 
 function publish(next: Partial<State>): void {
   state = { ...state, ...next };
@@ -72,10 +74,10 @@ function clearErrorsBefore(seq: number): void {
   if (errorSeq === seq && state.status.saveError !== null) publishStatus({ saveError: null });
 }
 
-/** Oldest first (by createdAt, then id), each id once. */
+/** Oldest first (by createdAt, then id), each id once, none being deleted. */
 function mergeReps(...lists: Rep[][]): Rep[] {
   const byId = new Map<string, Rep>();
-  for (const list of lists) for (const rep of list) if (!byId.has(rep.id)) byId.set(rep.id, rep);
+  for (const list of lists) for (const rep of list) if (!byId.has(rep.id) && !deleting.has(rep.id)) byId.set(rep.id, rep);
   return [...byId.values()].sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
@@ -389,6 +391,34 @@ export function addReps(reps: readonly Rep[]): void {
   if (keepError) for (const rep of parsed) memoryOnly.set(rep.id, rep);
   publish({ reps: mergeReps(state.reps, parsed) });
   void flushReps();
+}
+
+/** Deletes a rep: gone here at once, then from the server; back, with an error, if the server can't be told. */
+export function deleteRep(id: string): void {
+  const rep = state.reps.find((r) => r.id === id);
+  if (!rep) return;
+  const pending = memoryOnly.has(id) || readRepOutbox().reps.some((r) => r.id === id);
+  deleting.add(id);
+  removeFromOutbox(new Set([id]));
+  publish({ reps: state.reps.filter((r) => r.id !== id) });
+  void (async () => {
+    const since = errorSeq;
+    // A send under way may still store it, so the DELETE goes after; that send reports its own failures.
+    await flushing?.catch(() => undefined);
+    try {
+      await api("DELETE", `/api/learn/reps/${encodeURIComponent(id)}`);
+    } catch (error) {
+      deleting.delete(id);
+      if (!(error instanceof SaveFailure)) throw error;
+      const outbox = key(REP_OUTBOX_PREFIX);
+      if (pending && (!outbox || updateList(outbox, (entries) => [...entries, rep]))) memoryOnly.set(id, rep);
+      publish({ reps: mergeReps(state.reps, [rep]) });
+      reportError(`not deleted: ${error.reason}`);
+      return;
+    }
+    deleting.delete(id);
+    clearErrorsBefore(since);
+  })();
 }
 
 let allLoading: Promise<void> | null = null;

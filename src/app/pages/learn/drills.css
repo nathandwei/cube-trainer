@@ -393,7 +393,8 @@
 
 .cross-rows li {
   display: grid;
-  grid-template-columns: calc(12 * var(--u)) calc(96 * var(--u)) calc(84 * var(--u)) calc(150 * var(--u)) auto;
+  grid-template-columns: calc(12 * var(--u)) calc(96 * var(--u)) calc(84 * var(--u)) calc(150 * var(--u)) calc(80 * var(--u)) calc(36 * var(--u));
+  justify-content: start;
   align-items: center;
   gap: calc(20 * var(--u));
   min-height: calc(47 * var(--u));
@@ -403,6 +404,29 @@
 .cross-rows .note {
   color: var(--muted);
   font-size: calc(20 * var(--ut));
+}
+
+/* Always the last column, whether or not the row has a review button before it. */
+.cross-rows .rep-delete {
+  grid-column: -2;
+}
+
+/* ao5 and ao12 over his recent attempts, above the rows. */
+.drill-averages {
+  display: flex;
+  align-items: baseline;
+  gap: calc(10 * var(--u)) calc(14 * var(--u));
+  margin: 0;
+  font-size: calc(24 * var(--ut));
+}
+
+.drill-averages dt {
+  color: var(--muted);
+  font-size: calc(20 * var(--ut));
+}
+
+.drill-averages dd {
+  margin: 0 calc(18 * var(--u)) 0 0;
 }
 
 /* ---------- lookahead ---------- */
@@ -605,7 +629,7 @@
 }
 
 .lookahead-rows li {
-  grid-template-columns: calc(12 * var(--u)) calc(96 * var(--u)) calc(84 * var(--u)) calc(150 * var(--u)) calc(60 * var(--u)) auto;
+  grid-template-columns: calc(12 * var(--u)) calc(96 * var(--u)) calc(84 * var(--u)) calc(150 * var(--u)) calc(60 * var(--u)) calc(36 * var(--u)) calc(36 * var(--u));
 }
 
 .lookahead-rows .row-review {

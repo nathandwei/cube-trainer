@@ -120,6 +120,10 @@ class FakeServer {
       for (const r of reps) if (!mine.has(r.id)) mine.set(r.id, r);
       return new Response(null, { status: 204 });
     }
+    if (url.pathname.startsWith("/api/learn/reps/") && method === "DELETE") {
+      this.of(user).delete(decodeURIComponent(url.pathname.slice("/api/learn/reps/".length)));
+      return new Response(null, { status: 204 });
+    }
     return json(404, { error: "not found" });
   };
 }
@@ -269,6 +273,43 @@ describe("reps", () => {
     await flush();
     expect(server.ids("A")).toEqual(["first", "second", "third"]);
     expect(storage.getItem("cube.learn.pending.A")).toBeNull();
+  });
+
+  it("deletes a rep here at once and on the server, and a reload doesn't bring it back", async () => {
+    const page = await boot();
+    page.learn.addReps([rep("keep", 1), rep("gone", 2)]);
+    await flush();
+    page.learn.deleteRep("gone");
+    expect(repIds(page)).toEqual(["keep"]);
+    await flush();
+    expect(server.ids("A")).toEqual(["keep"]);
+    expect(repIds(await boot())).toEqual(["keep"]);
+  });
+
+  it("deletes a rep whose send is still in flight once that send lands", async () => {
+    const page = await boot();
+    server.holdPosts = 1;
+    page.learn.addReps([rep("racing", 1)]);
+    await flush();
+    page.learn.deleteRep("racing");
+    expect(repIds(page)).toEqual([]);
+    server.hold.open();
+    await flush();
+    expect(server.ids("A")).toEqual([]);
+    expect(storage.getItem("cube.learn.pending.A")).toBeNull();
+    expect(server.log.filter((line) => line.startsWith("DELETE"))).toEqual(["DELETE /api/learn/reps/racing"]);
+  });
+
+  it("puts a rep back, unsent ones in the outbox, when the server can't be told", async () => {
+    const page = await boot();
+    server.offline = true;
+    page.learn.addReps([rep("stays", 1)]);
+    await flush();
+    page.learn.deleteRep("stays");
+    await flush();
+    expect(repIds(page)).toEqual(["stays"]);
+    expect(storage.ids("cube.learn.pending.A")).toEqual(["stays"]);
+    expect(errorOf(page)).toBe("not deleted: offline");
   });
 
   it("throws on a rep that does not match the schema", async () => {

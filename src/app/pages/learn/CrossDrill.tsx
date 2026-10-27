@@ -1,12 +1,13 @@
-import { Lightbulb, Play, RotateCcw } from "lucide-react";
+import { Lightbulb, Play, RotateCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CubeStatus } from "@/app/components/CubeStatus";
 import { CubeView, type CubeHandle } from "@/app/components/CubeView";
+import { DrillAverages } from "@/app/components/DrillAverages";
 import { IconButton } from "@/app/components/IconButton";
 import { ScrambleBand } from "@/app/components/ScrambleBand";
 import { formatSeconds } from "@/app/lib/format";
 import { toSolverFrame } from "@/app/lib/frame";
-import { addReps, newRepId, useReps } from "@/app/lib/learnStore";
+import { addReps, deleteRep, newRepId, useReps } from "@/app/lib/learnStore";
 import { computeRatings, type PartRating } from "@/app/lib/ratings";
 import { useSolves } from "@/app/lib/store";
 import { ConnectSheet } from "@/app/smartcube/ConnectSheet";
@@ -243,7 +244,13 @@ function CrossDrillPage({ variant }: Props) {
         <CubeStatus onClick={() => setSheetOpen(true)} />
       </header>
       {result && <CrossResult key={result.rep.id} result={result} onRetry={retry} onNext={() => void start(result.setup.test)} />}
-      <CrossHistory reps={reps} />
+      <CrossHistory
+        reps={reps}
+        onDelete={(id) => {
+          setTestReps((current) => current.filter((rep) => rep.id !== id));
+          deleteRep(id);
+        }}
+      />
       {running && (
         <div className="drill-run">
           {running.setup ? (
@@ -511,10 +518,16 @@ function CrossResult({ result, onRetry, onNext }: { result: Result; onRetry: () 
   );
 }
 
-function CrossHistory({ reps }: { reps: readonly CrossRep[] }) {
+/** His recent attempts: a dot each, the last few in rows (each can be deleted), and his averages over real ones. */
+function CrossHistory({ reps, onDelete }: { reps: readonly CrossRep[]; onDelete: (repId: string) => void }) {
   if (reps.length === 0) return null;
   const dots = reps.slice(-HISTORY_DOTS);
   const rows = reps.slice(-HISTORY_ROWS).reverse();
+  // A test or a retry of a cross he's just seen isn't a real attempt, as a test solve isn't in the timer's.
+  const results = reps
+    .filter((rep) => rep.test !== true && rep.retry !== true)
+    .map((rep) => rep.executionMs)
+    .reverse();
   return (
     <section className="cross-history" aria-label="Recent attempts">
       <div className="cross-dots">
@@ -530,6 +543,7 @@ function CrossHistory({ reps }: { reps: readonly CrossRep[] }) {
           );
         })}
       </div>
+      <DrillAverages results={results} />
       <ul className="cross-rows">
         {rows.map((rep) => {
           const extra = extraMoves(rep);
@@ -542,6 +556,7 @@ function CrossHistory({ reps }: { reps: readonly CrossRep[] }) {
               <span className="time">{formatSeconds(rep.executionMs)}</span>
               <span className="verdict">{sentenceCase(verdictOf(extra))}</span>
               <span className="note">{rep.test === true ? "Test" : rep.retry === true ? "Retry" : ""}</span>
+              <IconButton icon={Trash2} label="Delete" size="sm" className="rep-delete" onClick={() => onDelete(rep.id)} />
             </li>
           );
         })}

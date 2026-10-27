@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { IconButton } from "@/app/components/IconButton";
 import { CubeStatus } from "@/app/components/CubeStatus";
 import { formatSeconds } from "@/app/lib/format";
-import { loadAllReps, useLearnSettings, useReps } from "@/app/lib/learnStore";
+import { deleteRep, loadAllReps, useLearnSettings, useReps } from "@/app/lib/learnStore";
 import { navigate } from "@/app/lib/router";
 import { median } from "@/app/lib/averages";
 import { ConnectSheet } from "@/app/smartcube/ConnectSheet";
@@ -115,6 +115,11 @@ export function LearnPage({ set, caseId }: { set?: string; caseId?: string }) {
         previousMedian={finished.previousMedian}
         onAgain={() => start(finished.caseIds)}
         onSlow={(ids) => start(ids.flatMap((id) => [id, id, id]))}
+        onDelete={(id) => {
+          deleteRep(id);
+          const left = finished.reps.filter((rep) => rep.id !== id);
+          setFinished(left.length > 0 ? { ...finished, reps: left } : null);
+        }}
         onClose={() => setFinished(null)}
       />
     );

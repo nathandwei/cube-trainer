@@ -1,4 +1,5 @@
 import type { SolveRecord } from "@/cube/types";
+import { formatMs } from "./format";
 
 /** A solve's result for averaging: ms, or Infinity for a DNF. */
 export function resultMs(solve: Pick<SolveRecord, "totalMs" | "penalty">): number {
@@ -24,4 +25,10 @@ export function median(values: readonly number[]): number | null {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 1 ? (sorted[mid] ?? null) : ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
+}
+
+/** An average as shown: "–" when there are too few results, DNF when a DNF counts. */
+export function formatAverage(ms: number | null): string {
+  if (ms === null) return "–";
+  return Number.isFinite(ms) ? formatMs(ms) : "DNF";
 }

@@ -1,15 +1,10 @@
 import { Trash2 } from "lucide-react";
-import { averageOf, resultMs } from "@/app/lib/averages";
+import { averageOf, formatAverage, resultMs } from "@/app/lib/averages";
 import { isCharted } from "@/app/pages/stats/data";
 import { formatMs } from "@/app/lib/format";
 import { navigate } from "@/app/lib/router";
 import { deleteSolve } from "@/app/lib/store";
 import type { SolveRecord } from "@/cube/types";
-
-function show(ms: number | null): string {
-  if (ms === null) return "–";
-  return Number.isFinite(ms) ? formatMs(ms) : "DNF";
-}
 
 function label(solve: SolveRecord): string {
   if (solve.penalty === "dnf") return "DNF";
@@ -43,11 +38,11 @@ export function SolvesSidebar({ solves, selectedId }: { solves: readonly SolveRe
       </ul>
       <dl className="averages">
         <dt>ao5</dt>
-        <dd>{show(averageOf(results, 5))}</dd>
+        <dd>{formatAverage(averageOf(results, 5))}</dd>
         <dt>ao12</dt>
-        <dd>{show(averageOf(results, 12))}</dd>
+        <dd>{formatAverage(averageOf(results, 12))}</dd>
         <dt>ao100</dt>
-        <dd>{show(averageOf(results, 100))}</dd>
+        <dd>{formatAverage(averageOf(results, 100))}</dd>
       </dl>
     </>
   );

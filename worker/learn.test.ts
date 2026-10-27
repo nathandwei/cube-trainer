@@ -100,6 +100,7 @@ describe("auth", () => {
     { method: "PUT", path: "/api/learn/settings" },
     { method: "GET", path: "/api/learn/reps" },
     { method: "POST", path: "/api/learn/reps" },
+    { method: "DELETE", path: "/api/learn/reps/x" },
   ])("$method $path is 401 without a session", async ({ method, path }) => {
     const body = method === "PUT" ? { settings: {}, updatedAt: 1 } : method === "POST" ? { reps: [caseRep("x", 1)] } : undefined;
     expect((await call(path, { method, body })).status).toBe(401);
@@ -253,6 +254,19 @@ describe("rep quota", () => {
     const token = await addUser("heavy");
     await env.DB.prepare("UPDATE users SET rep_bytes = ? WHERE id = 'heavy'").bind(MAX_REP_BYTES_PER_ACCOUNT - 100).run();
     expect((await post(token, [caseRep("h1", 1)])).status).toBe(507);
+  });
+
+  it("deletes one rep, only his own, and deleting it again still succeeds", async () => {
+    const carol = await addUser("carol");
+    const dave = await addUser("dave");
+    await post(carol, [caseRep("x1", 1), caseRep("x2", 2)]);
+    await post(dave, [caseRep("x1", 1)]);
+    expect((await call("/api/learn/reps/x1", { method: "DELETE", token: carol })).status).toBe(204);
+    expect((await call("/api/learn/reps/x1", { method: "DELETE", token: carol })).status).toBe(204);
+    expect(await allRepIds(carol)).toEqual(["x2"]);
+    expect(await allRepIds(dave)).toEqual(["x1"]);
+    const totals = await env.DB.prepare("SELECT rep_count FROM users WHERE id = 'carol'").first<{ rep_count: number }>();
+    expect(totals?.rep_count).toBe(1);
   });
 
   it("keeps the per-account totals in step with the reps table", async () => {

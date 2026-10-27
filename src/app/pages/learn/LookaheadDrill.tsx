@@ -1,14 +1,15 @@
 import { randomScrambleForEvent } from "cubing/scramble";
-import { Minus, Play, Plus, Search, Volume2, VolumeX } from "lucide-react";
+import { Minus, Play, Plus, Search, Trash2, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CubeStatus } from "@/app/components/CubeStatus";
 import { CubeView, type CubeHandle } from "@/app/components/CubeView";
+import { DrillAverages } from "@/app/components/DrillAverages";
 import { IconButton } from "@/app/components/IconButton";
 import { ScrambleBand } from "@/app/components/ScrambleBand";
 import { displayTokens } from "@/app/lib/display";
 import { formatMs } from "@/app/lib/format";
 import { toSolverFrame } from "@/app/lib/frame";
-import { addReps, newRepId, useReps } from "@/app/lib/learnStore";
+import { addReps, deleteRep, newRepId, useReps } from "@/app/lib/learnStore";
 import { navigate } from "@/app/lib/router";
 import { addReviewSolve } from "@/app/lib/store";
 import { ConnectSheet } from "@/app/smartcube/ConnectSheet";
@@ -330,7 +331,13 @@ export function LookaheadDrill() {
         />
       </div>
       {result && <LookaheadResult result={result} />}
-      <LookaheadHistory reps={reps} />
+      <LookaheadHistory
+        reps={reps}
+        onDelete={(id) => {
+          setTestReps((current) => current.filter((rep) => rep.id !== id));
+          deleteRep(id);
+        }}
+      />
       {running && (
         <div className="drill-run">
           {running.setup ? (
@@ -665,26 +672,32 @@ function LookaheadResult({ result }: { result: Result }) {
   );
 }
 
-function LookaheadHistory({ reps }: { reps: readonly LookaheadRep[] }) {
+/** His recent solves (each can be deleted), and his averages over real ones that kept their time. */
+function LookaheadHistory({ reps, onDelete }: { reps: readonly LookaheadRep[]; onDelete: (repId: string) => void }) {
   if (reps.length === 0) return null;
+  const results = reps.flatMap((rep) => (rep.test !== true && typeof rep.solveMs === "number" ? [rep.solveMs] : [])).reverse();
   return (
-    <ul className="cross-rows lookahead-rows" aria-label="Recent solves">
-      {reps
-        .slice(-HISTORY_ROWS)
-        .reverse()
-        .map((rep) => {
-          const recorded = recordedOf(rep);
-          return (
-            <li key={rep.id}>
-              <span className={`drill-dot tone-${toneOfStalls(stallsOf(rep))}`} />
-              <span className="moves">{rep.bpm} bpm</span>
-              <span className="time">{plural(stallsOf(rep), "stall")}</span>
-              <span className="verdict">{typeof rep.solveMs === "number" ? formatMs(rep.solveMs) : ""}</span>
-              <span className="note">{rep.test === true ? "Test" : ""}</span>
-              {recorded && <IconButton icon={Search} label="Review" size="sm" className="row-review" onClick={() => openReview(solveRecord(rep, recorded))} />}
-            </li>
-          );
-        })}
-    </ul>
+    <>
+      <DrillAverages results={results} />
+      <ul className="cross-rows lookahead-rows" aria-label="Recent solves">
+        {reps
+          .slice(-HISTORY_ROWS)
+          .reverse()
+          .map((rep) => {
+            const recorded = recordedOf(rep);
+            return (
+              <li key={rep.id}>
+                <span className={`drill-dot tone-${toneOfStalls(stallsOf(rep))}`} />
+                <span className="moves">{rep.bpm} bpm</span>
+                <span className="time">{plural(stallsOf(rep), "stall")}</span>
+                <span className="verdict">{typeof rep.solveMs === "number" ? formatMs(rep.solveMs) : ""}</span>
+                <span className="note">{rep.test === true ? "Test" : ""}</span>
+                {recorded && <IconButton icon={Search} label="Review" size="sm" className="row-review" onClick={() => openReview(solveRecord(rep, recorded))} />}
+                <IconButton icon={Trash2} label="Delete" size="sm" className="rep-delete" onClick={() => onDelete(rep.id)} />
+              </li>
+            );
+          })}
+      </ul>
+    </>
   );
 }
