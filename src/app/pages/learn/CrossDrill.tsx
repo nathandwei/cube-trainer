@@ -31,7 +31,7 @@ import type { Move, Slot } from "@/cube/types";
 import type { CrossRep } from "@/shared/learn";
 import { bestSolutions, countTurns, isGoal, toneOf, verdictOf, type BestSolutions, type Tone } from "./cross/attempt";
 import { BandFit } from "./cross/BandFit";
-import { useCubeScramble } from "./cross/cubeScramble";
+import { ownScramble, useCubeScramble } from "./cross/cubeScramble";
 import { fromTextField, hasModifier, releaseFocus, sentenceCase, takeSpace, useFrameClock } from "./cross/drill";
 import { comfortableLength, extraMoves, lengthAround, type CrossVariant } from "./cross/ladder";
 import { simulateAttempt } from "./cross/simulate";
@@ -71,11 +71,26 @@ type Outcome = {
 type Result = { setup: Setup; rep: CrossRep; best: BestSolutions; turns: Move[] };
 
 async function prepare(variant: CrossVariant, length: number, rng: Rng): Promise<Prepared> {
-  const scramble = variant === "cross" ? await crossScramble(length, rng) : await xcrossScramble(length, rng);
+  return measured(variant, variant === "cross" ? await crossScramble(length, rng) : await xcrossScramble(length, rng));
+}
+
+/** A scramble with the fewest moves its cross (or xcross) takes. */
+function measured(variant: CrossVariant, scramble: string): Prepared {
   const state = scrambledState(scramble);
   const optimal = variant === "cross" ? crossDistance(state) : solveXCross(state)?.moves;
   if (optimal === undefined) throw new Error(`No xcross found for ${scramble}`);
   return { scramble, optimal };
+}
+
+/** His cube as he scrambled it, when he did (else null): the attempt starts from it, with no band to follow. */
+async function preparedFromCube(variant: CrossVariant): Promise<Prepared | null> {
+  try {
+    const scramble = await ownScramble();
+    return scramble ? measured(variant, scramble) : null;
+  } catch (error) {
+    console.error("Could not read his own scramble; giving him one to follow instead", error);
+    return null;
+  }
 }
 
 function buildRep(variant: CrossVariant, setup: Setup, outcome: Outcome, best: BestSolutions): CrossRep {
@@ -100,7 +115,8 @@ function buildRep(variant: CrossVariant, setup: Setup, outcome: Outcome, best: B
 /**
  * The cross and xcross trainer, for a smart cube. The page holds his cross rating (from solves: drills never move a
  * rating, his ruling), the last result and his recent attempts;
- * an attempt runs full page. He scrambles to the band, then plans untimed for as long as he likes once the cube
+ * an attempt runs full page. He scrambles his cube any way he likes before Start (the drill takes it as it is) or
+ * follows the band to one of the drill's, then plans untimed for as long as he likes once the cube
  * matches; the clock runs from his first turn until the cross (plus any pair, for an xcross) is done, and his moves are
  * set against the best solutions. Without a cube, Start opens the connect sheet; Test plays a pretend attempt (kept on
  * this page only, never saved) so the whole flow can be tried.
@@ -147,13 +163,14 @@ function CrossDrillPage({ variant }: Props) {
       const key = ++attempts.current;
       releaseFocus();
       setRunning({ key, setup: null, error: null });
-      const pending = upcoming.current;
-      upcoming.current = null;
+      const own = test ? null : await preparedFromCube(variant);
+      const pending = own ? null : upcoming.current;
+      if (!own) upcoming.current = null;
       const fresh = () => prepare(variant, lengthAround(comfortable, variant, rng), rng);
       let prepared: Prepared;
       try {
         // A prefetch that failed has already been reported; make a fresh one instead.
-        prepared = await (pending ? pending.catch(fresh) : fresh());
+        prepared = own ?? (await (pending ? pending.catch(fresh) : fresh()));
       } catch (error) {
         console.error(`Could not make a ${variant} scramble`, error);
         setRunning((current) => (current?.key === key ? { key, setup: null, error: "No scramble" } : current));
@@ -161,7 +178,7 @@ function CrossDrillPage({ variant }: Props) {
       }
       // Escape while it was being made leaves `running` on another attempt or none.
       setRunning((current) => (current?.key === key ? { key, setup: { ...prepared, key, retry: false, test }, error: null } : current));
-      prefetch();
+      if (!own) prefetch();
     },
     [comfortable, connected, prefetch, rng, variant],
   );
@@ -216,7 +233,7 @@ function CrossDrillPage({ variant }: Props) {
         <RatingTag rating={rating} />
         <div className="drill-start">
           {!result && (
-            <button className="pill primary" onClick={() => void start(false)}>
+            <button className="pill primary" data-tip="Scrambled your cube? It starts from that" onClick={() => void start(false)}>
               Start
             </button>
           )}
@@ -361,7 +378,7 @@ function CrossRun({ variant, setup, cubeName, onDone, onClose }: RunProps) {
 
   // A smart cube at the scramble: its turns are the attempt, and the cube on screen is held as it is.
   useEffect(() => {
-    if (setup.test || readyAt === null || !hold) return;
+    if (setup.test || readyAt === null) return;
     attempt().shownAt = readyAt;
     ambientAttitude.hold(hold);
     return smartCube.onMove((move, hostT) => turnNow.current(move, hostT));

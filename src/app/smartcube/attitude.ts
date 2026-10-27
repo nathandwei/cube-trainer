@@ -14,11 +14,12 @@ import { CubeFollower, SCRAMBLE_GRIP, SOLVER_GRIP, type Hold } from "./follower"
 import { GYRO_TUNING, snap, type GridOrientation, type Quaternion } from "./gyro";
 
 /**
- * The hold the moment the cube reaches a scramble: as scrambled if the band led it there, else as it's solved (it was
- * already there, say after a blip once turned over).
+ * The hold the moment the cube reaches a scramble, when it's known: as scrambled (white on top, green in front) when
+ * the band led it there. Reached any other way (he scrambled it himself, or it was already there), how it's held
+ * isn't known: null.
  */
-export function heldAtScramble(followedBand: boolean): Hold {
-  return { report: smartCube.lastGyro, grip: followedBand ? SCRAMBLE_GRIP : SOLVER_GRIP };
+export function heldAtScramble(followedBand: boolean): Hold | null {
+  return followedBand ? { report: smartCube.lastGyro, grip: SCRAMBLE_GRIP } : null;
 }
 
 /** What the attitude follows: the app's cube link (or a stand-in in tests). */
@@ -113,9 +114,9 @@ export class AmbientAttitude {
     return () => this.#listeners.delete(listener);
   };
 
-  /** The cube is held as `hold` says now (it reached a scramble, or "reset orientation"). */
-  hold(hold: Hold): void {
-    if (!hold.report) return;
+  /** The cube is held as `hold` says now (it reached a scramble, or "reset orientation"); null: not known. */
+  hold(hold: Hold | null): void {
+    if (!hold?.report) return;
     const learnt = !this.#anchored;
     this.#anchored = true;
     this.#set(this.#follower.hold(hold));

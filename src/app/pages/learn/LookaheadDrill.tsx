@@ -22,7 +22,7 @@ import { analysisOptions } from "@/app/lib/method";
 import type { Move, RotationEvent, SolveAnalysis, SolveRecord, TimedMove } from "@/cube/types";
 import type { LookaheadRep } from "@/shared/learn";
 import { BandFit } from "./cross/BandFit";
-import { useCubeScramble } from "./cross/cubeScramble";
+import { ownScramble, useCubeScramble } from "./cross/cubeScramble";
 import { fromTextField, hasModifier, releaseFocus, takeSpace, useFrameClock } from "./cross/drill";
 import { BPM_STEP, clampBpm, isClean, isMessy, startingBpm, suggestBpm } from "./lookahead/bpm";
 import { Metronome } from "./lookahead/metronome";
@@ -194,18 +194,25 @@ export function LookaheadDrill() {
       const key = ++attempts.current;
       releaseFocus();
       setRunning({ key, setup: null, error: null });
-      const pending = upcoming.current;
-      upcoming.current = null;
+      // His cube scrambled any way he liked is the scramble; else one to follow on the band.
+      const own = test
+        ? null
+        : await ownScramble().catch((error: unknown) => {
+            console.error("Could not read his own scramble; giving him one to follow instead", error);
+            return null;
+          });
+      const pending = own ? null : upcoming.current;
+      if (!own) upcoming.current = null;
       let scramble: string;
       try {
-        scramble = await (pending ? pending.catch(makeScramble) : makeScramble());
+        scramble = own ?? (await (pending ? pending.catch(makeScramble) : makeScramble()));
       } catch (error) {
         console.error("Could not make a scramble", error);
         setRunning((current) => (current?.key === key ? { key, setup: null, error: "No scramble" } : current));
         return;
       }
       setRunning((current) => (current?.key === key ? { key, setup: { key, scramble, bpm, test }, error: null } : current));
-      prefetch();
+      if (!own) prefetch();
     },
     [bpm, connected, prefetch],
   );
@@ -298,7 +305,7 @@ export function LookaheadDrill() {
           <span className="bpm-unit">bpm</span>
         </div>
         <div className="drill-start">
-          <button className="pill primary" onClick={() => void start(false)}>
+          <button className="pill primary" data-tip="Scrambled your cube? It starts from that" onClick={() => void start(false)}>
             Start
           </button>
           <IconButton icon={Play} label="Test" variant="soft" filled onClick={() => void start(true)} />
@@ -508,7 +515,7 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
 
   // A smart cube at the scramble: the cube on screen is held as it is.
   useEffect(() => {
-    if (setup.test || readyAt === null || !hold) return;
+    if (setup.test || readyAt === null) return;
     ambientAttitude.hold(hold);
     return smartCube.onMove((move, hostT) => turnNow.current(move, hostT));
   }, [hold, readyAt, setup.test]);

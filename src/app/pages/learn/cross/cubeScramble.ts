@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { toSolverFrame } from "@/app/lib/frame";
 import { smartCube } from "@/app/smartcube/connection";
 import { solveFix } from "@/app/smartcube/fixup";
 import { CubeSession, type FinishedSolve, type SessionView } from "@/app/smartcube/session";
 import { heldAtScramble } from "@/app/smartcube/attitude";
 import type { Hold } from "@/app/smartcube/follower";
+import { SOLVED, isCrossSolved } from "@/cube";
+import type { Move } from "@/cube/types";
 
 /** Each session's current "solve finished" callback, so the session (made once) always calls the latest one. */
 const finishHandlers = new WeakMap<CubeSession, (solve: FinishedSolve) => void>();
@@ -13,9 +16,25 @@ export type CubeScramble = {
   view: SessionView;
   /** When the cube reached the scramble (host ms), or null until it does. */
   readyAt: number | null;
-  /** How the cube was held then, for the cube on screen to follow from (null until then). */
+  /** How the cube was held then, when that's known (it followed the band): the cubes on screen face from it. */
   hold: Hold | null;
 };
+
+/** Solver-frame turns from solved, written as a scramble is (white on top: the solver's grip turned z2). */
+export function scrambleOf(turns: readonly Move[]): string {
+  return turns.map(toSolverFrame).join(" ");
+}
+
+/**
+ * The scramble his cube is in now, when he scrambled it himself any way he liked (its white cross isn't solved): a
+ * drill takes the cube as it is rather than leading it onto a scramble of its own. Null when the cube's state isn't
+ * known, or it isn't scrambled.
+ */
+export async function ownScramble(): Promise<string | null> {
+  const state = smartCube.state.cube;
+  if (!state || isCrossSolved(state)) return null;
+  return scrambleOf(await solveFix(SOLVED, state));
+}
 
 /**
  * Leads the smart cube onto `scramble` with the timer's own scramble tracking (any order of turns that reaches a
@@ -40,7 +59,7 @@ export function useCubeScramble(scramble: string, active: boolean, onSolved?: (s
     if (onSolved) finishHandlers.set(session, onSolved);
     else finishHandlers.delete(session);
   }, [onSolved, session]);
-  const [ready, setReady] = useState<{ at: number; hold: Hold } | null>(null);
+  const [ready, setReady] = useState<{ at: number; hold: Hold | null } | null>(null);
   const subscribe = useCallback((listener: () => void) => session.subscribe(listener), [session]);
   const view = useSyncExternalStore(subscribe, () => session.view());
 
