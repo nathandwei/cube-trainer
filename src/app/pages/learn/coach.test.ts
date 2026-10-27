@@ -39,7 +39,7 @@ describe("AlgCoach", () => {
       const coach = new AlgCoach(words(alg));
       const { turns, up } = reported(alg, grip, true);
       run(coach, turns, up);
-      expect(coach.view()).toMatchObject({ done: true, slips: 0, undo: [] });
+      expect(coach.view()).toMatchObject({ done: true, slips: 0, back: null });
     },
   );
 
@@ -65,26 +65,42 @@ describe("AlgCoach", () => {
     expect(new AlgCoach(words("x R' U R'")).opening).toEqual(["x"]);
   });
 
-  it("catches a wrong turn, says how to undo it, and carries on once it's undone", () => {
+  it("catches a wrong turn, leads him back, and carries on once he's back", () => {
     const alg = "R U R' U' R' F R2 U' R' U' R U R' F'";
     const coach = new AlgCoach(words(alg));
     const { turns, up } = reported(alg);
     run(coach, turns.slice(0, 2), up);
     // F where R' belongs, then U on top of it.
     run(coach, ["F", "U"], up);
-    expect(coach.view()).toMatchObject({ next: 2, slips: 1, undo: ["U'", "F'"] });
-    run(coach, ["U'", "F'"], up);
-    expect(coach.view()).toMatchObject({ next: 2, undo: [] });
+    expect(coach.view()).toMatchObject({ next: 2, slips: 1, back: { moves: ["U'", "F'"], done: 0, half: false } });
+    run(coach, ["U'"], up);
+    expect(coach.view()).toMatchObject({ back: { moves: ["U'", "F'"], done: 1 } });
+    run(coach, ["F'"], up);
+    expect(coach.view()).toMatchObject({ next: 2, back: null });
     run(coach, turns.slice(2), up);
     expect(coach.view()).toMatchObject({ done: true, slips: 1 });
   });
 
-  it("asks him to undo only what's left once his own back-and-forth cancels", () => {
+  it("leads him back as the scramble does: a turn back along the way is undone, not one more to undo", () => {
     const ePerm = "R' U' R' D' R U' R' D R U R' D' R U R' D R2";
     const coach = new AlgCoach(words(ePerm));
-    // U where U' belongs, the next moves from memory, one of them undone, then U' U wiggled while working it out.
+    // U where U' belongs, the next moves from memory, then R, the first move back, and U' U wiggled while working it out.
     run(coach, [...words("R' U' R' D' R U R' D R U R' R"), ...Array.from({ length: 8 }, () => ["U'", "U"]).flat()], "U");
-    expect(coach.view()).toMatchObject({ next: 5, slips: 1, undo: words("U' R' D' R U'") });
+    expect(coach.view()).toMatchObject({ next: 5, slips: 1, back: { moves: words("R U' R' D' R U'"), done: 1 } });
+  });
+
+  it("shows a half turn on the way back half done after one quarter, and a wrong turn on the way reroutes it", () => {
+    const coach = new AlgCoach(words("R U R' F"));
+    run(coach, ["R", "U2"], "U");
+    expect(coach.view()).toMatchObject({ back: { moves: ["U2"], done: 0, half: false } });
+    run(coach, ["U"], "U");
+    expect(coach.view()).toMatchObject({ back: { moves: ["U2"], done: 0, half: true } });
+    run(coach, ["F"], "U");
+    expect(coach.view()).toMatchObject({ back: { moves: ["F'", "U"], done: 0 } });
+    run(coach, ["F'"], "U");
+    expect(coach.view()).toMatchObject({ back: { moves: ["F'", "U"], done: 1 } });
+    run(coach, ["U"], "U");
+    expect(coach.view()).toMatchObject({ next: 1, back: null });
   });
 
   it.each([
@@ -93,7 +109,7 @@ describe("AlgCoach", () => {
   ])("carries on from further along the alg after $name", ({ turns }) => {
     const coach = new AlgCoach(words("R U' R' F"));
     run(coach, ["R", ...turns], "U");
-    expect(coach.view()).toMatchObject({ next: 2, slips: 1, undo: [] });
+    expect(coach.view()).toMatchObject({ next: 2, slips: 1, back: null });
     run(coach, ["R'", "F"], "U");
     expect(coach.view()).toMatchObject({ done: true, slips: 1 });
   });

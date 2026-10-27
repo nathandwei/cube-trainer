@@ -2,6 +2,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, RotateCcw, RotateCw } from "lucid
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CubeView, type CubeHandle } from "@/app/components/CubeView";
 import { IconButton } from "@/app/components/IconButton";
+import { ScrambleProgress } from "@/app/smartcube/ScrambleProgress";
 import { smartCube, useSmartCube } from "@/app/smartcube/connection";
 import { upFace } from "@/app/smartcube/follower";
 import { algChunks, algFingering, getCase, playback, type Fingering } from "@/cube";
@@ -15,7 +16,7 @@ const TEMPO = 0.9;
 const PRACTICE_TEMPO = 3;
 /** How long a finished rep's verdict shows before the case is back for the next. */
 const REP_PAUSE_MS = 900;
-/** Past this many moves to undo, starting the rep over is quicker (his cube's state doesn't matter, only its turns). */
+/** Past this many moves back, starting the rep over is quicker (his cube's state doesn't matter, only its turns). */
 const LONG_UNDO = 2;
 
 const LL_SETS = new Set(["PLL", "OLL", "COLL", "EPLL", "EO"]);
@@ -103,7 +104,8 @@ export function LearnAlg({ caseId, alg, onDrill, onBack }: Props) {
   }, [done, goTo, onBack, onDrill, playAll, practice, practising]);
 
   const coach = practice.view;
-  const off = practising && coach !== null && coach.undo.length > 0;
+  const back = practising ? (coach?.back ?? null) : null;
+  const off = back !== null;
   const onAlg =
     practice.verdict !== null
       ? practice.verdict === 0
@@ -175,16 +177,13 @@ export function LearnAlg({ caseId, alg, onDrill, onBack }: Props) {
         })}
       </div>
       {practising ? (
-        <p className={`learn-coach-line ${off ? "bad" : practice.verdict === 0 ? "good" : ""}`} role="status">
-          {off ? (
-            <>
-              Undo: {coach.undo.join(" ")}
-              {coach.undo.length > LONG_UNDO && <span className="learn-coach-hint"> or Space to start over</span>}
-            </>
+        <div className="learn-coach" role="status">
+          {back ? (
+            <ScrambleProgress plan={{ ...back, fix: true, thinking: false }} to="the alg" aside={back.moves.length - back.done > LONG_UNDO ? "or Space to start over" : undefined} />
           ) : (
-            onAlg
+            <p className={`learn-coach-line ${practice.verdict === 0 ? "good" : ""}`}>{onAlg}</p>
           )}
-        </p>
+        </div>
       ) : (
         <div className="learn-alg-legend" aria-hidden="true">
           <span className="right">Right</span>

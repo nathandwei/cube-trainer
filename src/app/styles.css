@@ -1646,16 +1646,23 @@ a:focus-visible {
   color: var(--muted);
 }
 
-.learn-coach-line.bad {
-  color: var(--bad);
-}
-
 .learn-coach-line.good {
   color: var(--good);
 }
 
-.learn-coach-line .learn-coach-hint {
-  color: var(--muted);
+/* Room for the way back onto the alg (the scramble's band, smaller), so nothing jumps when it shows. */
+.learn-coach {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(96 * var(--u));
+}
+
+.learn-coach .scramble {
+  width: auto;
+  min-height: calc(60 * var(--u));
+  padding: 0 calc(30 * var(--u));
+  font-size: calc(26 * var(--ut));
 }
 
 /* Typing his own alg: the box, a play button and Choose, which lights up once the alg solves the case. */

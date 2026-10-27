@@ -1,7 +1,7 @@
 // Coaching an alg on the smart cube: the case is on screen, he turns his own cube (in any state: only its turns
 // count), and each turn is checked against the alg as it comes. A turn that keeps to it plays on the case and moves
-// him on; one that doesn't plays too (so he sees what he did), and he carries on once his turns put the case back
-// where he left the alg, or where it would be further on.
+// him on; one that doesn't plays too (so he sees what he did), and the way back to where he left the alg is led like
+// the scramble is (smartcube/route.ts): he carries on once he's there, or where the alg would be further on.
 //
 // His turns arrive named by the centre they turned. Which centre is his R depends on how he holds the cube, which is
 // read off the turns themselves: of the 24 ways to hold it, the ones whose reading of his turns keeps to the alg stay
@@ -9,9 +9,10 @@
 // is read from the gyro: a wide move, slice or rotation in the alg is known from the alg, and his turns after it are
 // named as they must be if he did it.
 
-import { FrameTracker, SOLVED, applyMove, invertAlg, simplifyMoves, stateKey, type CubeState } from "@/cube";
+import { FrameTracker, SOLVED, applyMove, stateKey, type CubeState } from "@/cube";
 import type { Move, Rotation } from "@/cube/types";
 import { GRID } from "@/app/smartcube/gyro";
+import { followRoute, routeFrom, type Route } from "@/app/smartcube/route";
 
 function quarters(move: Move): number {
   return move.endsWith("2") ? 2 : move.endsWith("'") ? 3 : 1;
@@ -61,11 +62,19 @@ function copy(reading: Reading): Reading {
   return { ...reading, progress: new Map(reading.progress), screen: new FrameTracker(reading.screen.frame) };
 }
 
+/** Off the alg: the way back to where he left it, in his view, and how far along it he is (as the scramble shows). */
+export type WayBack = {
+  moves: string[];
+  done: number;
+  /** One quarter of the next move, a half turn, is done. */
+  half: boolean;
+};
+
 export type CoachView = {
   /** The alg's moves done: the next to do is moves[next]. */
   next: number;
-  /** Off the alg: the shortest way back by retracing, in his view, in order ("U'", "R'"); empty while on it. */
-  undo: string[];
+  /** Off the alg: the way back onto it; null while on it. */
+  back: WayBack | null;
   /** Times this rep left the alg. */
   slips: number;
   /** The rep is done: every move of the alg (a last AUF may be left off). */
@@ -79,8 +88,8 @@ export class AlgCoach {
   /** The ways of holding the cube his turns so far fit, likeliest first (the first is what the screen shows). */
   #readings: Reading[];
   #upKnown = false;
-  /** Off the alg: his turns since he left it (read the first reading's way), and where that leaves the case. */
-  #off: Move[] = [];
+  /** Off the alg: the way back to where he left it (read the first reading's way), and where his turns leave the case. */
+  #back: Route | null = null;
   #offState: CubeState = SOLVED;
   #slips = 0;
   /** Rotations the alg opens with (x R' U R' ...): the cube on screen starts turned by them. */
@@ -99,9 +108,9 @@ export class AlgCoach {
 
   view(): CoachView {
     const reading = this.#readings[0]!;
-    // Retracing turn by turn would have him undo his own wiggles (U U' U U'), so they cancel first.
-    const undo = invertAlg(simplifyMoves(this.#off)).map((move) => reading.screen.name(move));
-    return { next: reading.next, undo, slips: this.#slips, done: this.#done() };
+    const route = this.#back;
+    const back = route && { moves: route.moves.map((move) => reading.screen.name(move)), done: route.anchor, half: route.half };
+    return { next: reading.next, back, slips: this.#slips, done: this.#done() };
   }
 
   /**
@@ -116,7 +125,7 @@ export class AlgCoach {
       if (level.length > 0) this.#readings = level;
       this.#upKnown = true;
     }
-    if (this.#off.length === 0) {
+    if (!this.#back) {
       const kept = this.#readings.flatMap((reading) => {
         const move = reading.grip.name(reported);
         if (!this.#fits(reading, move)) return [];
@@ -135,26 +144,29 @@ export class AlgCoach {
     // have it further on (a U' done as U U U, or a wrong U put right with U2).
     const reading = this.#readings[0]!;
     const move = reading.grip.name(reported);
-    if (this.#off.length === 0) {
+    if (!this.#back) {
+      this.#back = routeFrom(reading.state, []);
       this.#offState = reading.state;
       this.#slips++;
     }
-    this.#off.push(move);
     this.#offState = applyMove(this.#offState, move);
     const shown = [reading.screen.name(move)];
     if (stateKey(this.#offState) === stateKey(reading.state)) {
-      this.#off = [];
+      this.#back = null;
       return shown;
     }
     const rejoined = this.#rejoin(reading, this.#offState);
-    if (!rejoined) return shown;
-    this.#readings = [reading];
-    this.#off = [];
-    return [...shown, ...rejoined];
+    if (rejoined) {
+      this.#readings = [reading];
+      this.#back = null;
+      return [...shown, ...rejoined];
+    }
+    this.#back = followRoute(this.#back, this.#offState, move);
+    return shown;
   }
 
   #done(): boolean {
-    return this.#off.length === 0 && this.#readings[0]!.next >= this.#required;
+    return !this.#back && this.#readings[0]!.next >= this.#required;
   }
 
   /** Whether a turn (in his view) keeps to the current move: finishes one of its faces, or is half of a half turn. */

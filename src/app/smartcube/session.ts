@@ -13,12 +13,10 @@ import {
   analyzeSolve,
   applyMove,
   fitCubeClock,
-  invertAlg,
   isSolved,
   normalizeStream,
   scrambleToSolverFrame,
   scrambledState,
-  simplifyMoves,
   stateKey,
   type CubeState,
   type ReportedMove,
@@ -29,6 +27,7 @@ import { analysisOptions } from "@/app/lib/method";
 import { MAX_GYRO_SAMPLES } from "@/shared/schema";
 import { CoreWatch, RotationDetector, newPlacement, placeCoreTurn, placeRotation, startOrientation, type Placement, type Quaternion } from "./gyro";
 import { inspectionPenalty, type Penalty } from "./inspection";
+import { followRoute, routeFrom, type Route } from "./route";
 
 /** A correction this long is replaced by cubing.js's shortest-ish solution (a random state needs about 20). */
 const LONGEST_LOCAL_FIX = 22;
@@ -92,17 +91,8 @@ export type SessionOptions = {
   onFinish: (solve: FinishedSolve) => void;
 };
 
-type Plan = {
-  /** Solver-frame turns from `start` to the scrambled state. */
-  moves: Move[];
-  /** stateKey after k turns → k (the largest k when a state repeats). */
-  keys: Map<string, number>;
-  /** stateKey after one quarter of half turn k → k and that quarter. */
-  halfKeys: Map<string, { k: number; quarter: Move }>;
-  /** The last plan prefix the cube was at, and the turns since. */
-  anchor: number;
-  sinceAnchor: Move[];
-  half: boolean;
+/** The route to the scrambled state, in solver-frame turns. */
+type Plan = Route & {
   fix: boolean;
   thinking: boolean;
 };
@@ -119,19 +109,8 @@ type Attempt = {
   core: CoreWatch;
 };
 
-const quarterOf = (half: Move) => [half.charAt(0), `${half.charAt(0)}'`];
-
 function buildPlan(start: CubeState, moves: Move[], fix: boolean): Plan {
-  const keys = new Map<string, number>();
-  const halfKeys = new Map<string, { k: number; quarter: Move }>();
-  let state = start;
-  keys.set(stateKey(state), 0);
-  moves.forEach((move, k) => {
-    if (move.endsWith("2")) for (const quarter of quarterOf(move)) halfKeys.set(stateKey(applyMove(state, quarter)), { k, quarter });
-    state = applyMove(state, move);
-    keys.set(stateKey(state), k + 1);
-  });
-  return { moves, keys, halfKeys, anchor: 0, sinceAnchor: [], half: false, fix, thinking: false };
+  return { ...routeFrom(start, moves), fix, thinking: false };
 }
 
 /** Evenly thinned to at most `limit`, keeping the first and last. */
@@ -325,21 +304,11 @@ export class CubeSession {
       this.#askSolver(cube, null);
       return this.#changed();
     }
-    const key = stateKey(cube);
-    const at = plan.keys.get(key);
-    if (at !== undefined) {
-      Object.assign(plan, { anchor: at, sinceAnchor: [], half: false });
-      return this.#changed();
-    }
-    const halfway = plan.halfKeys.get(key);
-    if (halfway !== undefined) {
-      Object.assign(plan, { anchor: halfway.k, sinceAnchor: [halfway.quarter], half: true });
-      return this.#changed();
-    }
+    const route = followRoute(plan, cube, move);
+    if (route === plan) return this.#changed();
     // Off the plan: undo the stray turns, then carry on with the rest of it.
-    const fix = simplifyMoves([...invertAlg([...plan.sinceAnchor, move]), ...plan.moves.slice(plan.anchor)]);
-    this.#setPlan(buildPlan(cube, fix, true));
-    if (fix.length > LONGEST_LOCAL_FIX) this.#askSolver(cube, this.#plan);
+    this.#setPlan({ ...route, fix: true, thinking: false });
+    if (route.moves.length > LONGEST_LOCAL_FIX) this.#askSolver(cube, this.#plan);
     this.#changed();
   }
 
