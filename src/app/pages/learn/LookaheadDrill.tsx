@@ -584,7 +584,7 @@ function LookaheadRun({ setup, click, cubeName, onDone, onClose }: RunProps) {
     <>
       {band}
       <div className="cube-slot running">
-        <CubeView ref={cube} className="cube" setup={setup.test ? "z2" : `${setup.scramble} z2`} />
+        <CubeView ref={cube} className="cube" setup={setup.test ? "z2" : `${setup.scramble} z2`} gyro={false} />
       </div>
       <span className="beat-dot big" style={beatStyle(setup.bpm)} aria-hidden="true" />
       <div className={`drill-pauses ${stalls > 0 ? "some" : ""} ${shownPhase === "scramble" ? "hidden" : ""}`}>

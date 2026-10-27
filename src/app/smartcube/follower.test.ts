@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { angleBetween, multiply, snap, type Quaternion } from "@/app/smartcube/gyro";
+import { GRID, angleBetween, multiply, snap, type Quaternion } from "./gyro";
 import type { Rotation } from "@/cube/types";
-import { SCRAMBLE_GRIP, SOLVER_GRIP, gridOf } from "./calibrate/grip";
-import { CubeFollower } from "./follow";
+import { CubeFollower, SCRAMBLE_GRIP, SOLVER_GRIP, reportAt } from "./follower";
 
 const IDENTITY: Quaternion = { w: 1, x: 0, y: 0, z: 0 };
 
@@ -12,13 +11,15 @@ function tilt(axis: "x" | "y" | "z", degrees: number): Quaternion {
   return { ...IDENTITY, w: Math.cos(half), [axis]: Math.sin(half) };
 }
 
-/** The gyro report after turning by `turns` (solver's axes, in order) from the solver's grip (the fake GAN cube's __cubeQuat). */
+/** The gyro's own heading is arbitrary: the world it reads against is turned this far round from the solver. */
+const WORLD = tilt("y", 37);
+
+/** The gyro report after turning by `turns` (solver's axes, in order) from the solver's grip. */
 function reportAfter(...turns: Quaternion[]): Quaternion {
-  const q = turns.reduce((total, turn) => multiply(turn, total), IDENTITY);
-  return { w: q.w, x: -q.x, y: -q.z, z: -q.y };
+  return reportAt(multiply(WORLD, turns.reduce((total, turn) => multiply(turn, total), IDENTITY)));
 }
 
-const grid = (rotation: Rotation) => gridOf(rotation).q;
+const grid = (rotation: Rotation) => GRID.find((g) => g.rotations.length === 1 && g.rotations[0] === rotation)!.q;
 
 /** The orientation an attitude holds the cube on screen at, as rotations from the solver's grip ("" upright). */
 function shownAs(attitude: Quaternion | null): string | null {
@@ -58,15 +59,20 @@ describe("CubeFollower", () => {
     expect(angleBetween(attitude!, tilt(axis, degrees))).toBeLessThan(0.01);
   });
 
-  it("leaves out the hand's own lean at the hold, whichever way the cube is turned after", () => {
+  it("shows the cube's real tilt, read against gravity: a lean at the hold stays a lean, whichever way round", () => {
     // Held leaning towards the solver, as a hand holds a cube to look at it.
     const lean = tilt("x", 20);
     const follower = new CubeFollower();
-    expect(shownAs(follower.hold({ report: reportAfter(grid("z2"), lean), grip: SCRAMBLE_GRIP }))).toBe("z2");
-    expect(shownAs(follower.gyro(reportAfter(lean), tick()))).toBe("");
-    expect(shownAs(follower.gyro(reportAfter(grid("y"), lean), tick()))).toBe("y");
-    // Leaning further shows as the extra lean.
-    expect(angleBetween(follower.gyro(reportAfter(tilt("x", 30)), tick())!, tilt("x", 10))).toBeLessThan(0.01);
+    expect(angleBetween(follower.hold({ report: reportAfter(grid("z2"), lean), grip: SCRAMBLE_GRIP })!, multiply(lean, grid("z2")))).toBeLessThan(0.01);
+    expect(angleBetween(follower.gyro(reportAfter(lean), tick())!, lean)).toBeLessThan(0.01);
+    expect(angleBetween(follower.gyro(reportAfter(grid("y"), lean), tick())!, multiply(lean, grid("y")))).toBeLessThan(0.01);
+  });
+
+  it("takes only its heading from a hold: a cube held tipped stays tipped on screen", () => {
+    const follower = new CubeFollower();
+    expect(shownAs(follower.hold({ report: reportAfter(grid("x")), grip: SOLVER_GRIP }))).toBe("x");
+    // Turned round on the desk: round about the vertical on screen too.
+    expect(shownAs(follower.gyro(reportAfter(grid("x"), grid("y")), tick()))).toBe("x y");
   });
 
   it("waits for the cube's first gyro report when it had none at the hold", () => {
@@ -76,19 +82,19 @@ describe("CubeFollower", () => {
     expect(shownAs(follower.gyro(reportAfter(grid("z2"), grid("z2")), tick()))).toBe("");
   });
 
-  it("counts a slice as exactly its turn, though a fast one reads short", () => {
+  it("counts an E slice as exactly its turn round the vertical, though a fast one reads short", () => {
     const follower = new CubeFollower();
     follower.hold({ report: reportAfter(), grip: SOLVER_GRIP });
     follower.gyro(reportAfter(), 1000);
-    // M: R and L' together, while the core turns like x' (+90° about x) but the gyro sees only 70° of it.
-    follower.turn("R", 1100);
-    follower.turn("L'", 1110);
-    const short = reportAfter(tilt("x", 70));
-    // Read once no more turns on that axis can be part of it (GYRO_TUNING.moveGapMs after the last).
+    // E: U and D' together, while the core turns like y' (+90° about y) but the gyro sees only 70° of it. Gravity
+    // would set a short tilt straight by itself; nothing sets a short heading straight but this.
+    follower.turn("U", 1100);
+    follower.turn("D'", 1110);
+    const short = reportAfter(tilt("y", 70));
     for (let t = 1200; t < 1300; t += 90) follower.gyro(short, t);
-    expect(shownAs(follower.gyro(short, 1350))).toBe("x'");
-    // From there on it follows as before: a slight lean shows as that lean.
-    expect(angleBetween(follower.gyro(reportAfter(tilt("x", 80)), 1650)!, multiply(tilt("x", 10), grid("x'")))).toBeLessThan(0.01);
+    expect(shownAs(follower.gyro(short, 1350))).toBe("y'");
+    // From there on it follows as before: a turn further shows as that turn.
+    expect(angleBetween(follower.gyro(reportAfter(tilt("y", 80)), 1650)!, multiply(tilt("y", 10), grid("y'")))).toBeLessThan(0.01);
   });
 
   it("leaves a plain turn's tilt alone", () => {

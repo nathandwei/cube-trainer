@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from "react";
+import { ambientAttitude, heldAtScramble } from "./attitude";
 import { smartCube } from "./connection";
 import { solveFix } from "./fixup";
 import { CubeSession, type FinishedSolve, type SessionView } from "./session";
@@ -39,7 +40,15 @@ export function useCubeSession({ active, scramble, inspection, onFinish }: Optio
     // The link kept following the cube while cube mode was off; start from what it knows.
     const known = smartCube.state.cube;
     if (known) session.facelets(known, performance.now());
+    // Reaching the scramble from the band, the cube is held as scrambled (white on top): the cubes on screen stand
+    // upright from that grip.
+    let phase = session.view().phase;
     const off = [
+      session.subscribe(() => {
+        const next = session.view().phase;
+        if (phase === "scrambling" && (next === "ready" || next === "inspecting")) ambientAttitude.hold(heldAtScramble(true));
+        phase = next;
+      }),
       smartCube.onMove((move, hostT, cubeT) => session.move(move, hostT, cubeT)),
       smartCube.onGyro((q, hostT) => session.gyro(q, hostT)),
       smartCube.onFacelets((state, hostT) => session.facelets(state, hostT)),

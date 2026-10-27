@@ -1,9 +1,11 @@
 import { Check, Copy, Unplug } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { IconButton } from "@/app/components/IconButton";
+import { ambientAttitude } from "./attitude";
 import { BRAVE_FLAG, MAC_HINT_COMMAND, checkBluetooth, looksLikeBrave, type BluetoothSupport } from "./browser";
 import { shortCubeName, smartCube, useSmartCube } from "./connection";
 import { CubeNet } from "./CubeNet";
+import { SOLVER_GRIP } from "./follower";
 import "./smartcube.css";
 
 type Props = { onClose: () => void };
@@ -210,7 +212,10 @@ function Connected({ onDone }: { onDone: () => void }) {
   const [note, setNote] = useState<string | null>(null);
 
   function resetOrientation() {
-    setNote(smartCube.resetOrientation() ? "Saved: white down, green front" : "No gyro reading yet");
+    const saved = smartCube.resetOrientation();
+    // The cubes on screen stand upright from this grip too.
+    if (saved) ambientAttitude.hold({ report: smartCube.lastGyro, grip: SOLVER_GRIP });
+    setNote(saved ? "Saved: white down, green front" : "No gyro reading yet");
   }
 
   return (

@@ -1,5 +1,6 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import type { Attitude, CubeRenderer } from "@/app/cube3d/renderer";
+import { ambientAttitude } from "@/app/smartcube/attitude";
 import { animatedTurn, reverseOf, TurnAnimator } from "@/app/lib/animation";
 import { useSettings } from "@/app/lib/settings";
 
@@ -33,7 +34,16 @@ function movesOf(text: string): string[] {
   return text.replace(/[()[\]]/g, " ").trim().split(/\s+/).filter(Boolean);
 }
 
-type Props = { ref?: Ref<CubeHandle>; setup?: string; className?: string };
+type Props = {
+  ref?: Ref<CubeHandle>;
+  setup?: string;
+  className?: string;
+  /**
+   * Tilt with the smart cube while one with a gyro is connected, in place of being dragged round (it drags again
+   * once there's none). Off for a cube a drill holds itself through setAttitude.
+   */
+  gyro?: boolean;
+};
 
 // three.js is most of the cube's weight, so it loads after the page shows; one load serves every cube.
 let rendererModule: Promise<typeof import("@/app/cube3d/renderer")> | undefined;
@@ -48,16 +58,16 @@ function loadRenderer(): Promise<typeof import("@/app/cube3d/renderer")> {
 }
 
 /**
- * What the cube should show once it has loaded: a state, the tempo it plays at and its tilt. `dead` once it never
- * will (no WebGL), so turns stop piling up.
+ * What the cube should show once it has loaded: a state, the tempo it plays at, its tilt and whether it can be
+ * dragged. `dead` once it never will (no WebGL), so turns stop piling up.
  */
-type Waiting = { moves: string[]; tempo: number; attitude: Attitude | null; dead: boolean };
+type Waiting = { moves: string[]; tempo: number; attitude: Attitude | null; draggable: boolean; dead: boolean };
 
-export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
+export function CubeView({ ref, setup = "z2", className = "cube", gyro = true }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const player = useRef<CubeRenderer | null>(null);
   const timers = useRef<number[]>([]);
-  const waiting = useRef<Waiting>({ moves: movesOf(setup), tempo: DEFAULT_TEMPO, attitude: null, dead: false });
+  const waiting = useRef<Waiting>({ moves: movesOf(setup), tempo: DEFAULT_TEMPO, attitude: null, draggable: true, dead: false });
   const { cubeLook } = useSettings();
   const look = useRef(cubeLook);
   // Which way each hand last turned since the last show(), so R2 / L2 spin the way fingers would.
@@ -81,6 +91,7 @@ export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
         cube.setTempo(waiting.current.tempo);
         cube.show(waiting.current.moves);
         cube.setAttitude(waiting.current.attitude, true);
+        cube.setDraggable(waiting.current.draggable);
         player.current = cube;
       })
       .catch((error: unknown) => console.error("CubeView: could not load the 3D cube", error));
@@ -97,6 +108,27 @@ export function CubeView({ ref, setup = "z2", className = "cube" }: Props) {
     look.current = cubeLook;
     player.current?.setLook(cubeLook);
   }, [cubeLook]);
+
+  // Held like the smart cube while it reports where it points; dragged round otherwise.
+  useEffect(() => {
+    if (!gyro) return;
+    const follow = () => {
+      const attitude = ambientAttitude.current;
+      waiting.current.attitude = attitude;
+      waiting.current.draggable = attitude === null;
+      player.current?.setAttitude(attitude);
+      player.current?.setDraggable(attitude === null);
+    };
+    follow();
+    const off = ambientAttitude.subscribe(follow);
+    return () => {
+      off();
+      waiting.current.attitude = null;
+      waiting.current.draggable = true;
+      player.current?.setAttitude(null, true);
+      player.current?.setDraggable(true);
+    };
+  }, [gyro]);
 
   // Until the cube has loaded, what it's asked to do is kept as the state it should open on.
   function showMoves(moves: string[]) {

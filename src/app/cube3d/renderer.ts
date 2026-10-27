@@ -209,6 +209,8 @@ export class CubeRenderer {
   #lastFrame = 0;
   #latitude = LATITUDE;
   #longitude = LONGITUDE;
+  /** The view can be dragged round (not while a smart cube's gyro tilts the cube instead). */
+  #draggable = true;
 
   constructor(host: HTMLElement, look: CubeLook) {
     this.#host = host;
@@ -304,6 +306,14 @@ export class CubeRenderer {
     this.#tempo = scale > 0 ? scale : 1;
   }
 
+  /** Whether the view can be dragged round; turning it off puts the usual view back. */
+  setDraggable(draggable: boolean): void {
+    if (draggable === this.#draggable) return;
+    this.#draggable = draggable;
+    this.#renderer.domElement.classList.toggle("fixed-view", !draggable);
+    if (!draggable) this.resetView();
+  }
+
   setLook(look: CubeLook): void {
     if (look === this.#look) return;
     this.#look = look;
@@ -362,7 +372,7 @@ export class CubeRenderer {
   #listenForDrags(canvas: HTMLCanvasElement): void {
     let last: { x: number; y: number } | null = null;
     canvas.addEventListener("pointerdown", (event) => {
-      if (event.button !== 0) return;
+      if (event.button !== 0 || !this.#draggable) return;
       last = { x: event.clientX, y: event.clientY };
       canvas.setPointerCapture(event.pointerId);
       canvas.classList.add("dragging");
@@ -385,7 +395,9 @@ export class CubeRenderer {
     canvas.addEventListener("pointercancel", stop);
     // Capture can go without either (a window switch mid-drag): the drag ends there too.
     canvas.addEventListener("lostpointercapture", stop);
-    canvas.addEventListener("dblclick", () => this.resetView());
+    canvas.addEventListener("dblclick", () => {
+      if (this.#draggable) this.resetView();
+    });
   }
 
   #parse(move: string): LayerTurn | null {

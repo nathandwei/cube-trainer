@@ -786,6 +786,11 @@ a:focus-visible {
   cursor: grabbing;
 }
 
+/* A smart cube's gyro is turning the view instead: nothing to grab. */
+.cube canvas.fixed-view {
+  cursor: default;
+}
+
 .section-label {
   font-size: 12px;
   color: var(--muted);

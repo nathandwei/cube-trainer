@@ -15,9 +15,7 @@ export function gridOf(...rotations: Rotation[]): GridOrientation {
   return found;
 }
 
-export const SOLVER_GRIP = gridOf();
-/** Scrambling grip: white on top, green in front. */
-export const SCRAMBLE_GRIP = gridOf("z2");
+export { SCRAMBLE_GRIP, SOLVER_GRIP } from "@/app/smartcube/follower";
 
 /**
  * The report the cube would give in the solver's grip, from one it gave while held `held` away from that grip:

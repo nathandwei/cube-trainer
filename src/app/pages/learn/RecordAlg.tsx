@@ -4,6 +4,7 @@ import { CubeStatus } from "@/app/components/CubeStatus";
 import { CubeView, type CubeHandle } from "@/app/components/CubeView";
 import { IconButton } from "@/app/components/IconButton";
 import { ConnectSheet } from "@/app/smartcube/ConnectSheet";
+import { ambientAttitude } from "@/app/smartcube/attitude";
 import { smartCube, useSmartCube } from "@/app/smartcube/connection";
 import { solveFix } from "@/app/smartcube/fixup";
 import type { GridOrientation, Quaternion } from "@/app/smartcube/gyro";
@@ -146,7 +147,7 @@ export function RecordAlg({ caseId, onRecorded, onSkip, scramble, corner }: Prop
       {sheetOpen && <ConnectSheet onClose={() => setSheetOpen(false)} />}
       <div className="record-stage">
         {settingUp && <div className="record-band">{physical.band}</div>}
-        <CubeView ref={cube} className="cube record-cube" setup={`z2 ${caseDef.setup}`} />
+        <CubeView ref={cube} className="cube record-cube" setup={`z2 ${caseDef.setup}`} gyro={false} />
         <h2 className="record-name">{caseDef.label}</h2>
         <div className={`record-alg ${algState}`}>
           {take.sealed && take.alg !== null ? (
@@ -252,6 +253,7 @@ function usePhysicalTake({ cube, caseId, active, scramble, onHeld }: PhysicalOpt
         const grip = followedBand.current ? SCRAMBLE_GRIP : SOLVER_GRIP;
         const attitude = store.hold(lastGyro.current, grip);
         if (attitude) cube.current?.setAttitude(attitude);
+        ambientAttitude.hold({ report: lastGyro.current, grip });
         held.current(grip);
       }),
       smartCube.onMove((move, hostT, cubeT) => {

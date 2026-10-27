@@ -425,7 +425,7 @@ function CrossRun({ variant, setup, cubeName, onDone, onClose }: RunProps) {
     <>
       {band}
       <div className="cube-slot running">
-        <CubeView ref={cube} className="cube" setup={setup.test ? "z2" : `${setup.scramble} z2`} />
+        <CubeView ref={cube} className="cube" setup={setup.test ? "z2" : `${setup.scramble} z2`} gyro={false} />
       </div>
       <div className={`drill-clock ${clockClass} ${shownPhase === "scramble" ? "hidden" : ""}`}>{formatSeconds(elapsed)}</div>
       <p className="drill-foot">

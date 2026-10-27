@@ -22,7 +22,7 @@ import {
   type Quaternion,
   type RotationDetector,
 } from "@/app/smartcube/gyro";
-import { CubeFollower } from "../follow";
+import { CubeFollower } from "@/app/smartcube/follower";
 import { SCRAMBLE_GRIP, SOLVER_GRIP, detectorAt, leadRotations } from "./grip";
 import { asAlg, moveCount, takeTokens, type Take } from "./notation";
 

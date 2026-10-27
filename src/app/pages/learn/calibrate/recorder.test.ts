@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { reportAt } from "@/app/smartcube/follower";
 import { GRID, multiply, snap, type Quaternion } from "@/app/smartcube/gyro";
 import { FrameTracker, applyAlg, caseScramble, caseState, createRng, getCase, isGoalReached, scrambledState } from "@/cube";
 import type { Rotation } from "@/cube/types";
@@ -10,10 +11,10 @@ import { MAX_MOVES, Recorder } from "./recorder";
 const words = (alg: string) => alg.replace(/[()[\]]/g, " ").split(/\s+/).filter(Boolean);
 const IDENTITY: Quaternion = { w: 1, x: 0, y: 0, z: 0 };
 
-/** The gyro report after these rotations from the solver's grip (the fake GAN cube's __cubeQuat). */
+/** The gyro report after these rotations from the solver's grip, against a world turned round from the solver's. */
 function report(...rotations: Rotation[]): Quaternion {
-  const q = rotations.reduce((total, rotation) => multiply(gridOf(rotation).q, total), IDENTITY);
-  return { w: q.w, x: -q.x, y: -q.z, z: -q.y };
+  const world = gridOf("y'").q;
+  return reportAt(multiply(world, rotations.reduce((total, rotation) => multiply(gridOf(rotation).q, total), IDENTITY)));
 }
 
 /** The orientation an attitude holds the cube on screen at, as rotations from the solver's grip ("" upright). */

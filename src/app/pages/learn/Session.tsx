@@ -349,7 +349,7 @@ export function Session({ caseIds, input, onExit }: Props) {
         {Math.min(index + 1, caseIds.length)} / {caseIds.length}
       </span>
       {input === "cube" && !onCube && phase === "ready" && !loading && (cubeView.plan ? <ScrambleProgress plan={cubeView.plan} /> : <span className="muted">{cubeView.hasState ? "" : "Reading the cube…"}</span>)}
-      <CubeView ref={cube} className="cube big" />
+      <CubeView ref={cube} className="cube big" gyro={false} />
       <div className={`session-time ${last ? (last.correct ? "good" : "bad") : ""}`}>
         {phase === "result" && last ? formatSeconds(totalMs(last)) : phase === "running" || (phase === "ready" && input === "test") ? formatSeconds(elapsed) : loading || (input === "cube" && !onCube) ? "" : "0.00"}
       </div>
