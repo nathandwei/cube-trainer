@@ -36,6 +36,31 @@ function stepsOf(moves: readonly string[]): Step[] {
   });
 }
 
+/** Whether a turn keeps to `step` with `progress` towards it: finishes one of its faces, or is half of a half turn. */
+function fits(step: Step | undefined, progress: ReadonlyMap<string, number>, move: Move): boolean {
+  if (!step) return false;
+  const face = move.charAt(0);
+  const target = step.target.get(face);
+  const so = progress.get(face) ?? 0;
+  if (target === undefined || so === target) return false;
+  const now = (so + quarters(move)) % 4;
+  return now === target || (target === 2 && now !== 2);
+}
+
+function complete(step: Step, progress: ReadonlyMap<string, number>): boolean {
+  return [...step.target].every(([face, amount]) => progress.get(face) === amount);
+}
+
+const OPPOSITE: Readonly<Record<string, string>> = { U: "D", D: "U", R: "L", L: "R", F: "B", B: "F" };
+
+/** Two moves he can flick together, either landing first (a G perm's D U'): turns of opposite faces, nothing else. */
+function together(a: Step | undefined, b: Step | undefined): boolean {
+  if (!a || !b || a.rotation || b.rotation || a.target.size !== 1 || b.target.size !== 1) return false;
+  const [face] = a.target.keys();
+  const [other] = b.target.keys();
+  return face !== undefined && OPPOSITE[face] === other;
+}
+
 /** A way he may hold the cube: reads a turn of a centre as the move it is in his view. */
 type Grip = { name: (turn: Move) => Move };
 
@@ -52,6 +77,8 @@ type Reading = {
   next: number;
   /** Quarter turns so far, per face, towards the current move. */
   progress: Map<string, number>;
+  /** Towards the move after it, when the two go together and that one's turn landed first. */
+  ahead: Map<string, number>;
   /** The cube on screen's names: it rotates with the alg's rotations, as he does. */
   screen: FrameTracker;
   /** The case as he's turned it (from solved: only whether he's back where he left the alg matters). */
@@ -59,7 +86,7 @@ type Reading = {
 };
 
 function copy(reading: Reading): Reading {
-  return { ...reading, progress: new Map(reading.progress), screen: new FrameTracker(reading.screen.frame) };
+  return { ...reading, progress: new Map(reading.progress), ahead: new Map(reading.ahead), screen: new FrameTracker(reading.screen.frame) };
 }
 
 /** Off the alg: the way back to where he left it, in his view, and how far along it he is (as the scramble shows). */
@@ -83,6 +110,8 @@ export type CoachView = {
 
 export class AlgCoach {
   readonly #steps: Step[];
+  /** Per move: it and the next go together, so either's turn may come first. */
+  readonly #together: boolean[];
   /** The alg is done once this many moves are: a last AUF can be left off (and rotations after it don't count). */
   readonly #required: number;
   /** The ways of holding the cube his turns so far fit, likeliest first (the first is what the screen shows). */
@@ -97,11 +126,12 @@ export class AlgCoach {
 
   constructor(moves: readonly string[]) {
     this.#steps = stepsOf(moves);
+    this.#together = this.#steps.map((step, i) => together(step, this.#steps[i + 1]));
     let required = moves.length;
     if (/^U(2|')?$/.test(moves.at(-1) ?? "")) required--;
     while (required > 0 && this.#steps[required - 1]!.target.size === 0) required--;
     this.#required = required;
-    this.#readings = GRIPS.map((grip) => ({ grip, next: 0, progress: new Map(), screen: new FrameTracker(), state: SOLVED }));
+    this.#readings = GRIPS.map((grip) => ({ grip, next: 0, progress: new Map(), ahead: new Map(), screen: new FrameTracker(), state: SOLVED }));
     const opening = this.#readings.map((reading) => this.#passRotations(reading));
     this.opening = opening[0] ?? [];
   }
@@ -128,11 +158,12 @@ export class AlgCoach {
     if (!this.#back) {
       const kept = this.#readings.flatMap((reading) => {
         const move = reading.grip.name(reported);
-        if (!this.#fits(reading, move)) return [];
+        const towards = this.#towards(reading, move);
+        if (!towards) return [];
         const next = copy(reading);
         const shown = [next.screen.name(move)];
         next.state = applyMove(next.state, move);
-        shown.push(...this.#advance(next, move), ...this.#passRotations(next));
+        shown.push(...this.#advance(next, move, towards), ...this.#passRotations(next));
         return [{ next, shown }];
       });
       if (kept.length > 0) {
@@ -169,29 +200,31 @@ export class AlgCoach {
     return !this.#back && this.#readings[0]!.next >= this.#required;
   }
 
-  /** Whether a turn (in his view) keeps to the current move: finishes one of its faces, or is half of a half turn. */
-  #fits(reading: Reading, move: Move): boolean {
-    const step = this.#steps[reading.next];
-    if (!step) return false;
-    const face = move.charAt(0);
-    const target = step.target.get(face);
-    const so = reading.progress.get(face) ?? 0;
-    if (target === undefined || so === target) return false;
-    const now = (so + quarters(move)) % 4;
-    return now === target || (target === 2 && now !== 2);
+  /** Which move a turn (in his view) keeps to: the current one, or the next when the two go together; null if neither. */
+  #towards(reading: Reading, move: Move): "current" | "ahead" | null {
+    if (fits(this.#steps[reading.next], reading.progress, move)) return "current";
+    if (this.#together[reading.next] && fits(this.#steps[reading.next + 1], reading.ahead, move)) return "ahead";
+    return null;
   }
 
-  /** Counts a turn that keeps to the move; when it finishes a wide move or slice, the rotation it carries (to play). */
-  #advance(reading: Reading, move: Move): string[] {
+  /**
+   * Counts a turn that keeps to the move; when it finishes a wide move or slice, the rotation it carries (to play).
+   * Finishing the current move can finish the next as well, if that one's turn landed first.
+   */
+  #advance(reading: Reading, move: Move, towards: "current" | "ahead"): string[] {
     const face = move.charAt(0);
-    reading.progress.set(face, ((reading.progress.get(face) ?? 0) + quarters(move)) % 4);
-    const step = this.#steps[reading.next]!;
-    if (![...step.target].every(([f, amount]) => reading.progress.get(f) === amount)) return [];
-    reading.progress = new Map();
-    reading.next++;
-    if (!step.rotation) return [];
-    reading.screen.rotate(step.rotation);
-    return [step.rotation];
+    const progress = towards === "current" ? reading.progress : reading.ahead;
+    progress.set(face, ((progress.get(face) ?? 0) + quarters(move)) % 4);
+    const rotations: string[] = [];
+    for (let step = this.#steps[reading.next]; step && step.target.size > 0 && complete(step, reading.progress); step = this.#steps[reading.next]) {
+      reading.progress = reading.ahead;
+      reading.ahead = new Map();
+      reading.next++;
+      if (!step.rotation) continue;
+      reading.screen.rotate(step.rotation);
+      rotations.push(step.rotation);
+    }
+    return rotations;
   }
 
   /**
@@ -202,7 +235,7 @@ export class AlgCoach {
     const key = stateKey(state);
     let ahead = reading.state;
     for (let at = reading.next; at < this.#steps.length; at++) {
-      const progress = at === reading.next ? reading.progress : new Map<string, number>();
+      const progress = at === reading.next ? reading.progress : at === reading.next + 1 ? reading.ahead : new Map<string, number>();
       for (const [face, amount] of this.#steps[at]!.target) {
         const left = (amount - (progress.get(face) ?? 0) + 4) % 4;
         if (left > 0) ahead = applyMove(ahead, turnOf(face, left));
@@ -216,6 +249,7 @@ export class AlgCoach {
       }
       reading.next = at + 1;
       reading.progress = new Map();
+      reading.ahead = new Map();
       reading.state = state;
       return [...rotations, ...this.#passRotations(reading)];
     }

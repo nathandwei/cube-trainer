@@ -124,6 +124,38 @@ describe("AlgCoach", () => {
     expect(coach.view().slips).toBe(slip ? 1 : 0);
   });
 
+  const G_A = "R2 U R' U R' U' R U' R2 D U' R' U R D'";
+
+  it.each([
+    { name: "Ga's D U' as U' D", alg: G_A, done: "R2 U R' U R' U' R U' R2 U' D R' U R D'", grip: [] },
+    { name: "Ga's D U' as U' D, held y", alg: G_A, done: "R2 U R' U R' U' R U' R2 U' D R' U R D'", grip: ["y"] },
+    { name: "R L' as L' R", alg: "R L' U2 F", done: "L' R U2 F", grip: [] },
+    { name: "half turns, F2 B2 as B2 F2", alg: "F2 B2 R", done: "B2 F2 R", grip: [] },
+  ])("takes two turns of opposite faces in either order, flicked together: $name", ({ alg, done, grip }) => {
+    const coach = new AlgCoach(words(alg));
+    const { turns, up } = reported(done, grip as Rotation[]);
+    run(coach, turns, up);
+    expect(coach.view()).toMatchObject({ done: true, slips: 0, back: null });
+  });
+
+  it("moves him past both turns once the second of the two is done", () => {
+    const coach = new AlgCoach(words(G_A));
+    run(coach, words("R2 U R' U R' U' R U' R2"), "U");
+    run(coach, ["U'"], "U");
+    expect(coach.view()).toMatchObject({ next: 9, slips: 0, back: null });
+    run(coach, ["D"], "U");
+    expect(coach.view()).toMatchObject({ next: 11, slips: 0, back: null });
+  });
+
+  it.each([
+    { name: "a turn from two moves on", turns: ["R'"] },
+    { name: "the second of the two done twice", turns: ["U'", "U'"] },
+  ])("still catches $name", ({ turns }) => {
+    const coach = new AlgCoach(words(G_A));
+    run(coach, [...words("R2 U R' U R' U' R U' R2"), ...turns], "U");
+    expect(coach.view().slips).toBe(1);
+  });
+
   it("lets a last AUF be left off", () => {
     const coach = new AlgCoach(words("R U R' U"));
     run(coach, ["R", "U", "R'"], "U");
