@@ -1294,6 +1294,11 @@ a:focus-visible {
   align-items: center;
 }
 
+.session-actions {
+  display: flex;
+  gap: calc(12 * var(--u));
+}
+
 .session-result {
   display: flex;
   flex-direction: column;

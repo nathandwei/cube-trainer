@@ -56,6 +56,7 @@ Rules every screen follows. Nathan judges the site on looks; inconsistency reads
 | Choose (alg) | `pill` "Choose" |
 | Again / slowest / done (summary) | `pill primary` "Again", `pill` "Slowest", `IconButton icon={X}` "Close" |
 | Drill this (from review) | `IconButton icon={Dumbbell}` "Drill" |
+| Give up a drill rep (a DNF) | `IconButton icon={Flag}` "Give up" |
 | Settings | `IconButton icon={Settings}` "Settings" |
 
 ## Scale: match the mockups

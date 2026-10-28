@@ -1,4 +1,4 @@
-import { Play, Trash2, X } from "lucide-react";
+import { Flag, Play, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CubeView, type CubeHandle } from "@/app/components/CubeView";
 import { IconButton, Key } from "@/app/components/IconButton";
@@ -40,8 +40,6 @@ const TEST_TURN_MS = 150;
 
 /** Give up on a rep after this many turns past the alg's length: something went wrong. */
 const SPARE_TURNS = 8;
-/** A rep not done this long after the case showed (a mangled alg, or he's lost) is a DNF, not a clock running on. */
-const REP_LIMIT_MS = 10_000;
 
 /**
  * The alg's length in the turns a smart cube reports, counted like the rep's turns: a slice is two (R L'), and a half
@@ -244,19 +242,12 @@ export function Session({ caseIds, input, onExit }: Props) {
     );
   }, [alg, caseDef, input, phase]);
 
-  // Out of time: a DNF, with the split as far as it got (no turn yet is all recognition).
-  useEffect(() => {
-    if (loading || (phase !== "ready" && phase !== "running")) return;
-    const timer = window.setTimeout(
-      () => {
-        const now = performance.now();
-        if (phase === "ready") record(false, now - shownAt.current, 0);
-        else record(false, firstTurnAt.current - shownAt.current, now - firstTurnAt.current);
-      },
-      Math.max(0, shownAt.current + REP_LIMIT_MS - performance.now()),
-    );
-    return () => window.clearTimeout(timer);
-  }, [loading, phase, record]);
+  /** He gives up on the rep: a DNF, with the split as far as it got (no turn yet is all recognition). */
+  const giveUp = useCallback(() => {
+    const now = performance.now();
+    if (phase === "ready") record(false, now - shownAt.current, 0);
+    else if (phase === "running") record(false, firstTurnAt.current - shownAt.current, now - firstTurnAt.current);
+  }, [phase, record]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -317,7 +308,7 @@ export function Session({ caseIds, input, onExit }: Props) {
       <div className={`session-time ${last ? (last.correct ? "good" : "bad") : ""}`}>
         {phase === "result" && last ? (last.correct ? formatSeconds(totalMs(last)) : "DNF") : loading ? "" : formatSeconds(elapsed)}
       </div>
-      {/* One fixed slot under the time, so the cube and time never jump when a result or the Test button shows. */}
+      {/* One fixed slot under the time, so the cube and time never jump when a result or the buttons show. */}
       <div className="session-below">
         {phase === "result" && last && (
           <div className="session-result">
@@ -337,7 +328,12 @@ export function Session({ caseIds, input, onExit }: Props) {
             <Key>Space</Key>
           </div>
         )}
-        {input === "test" && phase === "ready" && !loading && <IconButton icon={Play} label="Test" variant="soft" size="lg" filled onClick={runTest} />}
+        {(phase === "ready" || phase === "running") && !loading && (
+          <div className="session-actions">
+            {input === "test" && phase === "ready" && <IconButton icon={Play} label="Test" variant="soft" size="lg" filled onClick={runTest} />}
+            <IconButton icon={Flag} label="Give up" variant="soft" size="lg" onClick={giveUp} />
+          </div>
+        )}
       </div>
     </div>
   );
