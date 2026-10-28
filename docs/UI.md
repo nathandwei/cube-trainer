@@ -17,9 +17,10 @@ Rules every screen follows. Nathan judges the site on looks; inconsistency reads
 
 ## Layout
 
-- **Nothing overlaps.** The 3D cube as drawn never touches text, a button or an input outside it, and no two pieces
-  of text overlap. `pnpm test:layout` checks this on the built app for every page and state at five window sizes
-  (e2e/layout.spec.ts); a new page or state gets a line there, and the check passes before anything ships.
+- **Nothing overlaps.** The 3D cube as drawn never touches text, a button or an input outside it, no two pieces
+  of text overlap, and nothing (a cube's canvas included) lies over a button's middle. `pnpm test:layout` checks this
+  on the built app for every page and state at five window sizes (e2e/layout.spec.ts); a new page or state gets a line
+  there, and the check passes before anything ships.
 
 ## Buttons
 

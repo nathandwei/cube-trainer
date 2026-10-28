@@ -1496,7 +1496,17 @@ a:focus-visible {
   color: var(--good);
 }
 
-/* Learning a chosen alg (full page, like a drill): the cube, then the alg in chunks with each move's hand and finger. */
+/* Learning a chosen alg (full page, like a drill): the cube, then the alg in chunks with each move's hand and finger.
+   The back button and tabs keep a band of their own at the top, and the cube gives up height when practising's stages
+   and coach need it: its canvas, empty margin and all, would otherwise slide over the tabs and take their clicks. */
+.learn-alg {
+  padding-top: calc(90 * var(--u));
+}
+
+.learn-alg .cube.big {
+  min-height: 0;
+}
+
 .learn-alg .learn-alg-back {
   position: absolute;
   top: calc(28 * var(--u));

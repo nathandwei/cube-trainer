@@ -2,6 +2,7 @@
 // 1. The 3D cube, as drawn (the outline of its corners, not its canvas's empty margin), touches no text, button or
 //    input outside the cube's own box.
 // 2. No two separate pieces of text overlap.
+// 3. Every button gets its own clicks: nothing (a cube's canvas, empty margin and all) lies over its middle.
 // Each state below is a page as he'd reach it; the API is mocked with a few demo solves and learn settings.
 
 import { expect, test, type Page } from "@playwright/test";
@@ -81,12 +82,20 @@ function findOverlaps(): Violation[] {
   };
   const area = (a: Rect, b: Rect): number =>
     Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  const layerOf = (el: Element): Element => {
+    for (let node: Element | null = el; node && node !== document.body; node = node.parentElement) {
+      const r = node.getBoundingClientRect();
+      if (getComputedStyle(node).position === "fixed" && r.width >= innerWidth && r.height >= innerHeight) return node;
+    }
+    return document.body;
+  };
   const name = (el: Element): string => {
     const label = el.getAttribute("aria-label") ?? el.textContent?.trim().slice(0, 24) ?? "";
     return `${el.tagName.toLowerCase()}${el.className && typeof el.className === "string" ? `.${el.className.split(" ")[0]}` : ""} "${label}"`;
   };
 
   const inks: Ink[] = [];
+  const problems: Violation[] = [];
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     const owner = node.parentElement;
@@ -105,10 +114,17 @@ function findOverlaps(): Violation[] {
   for (const el of document.querySelectorAll("button, input, select, a, [role=radio]")) {
     if (!visible(el)) continue;
     const r = el.getBoundingClientRect();
-    if (r.width >= 1 && r.height >= 1) inks.push({ rect: r, owner: el, label: name(el), text: false });
-  }
+    if (r.width < 1 || r.height < 1) continue;
+    inks.push({ rect: r, owner: el, label: name(el), text: false });
 
-  const problems: Violation[] = [];
+    // 3. What a click on its middle lands on (off screen, nothing can be clicked, so there's nothing to check).
+    const x = (r.left + r.right) / 2;
+    const y = (r.top + r.bottom) / 2;
+    if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue;
+    const hit = document.elementFromPoint(x, y);
+    // A full-page layer (a drill, learning an alg) hides the page under it on purpose; only its own buttons count.
+    if (hit && !el.contains(hit) && layerOf(hit) === layerOf(el)) problems.push(`${name(hit)} covers ${name(el)}`);
+  }
 
   // 1. The drawn cube: its corners' outline, tested against each box by separating axes.
   for (const canvas of document.querySelectorAll<HTMLCanvasElement>("canvas[data-cube-points]")) {
