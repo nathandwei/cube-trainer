@@ -18,7 +18,7 @@ const TEMPO = 0.9;
 const PRACTICE_TEMPO = 3;
 /** How long a finished rep's verdict shows before the case is back for the next. */
 const REP_PAUSE_MS = 900;
-/** Past this many moves back, starting the rep over is quicker (his cube's state doesn't matter, only its turns). */
+/** Past this many moves back the way can't be followed: the rep ends and starts over (only his cube's turns count). */
 const LONG_UNDO = 2;
 
 const LL_SETS = new Set(["PLL", "OLL", "COLL", "EPLL", "EO"]);
@@ -51,9 +51,10 @@ function lesson(caseId: string, alg: string) {
  * hand and finger the speed model's fingering uses (and a mark where a hand regrips), stepped through on the cube a
  * chunk at a time. Practice (with a smart cube): the case is on screen and he does the alg on his own cube, in any
  * state, as often as it takes: each turn that keeps to the alg plays on the case and lights the next move; a wrong
- * one plays too, in red, with what undoes it. Every move shows at first, then only each chunk's first, then nothing,
- * until three clean reps from memory say it's learnt. Drill goes on to timed reps. A case told apart from two sides
- * (PLL, EPLL) opens on Recognise first: knowing when to do the alg comes before doing it.
+ * one plays too, in red, with what undoes it (more than a couple of moves to undo, and the rep starts over). Every
+ * move shows at first, then only each chunk's first, then nothing, until three clean reps from memory say it's learnt.
+ * Drill goes on to timed reps. A case told apart from two sides (PLL, EPLL) opens on Recognise first: knowing when to
+ * do the alg comes before doing it.
  * Keys: → next chunk, ← back one, Space plays it all (practising: starts the rep over), Enter drills. Recognising:
  * ← and → step through the angles, and so does a U turn on his cube.
  */
@@ -140,7 +141,7 @@ export function LearnAlg({ caseId, alg, onDrill, onBack }: Props) {
   }, [done, goTo, onBack, onDrill, playAll, practice, practising, recognising, stepAngle]);
 
   const coach = practice.view;
-  const back = practising ? (coach?.back ?? null) : null;
+  const back = practising && practice.verdict === null ? (coach?.back ?? null) : null;
   const off = back !== null;
   const onAlg =
     practice.verdict !== null
@@ -225,7 +226,7 @@ export function LearnAlg({ caseId, alg, onDrill, onBack }: Props) {
       {practising ? (
         <div className="learn-coach" role="status">
           {back ? (
-            <ScrambleProgress plan={{ ...back, fix: true, thinking: false }} to="the alg" aside={back.moves.length - back.done > LONG_UNDO ? "or Space to start over" : undefined} />
+            <ScrambleProgress plan={{ ...back, fix: true, thinking: false }} to="the alg" />
           ) : (
             <p className={`learn-coach-line ${practice.verdict === 0 ? "good" : ""}`}>{onAlg}</p>
           )}
@@ -324,13 +325,16 @@ function usePractice({ cube, moves, start, active }: PracticeOptions) {
     let pause: number | undefined;
     const off = smartCube.onMove((move) => {
       const current = coach.current;
-      if (!current || current.view().done) return;
+      if (!current) return;
       const report = smartCube.lastGyro;
       for (const token of current.turn(move, report ? upFace(report) : null)) cube.current?.turn(token);
       const seen = current.view();
       setView(seen);
       setVerdict(null);
-      if (!seen.done) return;
+      const lost = seen.back !== null && seen.back.moves.length - seen.back.done > LONG_UNDO;
+      if (!seen.done && !lost) return;
+      // Turns while the verdict shows are not part of this rep or the next.
+      coach.current = null;
       setProgress((was) => afterRep(was, seen.slips === 0));
       setVerdict(seen.slips);
       pause = window.setTimeout(() => {
