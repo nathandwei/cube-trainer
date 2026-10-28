@@ -2,15 +2,15 @@ import { ArrowRight, FastForward, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatSeconds } from "@/app/lib/format";
 import { IconButton } from "@/app/components/IconButton";
-import { getCase, getCaseSet, type CaseSetId } from "@/cube";
+import { getCase } from "@/cube";
 import { CaseDiagram } from "./CaseDiagram";
+import { caseName, type CaseItem } from "./items";
 import { biggestSavings, TOP_SAVINGS, type Known } from "./calibrate/summary";
 import { chooseAlg } from "./Session";
 import { RecordAlg, type TakeInfo } from "./RecordAlg";
 import "./calibrate.css";
 
 export type CalibrationResult = {
-  set: CaseSetId;
   /** The cases he showed how he solves, in the set's order. Test takes are listed but were never saved. */
   known: Known[];
   /** The cases he skipped: he doesn't know them yet. */
@@ -18,7 +18,7 @@ export type CalibrationResult = {
 };
 
 type Props = {
-  set: CaseSetId;
+  item: CaseItem;
   /** The end of calibration ("Learn" on the summary, or closing it). */
   onDone: (result: CalibrationResult) => void;
   /** Left midway. Every take he moved on from is already saved. */
@@ -32,8 +32,8 @@ type Props = {
  * case the moment he moves on, so leaving midway keeps them. Test takes (no cube) show the flow but are never saved.
  * The end lists what he knows and where another alg should save him the most time.
  */
-export function Calibrate({ set, onDone, onCancel }: Props) {
-  const cases = getCaseSet(set).cases;
+export function Calibrate({ item, onDone, onCancel }: Props) {
+  const { cases } = item;
   const [index, setIndex] = useState(0);
   const [known, setKnown] = useState<Known[]>([]);
   const [finished, setFinished] = useState(false);
@@ -41,11 +41,10 @@ export function Calibrate({ set, onDone, onCancel }: Props) {
 
   const result = useCallback(
     (): CalibrationResult => ({
-      set,
       known: cases.flatMap((c) => known.filter((k) => k.caseId === c.id)),
       unknown: cases.filter((c) => !known.some((k) => k.caseId === c.id)).map((c) => c.id),
     }),
-    [cases, known, set],
+    [cases, known],
   );
 
   // One object while nothing changes, so the summary's savings (a search over every option) are worked out once.
@@ -78,7 +77,7 @@ export function Calibrate({ set, onDone, onCancel }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [finished, onCancel, onDone, result]);
 
-  if (finished || !caseDef) return <CalibrationSummary result={summary} onDone={() => onDone(summary)} />;
+  if (finished || !caseDef) return <CalibrationSummary item={item} result={summary} onDone={() => onDone(summary)} />;
 
   return (
     <div className="calib">
@@ -105,7 +104,7 @@ export function Calibrate({ set, onDone, onCancel }: Props) {
  * The end (round-8 12's layout): what he knows against the set, the cases where another alg should save him the most
  * time (his take against the fingertrick model's time at his pace), and the whole set with what he knows filled in.
  */
-function CalibrationSummary({ result, onDone }: { result: CalibrationResult; onDone: () => void }) {
+function CalibrationSummary({ item, result, onDone }: { item: CaseItem; result: CalibrationResult; onDone: () => void }) {
   const total = result.known.length + result.unknown.length;
   // Worked out once per finished calibration: the model's search over every option is ~100 ms for a whole set.
   const allSavings = useMemo(() => biggestSavings(result.known, Infinity), [result.known]);
@@ -113,7 +112,7 @@ function CalibrationSummary({ result, onDone }: { result: CalibrationResult; onD
   const fasterCount = allSavings.length;
   const [tab, setTab] = useState<"faster" | "all">(savings.length > 0 ? "faster" : "all");
   const tested = result.known.some((k) => k.test);
-  const cases = getCaseSet(result.set).cases;
+  const { cases } = item;
   const algOf = new Map(result.known.map((k) => [k.caseId, k.alg]));
   const first = cases[0];
   return (
@@ -151,7 +150,7 @@ function CalibrationSummary({ result, onDone }: { result: CalibrationResult; onD
               <li key={saving.caseId} className="saving">
                 <CaseDiagram caseDef={caseDef} size={56} />
                 <span className="name">
-                  {caseDef.name}
+                  {caseName(item, caseDef)}
                   {saving.test && <span className="tag test">Test</span>}
                 </span>
                 <span className="algs">
@@ -177,7 +176,7 @@ function CalibrationSummary({ result, onDone }: { result: CalibrationResult; onD
             return (
               <div key={caseDef.id} className={`calib-case ${alg === undefined ? "new" : ""}`} data-tip={alg}>
                 <CaseDiagram caseDef={caseDef} size={56} ghost={alg === undefined} />
-                <span className="name">{caseDef.name}</span>
+                <span className="name">{caseName(item, caseDef)}</span>
               </div>
             );
           })}

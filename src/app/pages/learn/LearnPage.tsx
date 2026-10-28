@@ -8,7 +8,7 @@ import { navigate } from "@/app/lib/router";
 import { median } from "@/app/lib/averages";
 import { ConnectSheet } from "@/app/smartcube/ConnectSheet";
 import { useSmartCube } from "@/app/smartcube/connection";
-import { getCase, type CaseDef } from "@/cube";
+import type { CaseDef } from "@/cube";
 import type { CaseRep } from "@/shared/learn";
 import { Calibrate } from "./Calibrate";
 import { clearCalibration, requestCalibration, usePendingCalibration } from "./calibrateRequest";
@@ -20,8 +20,8 @@ import { CrossDrill } from "./CrossDrill";
 import { RecordAlg } from "./RecordAlg";
 import { LookaheadDrill } from "./LookaheadDrill";
 import { LearnChart } from "./LearnChart";
-import { casesOf, itemLabel, LEARN_ITEMS, learnItem } from "./items";
-import { caseProgress, currentCaseReps, setOf, totalMs, targetMs } from "./progress";
+import { caseName, casesOf, itemLabel, LEARN_ITEMS, learnItem, type CaseItem } from "./items";
+import { caseProgress, currentCaseReps, totalMs, targetMs } from "./progress";
 import { pickSession } from "./scheduler";
 import { chooseAlg, Session, Summary, type DrillInput } from "./Session";
 
@@ -29,16 +29,13 @@ import { chooseAlg, Session, Summary, type DrillInput } from "./Session";
 type Running = { caseIds: string[]; startedAt: number; input: DrillInput };
 type Finished = { caseIds: string[]; reps: CaseRep[]; previousMedian: number | null };
 
-/** A case id from the URL, if it names a real case of the open set (old links and typos open the set instead). */
-function knownCase(caseId: string | undefined, setId: string | undefined): string | null {
+/** A case id from the URL, if it names a case of the open item (old links and typos open the item instead). */
+function knownCase(caseId: string | undefined, itemId: string | undefined): string | null {
   if (!caseId) return null;
-  try {
-    const caseDef = getCase(caseId);
-    return caseDef.set === setId ? caseDef.id : null;
-  } catch (error) {
-    console.warn(`No case ${caseId}`, error);
-    return null;
-  }
+  const item = learnItem(itemId);
+  if (item?.kind === "cases" && item.cases.some((c) => c.id === caseId)) return caseId;
+  console.warn(`No case ${caseId} in ${itemId ?? "no item"}`);
+  return null;
 }
 
 export function LearnPage({ set, caseId }: { set?: string; caseId?: string }) {
@@ -131,7 +128,7 @@ export function LearnPage({ set, caseId }: { set?: string; caseId?: string }) {
   // Calibration for the open set: when he ticks a set he has no algs for, or presses Calibrate on its page.
   // A case link (from the grid or a review's drill button) wins over a leftover calibration request.
   if (open?.kind === "cases" && pendingCalibration === open.id && !openCase) {
-    return <Calibrate key={open.id} set={open.id} onDone={clearCalibration} onCancel={clearCalibration} />;
+    return <Calibrate key={open.id} item={open} onDone={clearCalibration} onCancel={clearCalibration} />;
   }
 
   if (openCase && recording) {
@@ -215,7 +212,7 @@ export function LearnPage({ set, caseId }: { set?: string; caseId?: string }) {
       </div>
       {sheetOpen && <ConnectSheet onClose={() => setSheetOpen(false)} />}
       {custom && hasCases && <CustomSession items={settings.items} onStart={(ids) => start(ids)} />}
-      {openCases && <CaseSetView cases={openCases} reps={reps} algs={settings.algs} onOpen={(id) => navigate(`/learn/${encodeURIComponent(open?.id ?? "")}?case=${encodeURIComponent(id)}`)} />}
+      {open?.kind === "cases" && <CaseSetView item={open} reps={reps} algs={settings.algs} onOpen={(id) => navigate(`/learn/${encodeURIComponent(open.id)}?case=${encodeURIComponent(id)}`)} />}
       {!open && settings.items[0] && (
         <button className="pill" onClick={() => navigate(`/learn/${settings.items[0]}`)}>
           {itemLabel(settings.items[0])}
@@ -225,12 +222,13 @@ export function LearnPage({ set, caseId }: { set?: string; caseId?: string }) {
   );
 }
 
-function CaseSetView({ cases, reps, algs, onOpen }: { cases: readonly CaseDef[]; reps: readonly CaseRep[]; algs: Record<string, string>; onOpen: (caseId: string) => void }) {
+function CaseSetView({ item, reps, algs, onOpen }: { item: CaseItem; reps: readonly CaseRep[]; algs: Record<string, string>; onOpen: (caseId: string) => void }) {
+  const { cases } = item;
   const setId = cases[0]?.set;
   const target = setId ? targetMs(setId, reps) : 0;
   return (
     <div className="learn-set">
-      {setId && <LearnChartForSet set={setId} reps={reps} />}
+      <LearnChartForCases cases={cases} reps={reps} />
       <div className="case-grid">
         {cases.map((c) => {
           const progress = caseProgress(c.id, reps, target);
@@ -239,7 +237,7 @@ function CaseSetView({ cases, reps, algs, onOpen }: { cases: readonly CaseDef[];
           return (
             <button key={c.id} className={`case-cell ${isLearned ? "" : "new"} ${progress.fluent ? "fluent" : ""}`} onClick={() => onOpen(c.id)} data-tip={`${c.label}${time}`}>
               <CaseDiagram caseDef={c} size={74} view="iso" ghost={!isLearned} alg={algs[c.id]} />
-              <span className="name">{c.name}</span>
+              <span className="name">{caseName(item, c)}</span>
             </button>
           );
         })}
@@ -248,8 +246,11 @@ function CaseSetView({ cases, reps, algs, onOpen }: { cases: readonly CaseDef[];
   );
 }
 
-function LearnChartForSet({ set, reps }: { set: CaseDef["set"]; reps: readonly CaseRep[] }) {
-  const times = useMemo(() => reps.filter((r) => r.correct && setOf(r.item) === set).map(totalMs), [set, reps]);
+function LearnChartForCases({ cases, reps }: { cases: readonly CaseDef[]; reps: readonly CaseRep[] }) {
+  const times = useMemo(() => {
+    const ids = new Set(cases.map((c) => c.id));
+    return reps.filter((r) => r.correct && ids.has(r.item)).map(totalMs);
+  }, [cases, reps]);
   return <LearnChart times={times} />;
 }
 

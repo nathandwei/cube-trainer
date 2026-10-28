@@ -206,6 +206,7 @@ const STATES: State[] = [
     name: "learn set",
     open: (page) => page.goto("/learn/PLL").then(() => undefined),
   },
+  { name: "learn set, OCLL", open: (page) => page.goto("/learn/OCLL").then(() => undefined) },
   { name: "case picker", open: (page) => page.goto("/learn/PLL?case=PLL-Aa").then(() => undefined) },
   {
     name: "case picker, typing an alg",
