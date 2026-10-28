@@ -1665,6 +1665,89 @@ a:focus-visible {
   font-size: calc(26 * var(--ut));
 }
 
+/* Recognising: the case's four angles with the U turn to the alg's start, what the picked one shows, and the cases
+   that show the same. */
+.recognise {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(26 * var(--u));
+}
+
+.recognise-angles {
+  display: flex;
+  gap: calc(18 * var(--u));
+}
+
+.recognise-angle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(6 * var(--u));
+  padding: calc(10 * var(--u)) calc(12 * var(--u));
+  border: 1.5px solid transparent;
+  border-radius: calc(14 * var(--u));
+  transition: border-color 150ms;
+}
+
+.recognise-angle.on {
+  border-color: var(--accent);
+}
+
+.recognise-angle .case-diagram {
+  width: calc(150 * var(--u));
+  height: calc(150 * var(--u));
+}
+
+.recognise-turn {
+  font-size: calc(26 * var(--ut));
+  font-weight: 600;
+}
+
+.recognise-turn.start {
+  color: var(--accent);
+}
+
+.recognise-features .case-stat-value {
+  font-size: calc(26 * var(--ut));
+}
+
+.recognise-lookalikes {
+  display: flex;
+  align-items: center;
+  gap: calc(22 * var(--u));
+  min-height: calc(116 * var(--u));
+}
+
+.recognise-lookalike {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(2 * var(--u));
+}
+
+.recognise-lookalike .case-diagram {
+  width: calc(90 * var(--u));
+  height: calc(90 * var(--u));
+}
+
+.recognise-lookalike .name {
+  font-size: calc(18 * var(--ut));
+  font-weight: 600;
+}
+
+.recognise-none {
+  font-size: calc(26 * var(--ut));
+  color: var(--faint);
+}
+
+/* A look-alike's stickers that differ from the case being learnt. */
+.case-diagram .mark {
+  stroke: var(--ink);
+  stroke-opacity: 1;
+  stroke-width: 0.2;
+}
+
 /* Typing his own alg: the box, a play button and Choose, which lights up once the alg solves the case. */
 .type-alg {
   display: flex;

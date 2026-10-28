@@ -262,10 +262,14 @@ export function viewState(caseId: string, alg: string): CubeState {
   return applyAlg(caseState(caseId), viewAuf(caseId, alg));
 }
 
-/** The pre-AUF viewState applies ("", "U", "U'" or "U2"), for showing the same angle on a 3D cube. */
-export function viewAuf(caseId: string, alg: string): string {
+/**
+ * The pre-AUF viewState applies ("", "U", "U'" or "U2"), for showing the same angle on a 3D cube. With `from`, the
+ * case is first turned that way (another angle he might see it from), and this is the U turn that takes him from
+ * there to an angle the alg starts from.
+ */
+export function viewAuf(caseId: string, alg: string, from = ""): string {
   const { set } = getCase(caseId);
-  const auf = preAufFor(set, caseState(caseId), splitLeadingAuf(set, alg).body);
+  const auf = preAufFor(set, applyAlg(caseState(caseId), from), splitLeadingAuf(set, alg).body);
   if (auf === null) throw new Error(`"${alg}" does not solve ${caseId} from any angle`);
   return auf;
 }

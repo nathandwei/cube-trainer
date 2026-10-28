@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { solverPalette } from "@/app/cube3d/looks";
 import { facelets, type Face } from "@/app/lib/facelets";
 import { useSettings } from "@/app/lib/settings";
-import { caseArrows, caseState, viewState, type CaseArrow, type CaseDef, type CubeState } from "@/cube";
+import { applyAlg, caseArrows, caseState, viewState, type CaseArrow, type CaseDef, type CubeState } from "@/cube";
 
 /** Sticker colours by solver-frame face (yellow on top, green in front): the cube look's, so diagrams match the 3D cube. */
 type Palette = Readonly<Record<Face, string>>;
@@ -28,6 +28,10 @@ type Props = {
   ghost?: boolean;
   /** His alg for the case: the picture turns to the angle he starts it from. */
   alg?: string;
+  /** Without an alg: the case turned this U turn from its usual angle (recognition's angles). */
+  auf?: string;
+  /** Ringed stickers (iso): the top layer's front three, then its right three, as 0–5. */
+  marks?: readonly number[];
   /** Draw where each piece goes (PLL / EPLL, top view), like jperm.net. */
   arrows?: boolean;
 };
@@ -41,8 +45,8 @@ function arrowsFor(caseDef: CaseDef, alg: string | undefined): CaseArrow[] {
   }
 }
 
-function stateFor(caseDef: CaseDef, alg: string | undefined): CubeState {
-  if (!alg) return caseState(caseDef.id);
+function stateFor(caseDef: CaseDef, alg: string | undefined, auf: string): CubeState {
+  if (!alg) return applyAlg(caseState(caseDef.id), auf);
   try {
     return viewState(caseDef.id, alg);
   } catch (error) {
@@ -56,14 +60,14 @@ function stateFor(caseDef: CaseDef, alg: string | undefined): CubeState {
  * A small picture of a case, drawn from the engine's state. By default the last layer from above with its side
  * stickers for last-layer sets, and the top, front and right faces for F2L.
  */
-export function CaseDiagram({ caseDef, size = 64, view = "auto", ghost = false, alg, arrows = false }: Props) {
-  const stickers = useMemo(() => facelets(stateFor(caseDef, alg)), [caseDef, alg]);
+export function CaseDiagram({ caseDef, size = 64, view = "auto", ghost = false, alg, auf = "", marks = [], arrows = false }: Props) {
+  const stickers = useMemo(() => facelets(stateFor(caseDef, alg, auf)), [caseDef, alg, auf]);
   const trips = useMemo(() => (arrows ? arrowsFor(caseDef, alg) : []), [arrows, caseDef, alg]);
   const { cubeLook } = useSettings();
   const palette = useMemo(() => solverPalette(cubeLook), [cubeLook]);
   const iso = view === "iso" || (view === "auto" && caseDef.set === "F2L");
   return iso ? (
-    <Iso stickers={stickers} set={caseDef.set} size={size} ghost={ghost} palette={palette} />
+    <Iso stickers={stickers} set={caseDef.set} size={size} ghost={ghost} palette={palette} marks={marks} />
   ) : (
     <TopView stickers={stickers} set={caseDef.set} size={size} palette={palette} arrows={trips} />
   );
@@ -147,8 +151,8 @@ function quad(points: readonly [number, number, number][]): string {
 }
 
 /** Top, front and right faces in isometric view; x runs right, y up, z towards the viewer. */
-function Iso({ stickers, set, size, ghost, palette }: { stickers: Stickers; set: CaseDef["set"]; size: number; ghost: boolean; palette: Palette }) {
-  const polys: { points: string; fill: string }[] = [];
+function Iso({ stickers, set, size, ghost, palette, marks }: { stickers: Stickers; set: CaseDef["set"]; size: number; ghost: boolean; palette: Palette; marks: readonly number[] }) {
+  const polys: { points: string; fill: string; marked?: boolean }[] = [];
   // Only the top layer's side stickers matter for OLL and EO; the layers below are F2L, already solved.
   const side = (face: "F" | "R", r: number, c: number) => {
     const color = stickers[face][r * 3 + c] ?? face;
@@ -157,16 +161,18 @@ function Iso({ stickers, set, size, ghost, palette }: { stickers: Stickers; set:
   for (let r = 0; r < 3; r++) {
     for (let c = 0; c < 3; c++) {
       polys.push({ points: quad([[c, 3, r], [c + 1, 3, r], [c + 1, 3, r + 1], [c, 3, r + 1]]), fill: colourFor(palette, set, stickers.U[r * 3 + c] ?? "U", EDGE_INDEX.has(r * 3 + c)) });
-      polys.push({ points: quad([[c, 3 - r, 3], [c + 1, 3 - r, 3], [c + 1, 2 - r, 3], [c, 2 - r, 3]]), fill: side("F", r, c) });
-      polys.push({ points: quad([[3, 3 - r, 3 - c], [3, 3 - r, 2 - c], [3, 2 - r, 2 - c], [3, 2 - r, 3 - c]]), fill: side("R", r, c) });
+      polys.push({ points: quad([[c, 3 - r, 3], [c + 1, 3 - r, 3], [c + 1, 2 - r, 3], [c, 2 - r, 3]]), fill: side("F", r, c), marked: r === 0 && marks.includes(c) });
+      polys.push({ points: quad([[3, 3 - r, 3 - c], [3, 3 - r, 2 - c], [3, 2 - r, 2 - c], [3, 2 - r, 3 - c]]), fill: side("R", r, c), marked: r === 0 && marks.includes(3 + c) });
     }
   }
   const w = 3 * COS30 * 2;
   return (
     <svg className={`case-diagram ${ghost ? "ghost" : ""}`} width={size} height={size} viewBox={`${-w / 2 - 0.2} ${-3.2} ${w + 0.4} ${6.4}`} aria-hidden="true">
-      {polys.map((p, i) => (
+      {/* Ringed stickers last, so their outline isn't drawn over by their neighbours'. */}
+      {[...polys.filter((p) => !p.marked), ...polys.filter((p) => p.marked)].map((p, i) => (
         <polygon
           key={i}
+          className={p.marked ? "mark" : undefined}
           points={p.points}
           fill={ghost ? "none" : p.fill}
           stroke="#3a2e28"

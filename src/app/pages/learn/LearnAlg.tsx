@@ -8,6 +8,8 @@ import { upFace } from "@/app/smartcube/follower";
 import { algChunks, algFingering, getCase, playback, type Fingering } from "@/cube";
 import { AlgCoach, type CoachView } from "./coach";
 import { CLEAN_TO_PASS, FIRST_PRACTICE, STAGES, afterRep, type Practice, type Stage } from "./practice";
+import { Recognise } from "./Recognise";
+import { quartersOf, RECOGNISED_SETS, recognitionAngles } from "./recognition";
 
 /** Each chunk plays at the case page's pace for algs: slow enough to follow every turn. */
 const STEP_MS = 760;
@@ -28,8 +30,13 @@ const STAGE_LABEL: Readonly<Record<Stage, string>> = { copy: "Copy it", cues: "F
 
 type Props = { caseId: string; alg: string; onDrill: () => void; onBack: () => void };
 
-/** Watch: the alg stepped through on screen. Practice: done on his own cube, with less shown each time. */
-type Mode = "watch" | "practice";
+/**
+ * Recognise: how to tell the case from two sides, and where the alg starts from. Watch: the alg stepped through on
+ * screen. Practice: done on his own cube, with less shown each time.
+ */
+type Mode = "recognise" | "watch" | "practice";
+
+const MODE_LABEL: Readonly<Record<Mode, string>> = { recognise: "Recognise", watch: "Watch", practice: "Practice" };
 
 /** The alg he plays: the angle it starts from (pre-AUF), then its moves and the U turn that lines the cube up. */
 function lesson(caseId: string, alg: string) {
@@ -45,8 +52,10 @@ function lesson(caseId: string, alg: string) {
  * chunk at a time. Practice (with a smart cube): the case is on screen and he does the alg on his own cube, in any
  * state, as often as it takes: each turn that keeps to the alg plays on the case and lights the next move; a wrong
  * one plays too, in red, with what undoes it. Every move shows at first, then only each chunk's first, then nothing,
- * until three clean reps from memory say it's learnt. Drill goes on to timed reps.
- * Keys: → next chunk, ← back one, Space plays it all (practising: starts the rep over), Enter drills.
+ * until three clean reps from memory say it's learnt. Drill goes on to timed reps. A case told apart from two sides
+ * (PLL, EPLL) opens on Recognise first: knowing when to do the alg comes before doing it.
+ * Keys: → next chunk, ← back one, Space plays it all (practising: starts the rep over), Enter drills. Recognising:
+ * ← and → step through the angles, and so does a U turn on his cube.
  */
 export function LearnAlg({ caseId, alg, onDrill, onBack }: Props) {
   const caseDef = getCase(caseId);
@@ -54,12 +63,18 @@ export function LearnAlg({ caseId, alg, onDrill, onBack }: Props) {
   const cube = useRef<CubeHandle>(null);
   const link = useSmartCube();
   const connected = link.status === "connected";
-  const [mode, setMode] = useState<Mode>(connected ? "practice" : "watch");
+  const recognisable = RECOGNISED_SETS.has(caseDef.set);
+  const modes: readonly Mode[] = recognisable ? ["recognise", "watch", "practice"] : ["watch", "practice"];
+  const [mode, setMode] = useState<Mode>(recognisable ? "recognise" : connected ? "practice" : "watch");
+  const angles = useMemo(() => (recognisable ? recognitionAngles(caseId, alg) : []), [alg, caseId, recognisable]);
+  // The angle picked, in U turns from where the alg starts.
+  const [angleAt, setAngleAt] = useState(0);
   // Watching: chunks done, the cube shows the case after them.
   const [done, setDone] = useState(0);
   const start = `z2 ${caseDef.setup} ${preAuf}`.trim();
   const movesBefore = useCallback((count: number) => chunks.slice(0, count).flatMap((chunk) => chunk.moves), [chunks]);
   const practising = mode === "practice";
+  const recognising = mode === "recognise";
 
   useEffect(() => {
     if (practising) return;
@@ -87,11 +102,32 @@ export function LearnAlg({ caseId, alg, onDrill, onBack }: Props) {
 
   const practice = usePractice({ cube, moves, start, active: practising });
 
+  /** The angle `step` places along from the one picked, in the order the angles are listed. */
+  const stepAngle = useCallback(
+    (step: number) => {
+      const index = angles.findIndex((angle) => angle.quarters === angleAt);
+      const next = angles[(index + step + angles.length) % angles.length];
+      if (next) setAngleAt(next.quarters);
+    },
+    [angleAt, angles],
+  );
+
+  useEffect(() => {
+    if (!recognising) return;
+    return smartCube.onMove((move) => {
+      const quarters = quartersOf(move);
+      if (quarters !== null) setAngleAt((at) => (at + quarters) % 4);
+    });
+  }, [recognising]);
+
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Enter") onDrill();
       else if (event.key === "Escape") onBack();
-      else if (event.code === "Space") {
+      else if (recognising) {
+        if (event.key === "ArrowRight") stepAngle(1);
+        else if (event.key === "ArrowLeft") stepAngle(-1);
+      } else if (event.code === "Space") {
         event.preventDefault();
         if (practising) practice.restart();
         else playAll();
@@ -101,7 +137,7 @@ export function LearnAlg({ caseId, alg, onDrill, onBack }: Props) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [done, goTo, onBack, onDrill, playAll, practice, practising]);
+  }, [done, goTo, onBack, onDrill, playAll, practice, practising, recognising, stepAngle]);
 
   const coach = practice.view;
   const back = practising ? (coach?.back ?? null) : null;
@@ -126,7 +162,7 @@ export function LearnAlg({ caseId, alg, onDrill, onBack }: Props) {
     <div className="learn-session learn-alg">
       <IconButton icon={ArrowLeft} label="Back" size="lg" className="learn-alg-back" onClick={onBack} />
       <div className="tabs learn-modes" role="tablist">
-        {(["watch", "practice"] as const).map((tab) => (
+        {modes.map((tab) => (
           <button
             key={tab}
             role="tab"
@@ -134,48 +170,58 @@ export function LearnAlg({ caseId, alg, onDrill, onBack }: Props) {
             className={mode === tab ? "on" : ""}
             disabled={tab === "practice" && !connected}
             data-tip={tab === "practice" && !connected ? "Connect your cube to practise on it" : undefined}
-            onClick={() => setMode(tab)}
+            onClick={() => {
+              setMode(tab);
+              // The cube comes back showing the case, so stepping through starts over too.
+              setDone(0);
+            }}
           >
-            {tab === "watch" ? "Watch" : "Practice"}
+            {MODE_LABEL[tab]}
           </button>
         ))}
       </div>
-      <CubeView ref={cube} className="cube big" setup={start} follow={!practising} />
+      {recognising ? (
+        <Recognise caseId={caseId} angles={angles} at={angleAt} onAt={setAngleAt} />
+      ) : (
+        <CubeView ref={cube} className="cube big" setup={start} follow={!practising} />
+      )}
       <h2 className="learn-alg-title">{caseDef.label}</h2>
       {practising && <PracticeSteps practice={practice.progress} />}
-      <div className="learn-alg-chunks">
-        {chunks.map((chunk, i) => {
-          const end = chunk.start + chunk.moves.length;
-          const at = practising ? (coach?.next ?? 0) : null;
-          const chunkDone = at === null ? i < done : end <= at;
-          const current = at === null ? i === done : chunk.start <= at && at < end;
-          return (
-            <button
-              key={chunk.start}
-              className={`learn-chunk ${chunkDone ? "done" : ""} ${current ? "current" : ""}`}
-              aria-label={`Chunk ${i + 1}`}
-              disabled={practising}
-              onClick={() => goTo(i + 1, true)}
-            >
-              {chunk.moves.map((move, k) => {
-                const index = chunk.start + k;
-                const how = fingering[index] ?? null;
-                const shown = shows(index, k === 0);
-                const state = at === null ? "" : index < at ? "did" : index === at ? (off ? "missed" : "next") : "";
-                return (
-                  <span key={k} className={`learn-move ${how?.hand ?? "none"} ${state}`}>
-                    <span className="learn-move-name">
-                      {shown && (how?.regrips.length ?? 0) > 0 && <RotateCw className="learn-regrip" aria-label="Regrip" strokeWidth={2} />}
-                      {shown ? move : "·"}
+      {!recognising && (
+        <div className="learn-alg-chunks">
+          {chunks.map((chunk, i) => {
+            const end = chunk.start + chunk.moves.length;
+            const at = practising ? (coach?.next ?? 0) : null;
+            const chunkDone = at === null ? i < done : end <= at;
+            const current = at === null ? i === done : chunk.start <= at && at < end;
+            return (
+              <button
+                key={chunk.start}
+                className={`learn-chunk ${chunkDone ? "done" : ""} ${current ? "current" : ""}`}
+                aria-label={`Chunk ${i + 1}`}
+                disabled={practising}
+                onClick={() => goTo(i + 1, true)}
+              >
+                {chunk.moves.map((move, k) => {
+                  const index = chunk.start + k;
+                  const how = fingering[index] ?? null;
+                  const shown = shows(index, k === 0);
+                  const state = at === null ? "" : index < at ? "did" : index === at ? (off ? "missed" : "next") : "";
+                  return (
+                    <span key={k} className={`learn-move ${how?.hand ?? "none"} ${state}`}>
+                      <span className="learn-move-name">
+                        {shown && (how?.regrips.length ?? 0) > 0 && <RotateCw className="learn-regrip" aria-label="Regrip" strokeWidth={2} />}
+                        {shown ? move : "·"}
+                      </span>
+                      <span className="learn-move-how">{!shown || (practising && practice.stage !== "copy") ? "" : how ? TOOLS[how.tool] : /^U/.test(move) ? "AUF" : ""}</span>
                     </span>
-                    <span className="learn-move-how">{!shown || (practising && practice.stage !== "copy") ? "" : how ? TOOLS[how.tool] : /^U/.test(move) ? "AUF" : ""}</span>
-                  </span>
-                );
-              })}
-            </button>
-          );
-        })}
-      </div>
+                  );
+                })}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {practising ? (
         <div className="learn-coach" role="status">
           {back ? (
@@ -185,14 +231,21 @@ export function LearnAlg({ caseId, alg, onDrill, onBack }: Props) {
           )}
         </div>
       ) : (
-        <div className="learn-alg-legend" aria-hidden="true">
-          <span className="right">Right</span>
-          <span className="left">Left</span>
-        </div>
+        !recognising && (
+          <div className="learn-alg-legend" aria-hidden="true">
+            <span className="right">Right</span>
+            <span className="left">Left</span>
+          </div>
+        )
       )}
       <div className="learn-alg-controls">
         {practising ? (
           <IconButton icon={RotateCcw} label="Start over" variant="soft" onClick={practice.restart} />
+        ) : recognising ? (
+          <>
+            <IconButton icon={ChevronLeft} label="Previous angle" variant="soft" onClick={() => stepAngle(-1)} />
+            <IconButton icon={ChevronRight} label="Next angle" variant="soft" onClick={() => stepAngle(1)} />
+          </>
         ) : (
           <>
             <IconButton icon={ChevronLeft} label="Previous" variant="soft" disabled={done === 0} onClick={() => goTo(done - 1, false)} />

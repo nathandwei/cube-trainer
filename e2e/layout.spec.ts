@@ -201,10 +201,18 @@ const STATES: State[] = [
   },
   { name: "case detail", open: (page) => page.goto("/learn/PLL?case=PLL-T").then(() => undefined) },
   {
-    name: "learning an alg",
+    name: "learning an alg, recognising",
     open: async (page) => {
       await page.goto("/learn/PLL?case=PLL-T");
       await page.getByRole("button", { name: "Learn" }).click();
+    },
+  },
+  {
+    name: "learning an alg, watching",
+    open: async (page) => {
+      await page.goto("/learn/PLL?case=PLL-T");
+      await page.getByRole("button", { name: "Learn" }).click();
+      await page.getByRole("tab", { name: "Watch" }).click();
     },
   },
   {
