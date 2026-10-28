@@ -21,7 +21,7 @@ import {
 import type { CaseRep } from "@/shared/learn";
 import { CaseDiagram } from "./CaseDiagram";
 import { CasePage } from "./CasePage";
-import { caseDone, readCase, turnCase, type CaseReadings } from "./caseTurns";
+import { caseOutcome, readCase, turnCase, type CaseReadings } from "./caseTurns";
 import { countTurns } from "./cross/attempt";
 import { LearnAlg } from "./LearnAlg";
 import { totalMs } from "./progress";
@@ -191,8 +191,9 @@ export function Session({ caseIds, input, onExit }: Props) {
       turns.current = [...turns.current, ...turns_];
       states.current = turnCase(states.current, turns_);
       cube.current?.turn(shown);
-      if (caseDone(caseDef.set, states.current)) {
-        record(true, firstTurnAt.current - shownAt.current, performance.now() - firstTurnAt.current);
+      const outcome = caseOutcome(caseDef.set, states.current);
+      if (outcome) {
+        record(outcome === "solved", firstTurnAt.current - shownAt.current, performance.now() - firstTurnAt.current);
         return;
       }
       if (countTurns(turns.current) > turnBudget) record(false, firstTurnAt.current - shownAt.current, performance.now() - firstTurnAt.current);
