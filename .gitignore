@@ -20,3 +20,10 @@ __pycache__/
 
 # local Worker secrets
 .dev.vars
+
+# Playwright output
+test-results/
+playwright-report/
+
+# personal account-setup wizard (names my Cloudflare account and paths)
+scripts/setup-accounts.sh

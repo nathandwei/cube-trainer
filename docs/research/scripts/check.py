@@ -1,5 +1,6 @@
 import importlib.util, sys, io, contextlib
-spec=importlib.util.spec_from_file_location("ll","/private/tmp/claude-501/-Users-nwei/df705fbc-4794-424a-9397-e3de61d90afb/scratchpad/scripts/ll.py")
+from pathlib import Path
+spec=importlib.util.spec_from_file_location("ll",Path(__file__).with_name("ll.py"))
 m=importlib.util.module_from_spec(spec)
 with contextlib.redirect_stdout(io.StringIO()): spec.loader.exec_module(m)
 fam=m.C(range(8),[2,0,2,2,0,0,0,0],range(12),[0]*12)
