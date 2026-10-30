@@ -9,6 +9,8 @@
 //   src/data/defaultAlgs.json: "PLL", "OLL" (algs and nicknames), "F2L" ("Front Right" algs) and "2-Look OLL"
 //   ("Dot" here, which cubingapp does not list as an edges-only case, and "Hook")
 //
+// Their full licence texts are in ALG-DATA-LICENSES.txt.
+//
 // The only edit: Cubedex writes simultaneous turns with "+" ("D+U'"); those are written as two moves ("D U'").
 // Algs that are the same up to a leading or trailing U turn are listed once.
 //
