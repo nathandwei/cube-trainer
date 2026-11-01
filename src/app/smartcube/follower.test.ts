@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GRID, angleBetween, multiply, snap, type Quaternion } from "./gyro";
 import type { Rotation } from "@/cube/types";
-import { CubeFollower, SCRAMBLE_GRIP, SOLVER_GRIP, reportAt, upFace } from "./follower";
+import { CubeFollower, SCRAMBLE_GRIP, SOLVER_GRIP, faceHeights, reportAt } from "./follower";
 
 const IDENTITY: Quaternion = { w: 1, x: 0, y: 0, z: 0 };
 
@@ -127,6 +127,14 @@ describe("CubeFollower", () => {
     { held: ["y", "x"], up: "R" },
   ] as { held: Rotation[]; up: string }[])("reads $up on top, by gravity, when held $held", ({ held, up }) => {
     // Leaning a little, at whatever heading the gyro's world has.
-    expect(upFace(reportAfter(...held.map(grid), tilt("x", 15)))).toBe(up);
+    const heights = faceHeights(reportAfter(...held.map(grid), tilt("x", 15)));
+    const top = Object.keys(heights).reduce((a, b) => (heights[b]! > heights[a]! ? b : a));
+    expect(top).toBe(up);
+  });
+
+  it("reads how high each centre points, not just the top: tipped 50°, the back is higher than the top", () => {
+    const heights = faceHeights(reportAfter(tilt("x", 50)));
+    const expected = { U: 0.643, B: 0.766, D: -0.643, F: -0.766, R: 0, L: 0 };
+    for (const [face, height] of Object.entries(expected)) expect(heights[face]).toBeCloseTo(height, 3);
   });
 });

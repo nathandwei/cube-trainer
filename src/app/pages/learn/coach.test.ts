@@ -19,8 +19,16 @@ function reported(alg: string, grip: readonly Rotation[] = [], reverseSlices = f
   return { turns, up };
 }
 
+const OPPOSITE: Readonly<Record<string, string>> = { U: "D", D: "U", R: "L", L: "R", F: "B", B: "F" };
+
+/** How high each centre points with `up` straight up. */
+function level(up: string): Record<string, number> {
+  return Object.fromEntries(Object.keys(OPPOSITE).map((face) => [face, face === up ? 1 : face === OPPOSITE[up] ? -1 : 0]));
+}
+
 function run(coach: AlgCoach, turns: readonly string[], up: string | null): string[] {
-  return turns.flatMap((turn) => coach.turn(turn, up));
+  const heights = up ? level(up) : null;
+  return turns.flatMap((turn) => coach.turn(turn, heights));
 }
 
 const ALGS = {
@@ -154,6 +162,24 @@ describe("AlgCoach", () => {
     const coach = new AlgCoach(words(G_A));
     run(coach, [...words("R2 U R' U R' U' R U' R2"), ...turns], "U");
     expect(coach.view().slips).toBe(1);
+  });
+
+  const OLL_23 = "R2 D R' U2 R D' R' U2 R'";
+
+  it("reads his turns from the turns themselves when he tips the cube back, front higher than top", () => {
+    const coach = new AlgCoach(words(OLL_23));
+    // Tipped back 50°: gravity alone would take his front for the top, and his D for an F.
+    const tipped = { U: 0.64, F: 0.77, D: -0.64, B: -0.77, R: 0, L: 0 };
+    const shown = reported(OLL_23).turns.flatMap((turn) => coach.turn(turn, tipped));
+    expect(shown).toEqual(["R", "R", "D", "R'", "U", "U", "R", "D'", "R'", "U", "U", "R'"]);
+    expect(coach.view()).toMatchObject({ done: true, slips: 0 });
+  });
+
+  it("still catches a wrong face early on when the cube is held level", () => {
+    // Held level, his F can't be the D of some other grip: it's a slip.
+    const coach = new AlgCoach(words(OLL_23));
+    run(coach, ["R", "R", "F"], "U");
+    expect(coach.view()).toMatchObject({ next: 1, slips: 1 });
   });
 
   it("lets a last AUF be left off", () => {

@@ -5,9 +5,10 @@
 //
 // His turns arrive named by the centre they turned. Which centre is his R depends on how he holds the cube, which is
 // read off the turns themselves: of the 24 ways to hold it, the ones whose reading of his turns keeps to the alg stay
-// in the running (with the face on top, by gravity, if the gyro gives it), and a turn or two settles it. Nothing else
-// is read from the gyro: a wide move, slice or rotation in the alg is known from the alg, and his turns after it are
-// named as they must be if he did it.
+// in the running, and a turn or two settles it. Gravity, if the gyro gives it, only rules out tops that point well
+// away from up: a cube tipped back to look at it can have its front higher than its top, and taking the higher one
+// for his U read every D as an F. Nothing else is read from the gyro: a wide move, slice or rotation in the alg is
+// known from the alg, and his turns after it are named as they must be if he did it.
 
 import { FrameTracker, SOLVED, applyMove, stateKey, type CubeState } from "@/cube";
 import type { Move, Rotation } from "@/cube/types";
@@ -61,14 +62,21 @@ function together(a: Step | undefined, b: Step | undefined): boolean {
   return face !== undefined && OPPOSITE[face] === other;
 }
 
-/** A way he may hold the cube: reads a turn of a centre as the move it is in his view. */
-type Grip = { name: (turn: Move) => Move };
+/** A way he may hold the cube: reads a turn of a centre as the move it is in his view; `up` is the centre his U is. */
+type Grip = { name: (turn: Move) => Move; up: string };
 
 const GRIPS: readonly Grip[] = GRID.map((orientation) => {
   const tracker = new FrameTracker();
   for (const rotation of orientation.rotations) tracker.rotate(rotation);
-  return { name: (turn: Move) => tracker.name(turn) };
+  const up = Object.keys(OPPOSITE).find((face) => tracker.name(face) === "U")!;
+  return { name: (turn: Move) => tracker.name(turn), up };
 });
+
+/**
+ * His U is a centre within 60° of straight up. A cube held to look at it tips 30–50°, top and front then near level
+ * with each other, and either may be his top: his turns tell which.
+ */
+const MIN_UP_HEIGHT = Math.cos((60 * Math.PI) / 180);
 
 /** How far he is, if he holds the cube `grip`: each way of holding it reads his turns differently, so each keeps count. */
 type Reading = {
@@ -144,15 +152,17 @@ export class AlgCoach {
   }
 
   /**
-   * One of his turns, named by its centre as the cube reported it; `up` is the centre on top right now by gravity
-   * (null without a gyro). Returns what the cube on screen plays: the turn in its own names, and the rotation of a
-   * wide move or slice it finished, or of the alg's own rotations that come next.
+   * One of his turns, named by its centre as the cube reported it; `heights` is how high each centre points right now
+   * by gravity, 1 straight up (null without a gyro). Returns what the cube on screen plays: the turn in its own names,
+   * and the rotation of a wide move or slice it finished, or of the alg's own rotations that come next.
    */
-  turn(reported: Move, up: string | null): string[] {
+  turn(reported: Move, heights: Readonly<Record<string, number>> | null): string[] {
     if (this.#done()) return [];
-    if (!this.#upKnown && up) {
-      const level = this.#readings.filter((reading) => reading.grip.name(up) === "U");
-      if (level.length > 0) this.#readings = level;
+    if (!this.#upKnown && heights) {
+      const height = (reading: Reading) => heights[reading.grip.up] ?? -1;
+      // Highest top first: when his turns fit more than one grip, the screen shows the likeliest.
+      const upright = this.#readings.filter((reading) => height(reading) >= MIN_UP_HEIGHT).sort((a, b) => height(b) - height(a));
+      if (upright.length > 0) this.#readings = upright;
       this.#upKnown = true;
     }
     if (!this.#back) {

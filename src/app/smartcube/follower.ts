@@ -61,14 +61,13 @@ function heightAfter(q: Quaternion, [x, y, z]: readonly [number, number, number]
 }
 
 /**
- * The face whose centre is on top, read against gravity, named as the cube reports turns ("U" in the solver's grip,
- * "D" held white up): which way round it faces doesn't come into it, so no hold is needed.
+ * How high each face's centre points, read against gravity (1 straight up, −1 straight down), named as the cube
+ * reports turns ("U" up in the solver's grip, "D" held white up): which way round it faces doesn't come into it, so no
+ * hold is needed.
  */
-export function upFace(report: Quaternion): string {
+export function faceHeights(report: Quaternion): Record<string, number> {
   const attitude = unheaded(report);
-  let top = FACE_DIRECTIONS[0]!;
-  for (const face of FACE_DIRECTIONS) if (heightAfter(attitude, face[1]) > heightAfter(attitude, top[1])) top = face;
-  return top[0];
+  return Object.fromEntries(FACE_DIRECTIONS.map(([face, direction]) => [face, heightAfter(attitude, direction)]));
 }
 
 /** The report a cube held at `attitude` gives, at the world's own heading (for tests, and anything faking a cube). */

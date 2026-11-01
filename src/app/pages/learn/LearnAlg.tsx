@@ -4,7 +4,7 @@ import { CubeView, type CubeHandle } from "@/app/components/CubeView";
 import { IconButton } from "@/app/components/IconButton";
 import { ScrambleProgress } from "@/app/smartcube/ScrambleProgress";
 import { smartCube, useSmartCube } from "@/app/smartcube/connection";
-import { upFace } from "@/app/smartcube/follower";
+import { faceHeights } from "@/app/smartcube/follower";
 import { algChunks, algFingering, getCase, playback, type Fingering } from "@/cube";
 import { AlgCoach, type CoachView } from "./coach";
 import { CLEAN_TO_PASS, FIRST_PRACTICE, STAGES, afterRep, type Practice, type Stage } from "./practice";
@@ -327,7 +327,7 @@ function usePractice({ cube, moves, start, active }: PracticeOptions) {
       const current = coach.current;
       if (!current) return;
       const report = smartCube.lastGyro;
-      for (const token of current.turn(move, report ? upFace(report) : null)) cube.current?.turn(token);
+      for (const token of current.turn(move, report ? faceHeights(report) : null)) cube.current?.turn(token);
       const seen = current.view();
       setView(seen);
       setVerdict(null);
