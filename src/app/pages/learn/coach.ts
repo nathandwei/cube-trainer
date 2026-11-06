@@ -7,8 +7,12 @@
 // read off the turns themselves: of the 24 ways to hold it, the ones whose reading of his turns keeps to the alg stay
 // in the running, and a turn or two settles it. Gravity, if the gyro gives it, only rules out tops that point well
 // away from up: a cube tipped back to look at it can have its front higher than its top, and taking the higher one
-// for his U read every D as an F. Nothing else is read from the gyro: a wide move, slice or rotation in the alg is
-// known from the alg, and his turns after it are named as they must be if he did it.
+// for his U read every D as an F. Nor can gravity tell yellow tipped back from the front it tips up, so yellow on top
+// (the solver's grip) is the guess until his turns rule it out. A turn off the alg is named as he'd make it holding the
+// cube that way (taking the higher face read his U2 as a B2), and so is a first turn that keeps to the alg only with
+// another face on top: it's likelier a U to line the cube up than the alg's R2 done with the cube on its side. Nothing
+// else is read from the gyro: a wide move, slice or rotation in the alg is known from the alg, and his turns after it
+// are named as they must be if he did it.
 
 import { FrameTracker, SOLVED, applyMove, stateKey, type CubeState } from "@/cube";
 import type { Move, Rotation } from "@/cube/types";
@@ -78,6 +82,9 @@ const GRIPS: readonly Grip[] = GRID.map((orientation) => {
  */
 const MIN_UP_HEIGHT = Math.cos((60 * Math.PI) / 180);
 
+/** The centre on top in the solver's grip, yellow: the cube names its turns as if held that way. */
+const SOLVER_TOP = "U";
+
 /** How far he is, if he holds the cube `grip`: each way of holding it reads his turns differently, so each keeps count. */
 type Reading = {
   grip: Grip;
@@ -92,6 +99,10 @@ type Reading = {
   /** The case as he's turned it (from solved: only whether he's back where he left the alg matters). */
   state: CubeState;
 };
+
+function onSolverTop(reading: Reading): boolean {
+  return reading.grip.up === SOLVER_TOP;
+}
 
 function copy(reading: Reading): Reading {
   return { ...reading, progress: new Map(reading.progress), ahead: new Map(reading.ahead), screen: new FrameTracker(reading.screen.frame) };
@@ -158,10 +169,14 @@ export class AlgCoach {
    */
   turn(reported: Move, heights: Readonly<Record<string, number>> | null): string[] {
     if (this.#done()) return [];
-    if (!this.#upKnown && heights) {
+    const first = !this.#upKnown && heights !== null;
+    if (first) {
       const height = (reading: Reading) => heights[reading.grip.up] ?? -1;
-      // Highest top first: when his turns fit more than one grip, the screen shows the likeliest.
-      const upright = this.#readings.filter((reading) => height(reading) >= MIN_UP_HEIGHT).sort((a, b) => height(b) - height(a));
+      // Likeliest first, for the screen to show while his turns fit more than one grip: yellow on top while gravity
+      // allows it, then the most upright.
+      const upright = this.#readings
+        .filter((reading) => height(reading) >= MIN_UP_HEIGHT)
+        .sort((a, b) => Number(onSolverTop(b)) - Number(onSolverTop(a)) || height(b) - height(a));
       if (upright.length > 0) this.#readings = upright;
       this.#upKnown = true;
     }
@@ -176,7 +191,8 @@ export class AlgCoach {
         shown.push(...this.#advance(next, move, towards), ...this.#passRotations(next));
         return [{ next, shown }];
       });
-      if (kept.length > 0) {
+      const onlyOffTop = first && this.#readings.some(onSolverTop) && !kept.some(({ next }) => onSolverTop(next));
+      if (kept.length > 0 && !onlyOffTop) {
         this.#readings = kept.map(({ next }) => next);
         return kept[0]!.shown;
       }

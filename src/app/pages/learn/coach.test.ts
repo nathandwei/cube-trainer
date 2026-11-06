@@ -175,6 +175,29 @@ describe("AlgCoach", () => {
     expect(coach.view()).toMatchObject({ done: true, slips: 0 });
   });
 
+  /** How high each centre points with the cube tipped back `degrees` about his R–L axis, his front coming up. */
+  function tippedBack(degrees: number): Record<string, number> {
+    const [up, front] = [Math.cos((degrees * Math.PI) / 180), Math.sin((degrees * Math.PI) / 180)];
+    return { U: up, D: -up, F: front, B: -front, R: 0, L: 0 };
+  }
+
+  it.each(
+    [35, 50].flatMap((degrees) => [
+      { degrees, opens: "with R2, which a U2 is with the cube on its side", alg: OLL_23 },
+      { degrees, opens: "with R', so a U2 is off it", alg: "R' U' R U' R' U2 R" },
+      { degrees, opens: "with F, which a U is with green on top", alg: "F R U R' U' F'" },
+    ]),
+  )("reads a U2 before the alg as his U2, tipped back $degrees°, when it opens $opens", ({ degrees, alg }) => {
+    const coach = new AlgCoach(words(alg));
+    const heights = tippedBack(degrees);
+    expect(["U", "U"].flatMap((turn) => coach.turn(turn, heights))).toEqual(["U", "U"]);
+    expect(coach.view()).toMatchObject({ next: 0, slips: 1 });
+    // Undone, the alg reads as he does it.
+    const shown = ["U", "U", ...reported(alg).turns].flatMap((turn) => coach.turn(turn, heights));
+    expect(shown.slice(2)).toEqual(reported(alg).turns);
+    expect(coach.view()).toMatchObject({ done: true, slips: 1 });
+  });
+
   it("still catches a wrong face early on when the cube is held level", () => {
     // Held level, his F can't be the D of some other grip: it's a slip.
     const coach = new AlgCoach(words(OLL_23));
